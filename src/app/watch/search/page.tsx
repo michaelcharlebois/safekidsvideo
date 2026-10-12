@@ -3,7 +3,15 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { resolveViewer } from "@/lib/family";
 import { db } from "@/lib/db";
+import { unstable_cache } from "next/cache";
 import { searchKidsVideos } from "@/lib/youtube";
+
+/** Pin a search's results for 10 minutes so polling/refreshes don't reshuffle the grid. */
+const cachedSearch = unstable_cache(
+  async (q: string, kidsOnly: boolean) => searchKidsVideos(q, 12, kidsOnly),
+  ["kid-search"],
+  { revalidate: 600 },
+);
 import { aiPasses, canPlay, getLibrary } from "@/lib/queries";
 import { pendingCheckIds, pendingVideoIds, recentlyApprovedIds } from "@/lib/activity";
 import { CheckButton, type Suggestion } from "./check-button";
@@ -20,7 +28,7 @@ export default async function SearchPage(props: PageProps<"/watch/search">) {
   const sp = await props.searchParams;
   const q = typeof sp.q === "string" ? sp.q.slice(0, 80) : "";
   const [hits, lib, pending, checking, approved] = await Promise.all([
-    q ? searchKidsVideos(q, 12, settings.kidsOnlySearch) : Promise.resolve([]),
+    q ? cachedSearch(q.toLowerCase().trim(), settings.kidsOnlySearch) : Promise.resolve([]),
     getLibrary(viewer.familyId),
     pendingVideoIds(viewer.familyId),
     pendingCheckIds(viewer.familyId),
