@@ -174,6 +174,10 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                   </label>
                 ))}
               </div>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" name="kidsOnlySearch" defaultChecked={settings.kidsOnlySearch} className="mt-1 accent-accent" />
+                <span>Only show YouTube&apos;s &quot;made for kids&quot; videos in search <span className="text-muted">(narrower — hides MrBeast, cooking channels, etc. The AI check still screens everything either way.)</span></span>
+              </label>
               <label className="flex items-center justify-between text-sm gap-2">
                 Kid-triggered AI checks per day
                 <input type="number" name="dailyCheckLimit" min={0} max={200} defaultValue={settings.dailyCheckLimit} className="w-16 rounded-lg border border-line px-2 py-1" />

@@ -92,6 +92,7 @@ export async function saveSettings(form: FormData) {
     hideUnreviewed: form.get("hideUnreviewed") === "on",
     mode: (["locked", "open", "open_ask"].includes(String(form.get("mode"))) ? String(form.get("mode")) : current.mode) as FamilyMode,
     dailyCheckLimit: Number(form.get("dailyCheckLimit") ?? current.dailyCheckLimit) || current.dailyCheckLimit,
+    kidsOnlySearch: form.get("kidsOnlySearch") === "on",
     flagThreshold: Number(form.get("flagThreshold") ?? current.flagThreshold) || current.flagThreshold,
     });
   } catch (e) {

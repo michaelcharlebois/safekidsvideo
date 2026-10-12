@@ -159,6 +159,8 @@ export type FamilySettings = {
   mode: FamilyMode;
   /** kid-triggered AI checks per day */
   dailyCheckLimit: number;
+  /** restrict kid search to YouTube's "made for kids" videos (narrower; off by default) */
+  kidsOnlySearch: boolean;
 };
 
 /** Aggregate view the UI renders. */

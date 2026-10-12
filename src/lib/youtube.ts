@@ -131,10 +131,10 @@ export async function fetchChannelMeta(channelIdOrHandle: string): Promise<{ id:
 export type SearchHit = VideoMeta & { madeForKids: boolean };
 
 /**
- * Kid-safe YouTube search (Data API only). Strict safe search, embeddable videos only,
- * then filtered to videos YouTube itself marks "made for kids".
+ * Kid search (Data API only). Strict safe search, embeddable, never age-restricted.
+ * "Made for kids" is a COPPA flag, not a content judgment, so it's opt-in — the AI card is the gate.
  */
-export async function searchKidsVideos(query: string, max = 12): Promise<SearchHit[]> {
+export async function searchKidsVideos(query: string, max = 12, kidsOnly = false): Promise<SearchHit[]> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key || !query.trim()) return [];
   const u = new URL("https://www.googleapis.com/youtube/v3/search");
@@ -152,7 +152,8 @@ export async function searchKidsVideos(query: string, max = 12): Promise<SearchH
   for (const item of vr.items ?? []) {
     const sn = item.snippet;
     const madeForKids = !!item.status?.madeForKids;
-    if (!madeForKids) continue;
+    if (kidsOnly && !madeForKids) continue;
+    if (item.contentDetails?.contentRating?.ytRating === "ytAgeRestricted") continue;
     out.push({
       id: item.id,
       title: sn.title,

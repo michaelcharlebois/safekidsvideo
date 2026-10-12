@@ -20,7 +20,7 @@ export default async function SearchPage(props: PageProps<"/watch/search">) {
   const sp = await props.searchParams;
   const q = typeof sp.q === "string" ? sp.q.slice(0, 80) : "";
   const [hits, lib, pending] = await Promise.all([
-    q ? searchKidsVideos(q, 12) : Promise.resolve([]),
+    q ? searchKidsVideos(q, 12, settings.kidsOnlySearch) : Promise.resolve([]),
     getLibrary(viewer.familyId),
     pendingVideoIds(viewer.familyId),
   ]);

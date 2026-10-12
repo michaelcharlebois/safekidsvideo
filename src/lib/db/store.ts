@@ -50,4 +50,5 @@ export const DEFAULT_SETTINGS = (familyId: string): FamilySettings => ({
   hideUnreviewed: true,
   mode: "locked",
   dailyCheckLimit: 20,
+  kidsOnlySearch: false,
 });

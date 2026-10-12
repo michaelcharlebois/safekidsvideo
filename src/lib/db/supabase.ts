@@ -100,11 +100,11 @@ export const supabaseStore: Store = {
   async getSettings(familyId) {
     const d = must<any>(await client().from("families").select("*").eq("id", familyId).maybeSingle());
     if (!d) return DEFAULT_SETTINGS(familyId);
-    return { familyId: d.id, pinHash: d.pin_hash, kidAge: d.kid_age ?? undefined, blockedTags: d.blocked_tags, blockedFormats: d.blocked_formats ?? [], flagThreshold: d.flag_threshold, hideUnreviewed: d.hide_unreviewed ?? true, mode: d.mode ?? "locked", dailyCheckLimit: d.daily_check_limit ?? 20 };
+    return { familyId: d.id, pinHash: d.pin_hash, kidAge: d.kid_age ?? undefined, blockedTags: d.blocked_tags, blockedFormats: d.blocked_formats ?? [], flagThreshold: d.flag_threshold, hideUnreviewed: d.hide_unreviewed ?? true, mode: d.mode ?? "locked", dailyCheckLimit: d.daily_check_limit ?? 20, kidsOnlySearch: d.kids_only_search ?? false };
   },
   async saveSettings(s) {
     must(await client().from("families").upsert({
-      id: s.familyId, pin_hash: s.pinHash, kid_age: s.kidAge, blocked_tags: s.blockedTags, blocked_formats: s.blockedFormats, flag_threshold: s.flagThreshold, hide_unreviewed: s.hideUnreviewed, mode: s.mode, daily_check_limit: s.dailyCheckLimit,
+      id: s.familyId, pin_hash: s.pinHash, kid_age: s.kidAge, blocked_tags: s.blockedTags, blocked_formats: s.blockedFormats, flag_threshold: s.flagThreshold, hide_unreviewed: s.hideUnreviewed, mode: s.mode, daily_check_limit: s.dailyCheckLimit, kids_only_search: s.kidsOnlySearch,
     }));
   },
   async listWhitelist(familyId) {
