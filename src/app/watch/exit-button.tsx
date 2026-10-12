@@ -1,30 +1,48 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 /**
- * Hold-to-exit: a 1.5s press on a small, unlabeled control, then the PIN screen.
- * Kids tap; they rarely hold. Good enough for a 4-year-old, not a 10-year-old.
+ * Parent exit from kid mode. Two gestures, both unlikely from a small kid:
+ *  - press and hold for 1.5s
+ *  - five quick taps
+ * touch-action:none stops iOS from turning the hold into a text-selection gesture.
  */
 export function ExitButton({ target }: { target: string }) {
   const router = useRouter();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const taps = useRef<number[]>([]);
+  const [holding, setHolding] = useState(false);
+
+  const go = () => router.push(target);
   const start = () => {
-    timer.current = setTimeout(() => router.push(target), 1500);
+    setHolding(true);
+    timer.current = setTimeout(go, 1500);
   };
   const cancel = () => {
+    setHolding(false);
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
   };
+  const tap = () => {
+    const now = Date.now();
+    taps.current = [...taps.current.filter((t) => now - t < 3000), now];
+    if (taps.current.length >= 5) go();
+  };
+
   return (
     <button
-      aria-label="Parents: press and hold"
+      aria-label="Grown-ups: press and hold"
+      title="Grown-ups: press and hold"
       onPointerDown={start}
       onPointerUp={cancel}
+      onPointerCancel={cancel}
       onPointerLeave={cancel}
+      onClick={tap}
       onContextMenu={(e) => e.preventDefault()}
-      className="h-9 w-9 rounded-full border border-line bg-surface/70 text-muted text-xs font-bold"
+      style={{ touchAction: "none", WebkitUserSelect: "none", userSelect: "none" }}
+      className={`h-9 w-9 rounded-full border border-line text-muted text-xs font-bold transition ${holding ? "bg-sun scale-110" : "bg-surface/70"}`}
     >
       ⚙
     </button>
