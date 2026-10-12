@@ -106,7 +106,8 @@ export const localStore: Store = {
 
   async getSettings(familyId) {
     const db = await load();
-    return db.settings.find((s) => s.familyId === familyId) ?? DEFAULT_SETTINGS(familyId);
+    // Merge with defaults so settings saved before a new field existed still work.
+    return { ...DEFAULT_SETTINGS(familyId), ...db.settings.find((s) => s.familyId === familyId) };
   },
   async saveSettings(s) {
     const db = await load();

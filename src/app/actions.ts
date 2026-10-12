@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db, DEFAULT_FAMILY_ID } from "@/lib/db";
 import { ingestChannel, ingestVideo } from "@/lib/ingest";
 import { parseYouTubeUrl } from "@/lib/youtube";
-import { CONCERN_TAGS, type ConcernTag } from "@/lib/types";
+import { CONCERN_TAGS, FORMATS, type ConcernTag, type VideoFormat } from "@/lib/types";
 import { PARENT_COOKIE } from "@/lib/auth";
 
 async function familyId() {
@@ -80,11 +80,13 @@ export async function saveSettings(form: FormData) {
   const current = await db.getSettings(fid);
   const pin = String(form.get("pin") ?? "").trim();
   const blockedTags = CONCERN_TAGS.filter((t) => form.get(`block:${t}`) === "on") as ConcernTag[];
+  const blockedFormats = FORMATS.filter((f) => form.get(`blockfmt:${f}`) === "on") as VideoFormat[];
   await db.saveSettings({
     ...current,
     pinHash: /^\d{4}$/.test(pin) ? pin : current.pinHash,
     kidAge: Number(form.get("kidAge") ?? current.kidAge) || current.kidAge,
     blockedTags,
+    blockedFormats,
     flagThreshold: Number(form.get("flagThreshold") ?? current.flagThreshold) || current.flagThreshold,
   });
   revalidatePath("/parent");

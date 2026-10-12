@@ -44,5 +44,6 @@ export const DEFAULT_SETTINGS = (familyId: string): FamilySettings => ({
   pinHash: "1234",
   kidAge: 6,
   blockedTags: ["violence", "scary_imagery", "monsters"] as ConcernTag[],
+  blockedFormats: ["gameplay_commentary"],
   flagThreshold: 3,
 });

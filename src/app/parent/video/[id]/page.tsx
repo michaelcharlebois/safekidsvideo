@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db, DEFAULT_FAMILY_ID } from "@/lib/db";
 import { blockedReasons, getLibrary } from "@/lib/queries";
-import { CONCERN_LABELS, CONCERN_TAGS } from "@/lib/types";
+import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS } from "@/lib/types";
 import { Button, Card, ConcernPill, PacePill, Pill, Stars, TopBar } from "@/components/ui";
 import { confirmCard, toggleWhitelist } from "@/app/actions";
 
@@ -49,7 +49,7 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
 
         {blocked.length > 0 && (
           <Card className="p-3 border-bad/40 bg-bad/5 text-sm">
-            <b className="text-bad">Hidden from kid mode</b> — your filters block: {blocked.map((t) => CONCERN_LABELS[t]).join(", ")}.
+            <b className="text-bad">Hidden from kid mode</b> — your filters block: {blocked.join(", ")}.
           </Card>
         )}
 
@@ -66,6 +66,7 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
                 <span className="font-bold">{c.rating}/5</span>
                 <Pill className="bg-sky">ages {c.ageFit.min}–{c.ageFit.max}</Pill>
                 <PacePill pace={c.pace} />
+                <Pill className="bg-line">{FORMAT_LABELS[c.format ?? "other"]}</Pill>
                 <Pill className="bg-line">educational {c.educationalValue}/5</Pill>
                 {c.reviewer.model === "sample"
                   ? <Pill className="bg-warn/20 text-warn">sample card — not a real review</Pill>

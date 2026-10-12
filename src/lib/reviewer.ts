@@ -3,7 +3,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
-import { CONCERN_TAGS, type ContentCard } from "@/lib/types";
+import { CONCERN_TAGS, FORMATS, type ContentCard } from "@/lib/types";
 import { videoUrl } from "@/lib/youtube";
 
 export const REVIEWER_VERSION = "1";
@@ -19,6 +19,7 @@ const FindingSchema = z.object({
 
 export const CardSchema = z.object({
   synopsis: z.string().describe("2–3 plain sentences describing what happens in the video"),
+  format: z.enum(FORMATS).describe("What kind of video this is; gameplay_commentary = someone playing a video game (Minecraft, Roblox, etc.) and talking over it"),
   ageFit: z.object({ min: z.number().int().min(0).max(14), max: z.number().int().min(0).max(14) }),
   concerns: z.array(FindingSchema).describe("One entry for EVERY tag in the taxonomy, present or not"),
   pace: z.enum(["calm", "moderate", "frenetic"]),
@@ -48,12 +49,25 @@ Concern tags (report ALL of them, present or not):
 Intensity: 0 none, 1 mild/brief, 2 moderate or recurring, 3 strong or central to the video.
 Give a timestamp (mm:ss) and one-line evidence for every tag that is present.`;
 
+const FORMAT_GUIDE = `
+Format (pick exactly one):
+- song: nursery rhymes, singalongs, music videos
+- story_animation: animated or puppet stories with a plot
+- educational: letters, numbers, science, how-things-work
+- live_action_kids: real people presenting a kids' show (e.g. Blippi, Ms Rachel)
+- gameplay_commentary: screen recording of a video game (Minecraft, Roblox, Fortnite...) with someone talking over it
+- unboxing_toys: opening or playing with toys/products on camera
+- vlog_challenge: family vlogs, challenges, pranks, "24 hours in..."
+- compilation: mashups, shorts compilations, "best of" edits
+- other`;
+
 const SYSTEM = `You are a careful children's media reviewer helping parents of 3–8 year olds decide what their kids can watch on YouTube.
 Watch the ENTIRE video. The moment parents care about is often a single 20-second stretch — a scary face, a loud crash, a sad goodbye — so do not skim.
 Be concrete and skeptical. Titles and thumbnails lie; judge only what is actually on screen and on the soundtrack.
 Err toward flagging: a parent can always decide a mild concern is fine, but they cannot un-see something you missed.
 Pay special attention to pacing and sound, which reviewers tend to under-report.
-${TAXONOMY}`;
+${TAXONOMY}
+${FORMAT_GUIDE}`;
 
 export async function reviewVideo(videoId: string, opts: { model?: string } = {}): Promise<ContentCard> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -96,6 +110,7 @@ export async function reviewVideo(videoId: string, opts: { model?: string } = {}
   return {
     videoId,
     synopsis: parsed.synopsis,
+    format: parsed.format,
     ageFit: parsed.ageFit,
     concerns,
     pace: parsed.pace,

@@ -14,6 +14,7 @@
   "cards": [
     {
       "videoId": "XqZsoesa55w",
+      "format": "song",
       "synopsis": "A family of cartoon sharks swims and dances to the Baby Shark song while two kids mimic the hand motions. Bright, repetitive, and very high energy.",
       "ageFit": { "min": 2, "max": 6 },
       "concerns": [
@@ -39,6 +40,7 @@
     },
     {
       "videoId": "yCjJyiqpAuU",
+      "format": "song",
       "synopsis": "A gentle animated lullaby with a baby owl and twinkling stars over a night sky. Slow, soft, and calm from start to finish.",
       "ageFit": { "min": 1, "max": 5 },
       "concerns": [
@@ -64,6 +66,7 @@
     },
     {
       "videoId": "e_04ZrNroTo",
+      "format": "song",
       "synopsis": "Animated kids and animals ride a bus through town singing the classic verses — wheels, wipers, horn, doors. Cheerful mid-tempo singalong.",
       "ageFit": { "min": 1, "max": 5 },
       "concerns": [
@@ -89,6 +92,7 @@
     },
     {
       "videoId": "WRVsOCh907o",
+      "format": "song",
       "synopsis": "JJ and family make bath time a game with bubbles and rubber ducks. Bright 3D animation, quick scene changes, and a very catchy hook.",
       "ageFit": { "min": 1, "max": 4 },
       "concerns": [

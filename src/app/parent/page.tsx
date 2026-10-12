@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { db, DEFAULT_FAMILY_ID, STORE_KIND } from "@/lib/db";
 import { blockedReasons, getLibrary } from "@/lib/queries";
-import { CONCERN_LABELS, CONCERN_TAGS } from "@/lib/types";
+import { CONCERN_LABELS, CONCERN_TAGS, FORMATS, FORMAT_LABELS } from "@/lib/types";
 import { Button, Card, CardSummary, Pill, TopBar } from "@/components/ui";
 import { lock, saveSettings, toggleWhitelist } from "@/app/actions";
 import { AddForm } from "./add-form";
@@ -81,7 +81,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                     </div>
                     <CardSummary v={v} blocked={blocked} />
                     {blocked.length > 0 && (
-                      <p className="text-xs text-bad font-bold">Hidden because: {blocked.map((t) => CONCERN_LABELS[t]).join(", ")}</p>
+                      <p className="text-xs text-bad font-bold">Hidden because: {blocked.join(", ")}</p>
                     )}
                   </div>
                 </Card>
@@ -122,6 +122,15 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                   <label key={t} className="flex items-center gap-2 text-sm">
                     <input type="checkbox" name={`block:${t}`} defaultChecked={settings.blockedTags.includes(t)} className="accent-accent" />
                     {CONCERN_LABELS[t]}
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted pt-1">Hide these kinds of videos entirely:</p>
+              <div className="grid grid-cols-1 gap-1">
+                {FORMATS.filter((f) => f !== "other").map((f) => (
+                  <label key={f} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" name={`blockfmt:${f}`} defaultChecked={settings.blockedFormats.includes(f)} className="accent-accent" />
+                    {FORMAT_LABELS[f]}
                   </label>
                 ))}
               </div>

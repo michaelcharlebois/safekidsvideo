@@ -20,7 +20,7 @@ const toVideo = (r: any): Video => ({
   durationSeconds: r.duration_seconds ?? undefined, publishedAt: r.published_at ?? undefined, createdAt: r.created_at,
 });
 const toCard = (r: any): ContentCard => ({
-  videoId: r.video_id, synopsis: r.synopsis, ageFit: { min: r.age_min, max: r.age_max }, concerns: r.concerns,
+  videoId: r.video_id, synopsis: r.synopsis, format: r.format ?? "other", ageFit: { min: r.age_min, max: r.age_max }, concerns: r.concerns,
   pace: r.pace, educationalValue: Number(r.educational_value), rating: Number(r.rating),
   parentRecommendation: r.parent_recommendation, confidence: Number(r.confidence),
   reviewer: { model: r.reviewer_model, version: r.reviewer_version, reviewedAt: r.reviewed_at },
@@ -75,7 +75,7 @@ export const supabaseStore: Store = {
   },
   async upsertCard(c) {
     must(await client().from("content_cards").upsert({
-      video_id: c.videoId, synopsis: c.synopsis, age_min: c.ageFit.min, age_max: c.ageFit.max, concerns: c.concerns,
+      video_id: c.videoId, synopsis: c.synopsis, format: c.format, age_min: c.ageFit.min, age_max: c.ageFit.max, concerns: c.concerns,
       pace: c.pace, educational_value: c.educationalValue, rating: c.rating, parent_recommendation: c.parentRecommendation,
       confidence: c.confidence, reviewer_model: c.reviewer.model, reviewer_version: c.reviewer.version,
       reviewed_at: c.reviewer.reviewedAt,
@@ -96,11 +96,11 @@ export const supabaseStore: Store = {
   async getSettings(familyId) {
     const d = must<any>(await client().from("families").select("*").eq("id", familyId).maybeSingle());
     if (!d) return DEFAULT_SETTINGS(familyId);
-    return { familyId: d.id, pinHash: d.pin_hash, kidAge: d.kid_age ?? undefined, blockedTags: d.blocked_tags, flagThreshold: d.flag_threshold };
+    return { familyId: d.id, pinHash: d.pin_hash, kidAge: d.kid_age ?? undefined, blockedTags: d.blocked_tags, blockedFormats: d.blocked_formats ?? [], flagThreshold: d.flag_threshold };
   },
   async saveSettings(s) {
     must(await client().from("families").upsert({
-      id: s.familyId, pin_hash: s.pinHash, kid_age: s.kidAge, blocked_tags: s.blockedTags, flag_threshold: s.flagThreshold,
+      id: s.familyId, pin_hash: s.pinHash, kid_age: s.kidAge, blocked_tags: s.blockedTags, blocked_formats: s.blockedFormats, flag_threshold: s.flagThreshold,
     }));
   },
   async listWhitelist(familyId) {

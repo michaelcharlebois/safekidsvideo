@@ -36,6 +36,31 @@ export const CONCERN_LABELS: Record<ConcernTag, string> = {
 
 export type Pace = "calm" | "moderate" | "frenetic";
 
+/** What kind of video this is — a separate axis from the concern tags. */
+export const FORMATS = [
+  "song",
+  "story_animation",
+  "educational",
+  "live_action_kids",
+  "gameplay_commentary",
+  "unboxing_toys",
+  "vlog_challenge",
+  "compilation",
+  "other",
+] as const;
+export type VideoFormat = (typeof FORMATS)[number];
+export const FORMAT_LABELS: Record<VideoFormat, string> = {
+  song: "Song / nursery rhyme",
+  story_animation: "Story / animation",
+  educational: "Educational",
+  live_action_kids: "Live-action kids' show",
+  gameplay_commentary: "Gameplay commentary (Minecraft, Roblox, etc.)",
+  unboxing_toys: "Unboxing / toy play",
+  vlog_challenge: "Vlog / challenge / prank",
+  compilation: "Compilation / shorts mashup",
+  other: "Other",
+};
+
 export type ConcernFinding = {
   tag: ConcernTag;
   present: boolean;
@@ -70,6 +95,7 @@ export type Video = {
 export type ContentCard = {
   videoId: string;
   synopsis: string;
+  format: VideoFormat;
   /** e.g. "4–7" */
   ageFit: { min: number; max: number };
   concerns: ConcernFinding[];
@@ -111,6 +137,7 @@ export type FamilySettings = {
   kidAge?: number;
   /** hide any video where >= this many parents flagged a blocked tag */
   blockedTags: ConcernTag[];
+  blockedFormats: VideoFormat[];
   flagThreshold: number;
 };
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { CONCERN_LABELS, type ConcernFinding, type ConcernTag, type ContentCard, type VideoWithCard } from "@/lib/types";
+import { CONCERN_LABELS, FORMAT_LABELS, type ConcernFinding, type ContentCard, type VideoWithCard } from "@/lib/types";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`rounded-xl bg-surface border border-line shadow-[0_1px_0_rgba(0,0,0,0.03)] ${className}`}>{children}</div>;
@@ -53,7 +53,7 @@ export function ConcernPill({ f, flaggedBy = 0 }: { f: ConcernFinding; flaggedBy
 }
 
 /** Compact summary used in the library list. */
-export function CardSummary({ v, blocked }: { v: VideoWithCard; blocked: ConcernTag[] }) {
+export function CardSummary({ v, blocked }: { v: VideoWithCard; blocked: string[] }) {
   const c = v.card;
   if (!c) return <p className="text-sm text-muted">Not reviewed yet — run the reviewer to generate a content card.</p>;
   const present = c.concerns.filter((x) => x.present);
@@ -63,6 +63,7 @@ export function CardSummary({ v, blocked }: { v: VideoWithCard; blocked: Concern
         <Stars value={c.rating} />
         <span className="text-muted">ages {c.ageFit.min}–{c.ageFit.max}</span>
         <PacePill pace={c.pace} />
+        <Pill className="bg-line">{FORMAT_LABELS[c.format ?? "other"]}</Pill>
         {c.reviewer.model === "sample" && <Pill className="bg-sky">sample card</Pill>}
         {blocked.length > 0 && <Pill className="bg-bad text-white">hidden from kid mode</Pill>}
       </div>

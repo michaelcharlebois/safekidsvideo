@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
-import type { ConcernTag, FamilySettings, VideoWithCard } from "@/lib/types";
+import { CONCERN_LABELS, FORMAT_LABELS, type FamilySettings, type VideoWithCard } from "@/lib/types";
 
 /** Every known video, joined with channel, AI card, confirmation tallies, and whitelist status. */
 export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
@@ -37,13 +37,14 @@ export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
  * Does this video trip the family's blocked tags?
  * A tag counts if the AI found it at intensity >= 2, OR enough parents flagged it.
  */
-export function blockedReasons(v: VideoWithCard, s: FamilySettings): ConcernTag[] {
-  const out: ConcernTag[] = [];
+export function blockedReasons(v: VideoWithCard, s: FamilySettings): string[] {
+  const out: string[] = [];
+  if (v.card?.format && s.blockedFormats.includes(v.card.format)) out.push(FORMAT_LABELS[v.card.format]);
   for (const tag of s.blockedTags) {
     const ai = v.card?.concerns.find((c) => c.tag === tag);
     const aiHit = !!ai && ai.present && ai.intensity >= 2;
     const parentHit = (v.confirmations.flaggedTags[tag] ?? 0) >= s.flagThreshold;
-    if (aiHit || parentHit) out.push(tag);
+    if (aiHit || parentHit) out.push(CONCERN_LABELS[tag]);
   }
   return out;
 }
