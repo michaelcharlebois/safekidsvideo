@@ -14,7 +14,7 @@ export default async function LoginPage(props: PageProps<"/login">) {
       <div className="w-full max-w-sm text-center">
         <p className="text-accent font-extrabold text-sm tracking-widest uppercase">Parents</p>
         <h1 className="mt-2 text-2xl font-extrabold">Sign in</h1>
-        <p className="mt-1 text-muted text-sm">We&apos;ll email you a 6-digit code. No password to remember.</p>
+        <p className="mt-1 text-muted text-sm">We&apos;ll email you a sign-in code. No password to remember.</p>
         {linkFailed && <p className="mt-2 text-bad text-sm font-bold">That link didn&apos;t work — request a new code and type it in here instead.</p>}
         <LoginForm next={next} />
       </div>

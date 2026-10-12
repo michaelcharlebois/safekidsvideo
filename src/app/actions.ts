@@ -149,7 +149,7 @@ export async function verifyCode(_prev: VerifyResult, form: FormData): Promise<V
   const email = String(form.get("email") ?? "").trim().toLowerCase();
   const token = String(form.get("code") ?? "").replace(/\D/g, "");
   const next = String(form.get("next") ?? "/parent");
-  if (token.length < 6) return { error: "Enter the 6-digit code from the email." };
+  if (token.length < 6) return { error: "Enter the code from the email." };
   const sb = await supabaseAuthClient();
   const { error } = await sb.auth.verifyOtp({ email, token, type: "email" });
   if (error) return { error: "That code didn't work. Codes expire after an hour — request a new one if needed." };
