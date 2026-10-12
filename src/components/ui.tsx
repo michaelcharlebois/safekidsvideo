@@ -84,7 +84,7 @@ export function TopBar({ title, right }: { title: string; right?: ReactNode }) {
     <header className="sticky top-0 z-10 bg-bg/90 backdrop-blur border-b border-line">
       <div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between gap-3">
         <Link href="/" className="font-extrabold text-lg tracking-tight">
-          <span className="text-accent">●</span> SafeKidsVideo <span className="text-muted font-semibold">/ {title}</span>
+          <span className="text-accent">●</span> Sift <span className="text-muted font-semibold">/ {title}</span>
         </Link>
         <div className="flex items-center gap-2">{right}</div>
       </div>

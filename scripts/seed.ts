@@ -19,7 +19,8 @@ async function main() {
   for (const c of seed.channels) await db.upsertChannel(c);
   for (const v of seed.videos) await db.upsertVideo(v);
   for (const c of seed.cards) await db.upsertCard(c);
-  for (const w of seed.whitelist) await db.addToWhitelist(w);
+  // The sample whitelist belongs to the local default family; real families approve their own.
+  if (STORE_KIND === "local") for (const w of seed.whitelist) await db.addToWhitelist(w);
   console.log(`seeded ${seed.channels.length} channels, ${seed.videos.length} videos, ${seed.cards.length} cards`);
 }
 

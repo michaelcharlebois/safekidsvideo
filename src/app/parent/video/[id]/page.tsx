@@ -1,6 +1,8 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { db, DEFAULT_FAMILY_ID } from "@/lib/db";
+import { notFound, redirect } from "next/navigation";
+import { db } from "@/lib/db";
+import { resolveViewer } from "@/lib/family";
+import { supabaseEnabled } from "@/lib/supabase/server";
 import { blockedReasons, getLibrary } from "@/lib/queries";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS } from "@/lib/types";
 import { Button, Card, ConcernPill, PacePill, Pill, Stars, TopBar } from "@/components/ui";
@@ -10,7 +12,9 @@ export const dynamic = "force-dynamic";
 
 export default async function VideoPage(props: PageProps<"/parent/video/[id]">) {
   const { id } = await props.params;
-  const fid = DEFAULT_FAMILY_ID;
+  const viewer = await resolveViewer();
+  if (viewer.role !== "parent") redirect(supabaseEnabled ? `/login?next=/parent/video/${id}` : `/unlock?next=/parent/video/${id}`);
+  const fid = viewer.familyId;
   const [lib, settings, confirmations] = await Promise.all([getLibrary(fid), db.getSettings(fid), db.listConfirmations([id])]);
   const v = lib.find((x) => x.id === id);
   if (!v) notFound();

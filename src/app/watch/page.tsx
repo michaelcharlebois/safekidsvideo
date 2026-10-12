@@ -1,12 +1,15 @@
 import Link from "next/link";
 import Image from "next/image";
-import { DEFAULT_FAMILY_ID } from "@/lib/db";
+import { redirect } from "next/navigation";
+import { resolveViewer } from "@/lib/family";
 import { getKidFeed } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
 export default async function WatchPage() {
-  const feed = await getKidFeed(DEFAULT_FAMILY_ID);
+  const viewer = await resolveViewer();
+  if (!viewer.familyId) redirect("/pair");
+  const feed = await getKidFeed(viewer.familyId);
   return (
     <main className="flex-1 px-4 pb-8">
       {feed.length === 0 ? (

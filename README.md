@@ -1,4 +1,4 @@
-# SafeKidsVideo
+# Sift
 
 Know exactly what's in it before your kid watches it.
 
@@ -33,11 +33,21 @@ The reviewer sends the public YouTube URL to Gemini (no downloading), forces a J
 
 ## Go multi-family (Supabase)
 
-1. Create a Supabase project, run `supabase/migrations/0001_init.sql` in the SQL editor.
-2. Fill the `SUPABASE_*` vars in `.env.local`. The app switches stores automatically.
-3. `npm run seed` to load the sample data, then `npm run review -- --all`.
+With Supabase configured the app switches from "one family, PIN lock" to real accounts:
+parents sign in by magic link, each account owns a family, and kid devices are paired with a
+6-digit code (they never sign in).
 
-Auth isn't wired yet — everything belongs to `DEFAULT_FAMILY_ID`. The schema and RLS policies are ready for Supabase Auth; `src/app/actions.ts` → `familyId()` is the one place to swap in the signed-in parent.
+1. Create a Supabase project. In the SQL editor, run `supabase/migrations/0001_init.sql`,
+   then `0002_format.sql`, then `0003_auth_devices.sql`.
+2. Settings → API Keys: put the Project URL, publishable key, and secret key in `.env.local`
+   (see `.env.example`). The app switches stores automatically.
+3. Authentication → URL Configuration: add your site URL(s) (e.g. `http://localhost:3000` and your
+   Vercel URL) to the redirect allow list so magic links can land on `/auth/callback`.
+4. `npm run seed` loads the sample channels/videos/cards, then `npm run review -- --all` replaces
+   the sample cards with real reviews.
+
+Flow: parent opens `/login` → email link → `/parent`. Parent → **Devices** → make a code.
+Tablet opens `/pair` → types the code → lands in kid mode, permanently.
 
 ## Layout
 
@@ -55,7 +65,8 @@ data/seed.json      sample data (db.json is gitignored)
 
 ## Next
 
-- Supabase Auth + per-family sign-in
+- "Ask a grown-up": kid requests a video, parent gets a push, approves from the card
+- Daily "how was today?" check-in and inbox digest
 - Channel report cards (review 5 videos per channel, summarize consistency)
 - Calibration set: 20 hand-reviewed videos to tune the prompt before scaling to 200
 - Public, shareable content-card pages (SEO flywheel)

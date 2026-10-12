@@ -1,40 +1,39 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { db, DEFAULT_FAMILY_ID } from "@/lib/db";
+import { db } from "@/lib/db";
 import { ingestChannel, ingestVideo } from "@/lib/ingest";
 import { parseYouTubeUrl } from "@/lib/youtube";
 import { CONCERN_TAGS, FORMATS, type ConcernTag, type VideoFormat } from "@/lib/types";
 import { PARENT_COOKIE } from "@/lib/auth";
+import { createPairingCode, DEVICE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice } from "@/lib/family";
+import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
 
-async function familyId() {
-  // Single-family until auth lands; see src/lib/db/resolve.ts.
-  return DEFAULT_FAMILY_ID;
-}
-
-async function requireParent() {
-  const c = await cookies();
-  if (c.get(PARENT_COOKIE)?.value !== "1") redirect("/unlock?next=/parent");
+/** Resolve the signed-in parent's family, or bounce to sign-in / unlock. */
+async function requireParent(): Promise<string> {
+  const v = await resolveViewer();
+  if (v.role === "parent") return v.familyId;
+  redirect(supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent");
 }
 
 export type AddResult = { ok: true; message: string } | { ok: false; error: string };
 
 export async function addByUrl(_prev: AddResult | null, form: FormData): Promise<AddResult> {
-  await requireParent();
+  const fid = await requireParent();
   const input = String(form.get("url") ?? "").trim();
   const parsed = parseYouTubeUrl(input);
   try {
     if (parsed.kind === "video") {
       const v = await ingestVideo(input);
-      await db.addToWhitelist({ familyId: await familyId(), kind: "video", targetId: v.id });
+      await db.addToWhitelist({ familyId: fid, kind: "video", targetId: v.id });
       revalidatePath("/parent");
       return { ok: true, message: `Added "${v.title}" to the approved list.` };
     }
     if (parsed.kind === "channel") {
       const { channelId, videos } = await ingestChannel(input, 5);
-      await db.addToWhitelist({ familyId: await familyId(), kind: "channel", targetId: channelId });
+      await db.addToWhitelist({ familyId: fid, kind: "channel", targetId: channelId });
       revalidatePath("/parent");
       return {
         ok: true,
@@ -50,11 +49,10 @@ export async function addByUrl(_prev: AddResult | null, form: FormData): Promise
 }
 
 export async function toggleWhitelist(form: FormData) {
-  await requireParent();
+  const fid = await requireParent();
   const kind = form.get("kind") as "channel" | "video";
   const targetId = String(form.get("targetId"));
   const on = form.get("on") === "1";
-  const fid = await familyId();
   if (on) await db.addToWhitelist({ familyId: fid, kind, targetId });
   else await db.removeFromWhitelist(fid, kind, targetId);
   revalidatePath("/parent");
@@ -62,21 +60,20 @@ export async function toggleWhitelist(form: FormData) {
 }
 
 export async function confirmCard(form: FormData) {
-  await requireParent();
+  const fid = await requireParent();
   const videoId = String(form.get("videoId"));
   const verdict = form.get("verdict") === "flag" ? "flag" : "agree";
   const tags = CONCERN_TAGS.filter((t) => form.get(`tag:${t}`) === "on") as ConcernTag[];
   const note = String(form.get("note") ?? "").trim() || undefined;
   const kidAgeRaw = form.get("kidAge");
   const kidAge = kidAgeRaw ? Number(kidAgeRaw) : undefined;
-  await db.upsertConfirmation({ videoId, familyId: await familyId(), verdict, tags: verdict === "flag" ? tags : undefined, note, kidAge });
+  await db.upsertConfirmation({ videoId, familyId: fid, verdict, tags: verdict === "flag" ? tags : undefined, note, kidAge });
   revalidatePath("/parent");
   revalidatePath(`/parent/video/${videoId}`);
 }
 
 export async function saveSettings(form: FormData) {
-  await requireParent();
-  const fid = await familyId();
+  const fid = await requireParent();
   const current = await db.getSettings(fid);
   const pin = String(form.get("pin") ?? "").trim();
   const blockedTags = CONCERN_TAGS.filter((t) => form.get(`block:${t}`) === "on") as ConcernTag[];
@@ -98,7 +95,9 @@ export type UnlockResult = { error: string } | null;
 export async function unlock(_prev: UnlockResult, form: FormData): Promise<UnlockResult> {
   const pin = String(form.get("pin") ?? "");
   const next = String(form.get("next") ?? "/parent");
-  const settings = await db.getSettings(await familyId());
+  const v = await resolveViewer();
+  if (!v.familyId) redirect("/login");
+  const settings = await db.getSettings(v.familyId);
   if (pin !== settings.pinHash) return { error: "Wrong PIN" };
   const c = await cookies();
   c.set(PARENT_COOKIE, "1", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 12 });
@@ -109,4 +108,56 @@ export async function lock() {
   const c = await cookies();
   c.delete(PARENT_COOKIE);
   redirect("/watch");
+}
+
+// ---- Supabase mode: parent sign-in ---------------------------------------
+
+export type SignInResult = { sent: true; email: string } | { error: string } | null;
+
+export async function signIn(_prev: SignInResult, form: FormData): Promise<SignInResult> {
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const next = String(form.get("next") ?? "/parent");
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: "Enter a valid email." };
+  const h = await headers();
+  const origin = h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+  const sb = await supabaseAuthClient();
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}` },
+  });
+  if (error) return { error: error.message };
+  return { sent: true, email };
+}
+
+export async function signOut() {
+  const sb = await supabaseAuthClient();
+  await sb.auth.signOut();
+  redirect("/");
+}
+
+// ---- Supabase mode: kid-device pairing -----------------------------------
+
+export async function newPairingCode() {
+  const fid = await requireParent();
+  await createPairingCode(fid);
+  revalidatePath("/parent/devices");
+}
+
+export type PairResult = { error: string } | null;
+
+export async function pairDevice(_prev: PairResult, form: FormData): Promise<PairResult> {
+  const code = String(form.get("code") ?? "").replace(/\D/g, "");
+  const name = String(form.get("name") ?? "").trim().slice(0, 40);
+  if (code.length !== 6) return { error: "Enter the 6-digit code." };
+  const r = await redeemPairingCode(code, name);
+  if ("error" in r) return { error: r.error };
+  const c = await cookies();
+  c.set(DEVICE_COOKIE, r.token, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
+  redirect("/watch");
+}
+
+export async function unpairDevice(form: FormData) {
+  const fid = await requireParent();
+  await revokeDevice(fid, String(form.get("deviceId")));
+  revalidatePath("/parent/devices");
 }

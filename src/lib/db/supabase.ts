@@ -6,8 +6,12 @@ import { DEFAULT_SETTINGS, type Store } from "./store";
 
 function client(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  // Server-side only. Service role for the reviewer script; anon for the app until auth lands.
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  // Server-side only (Next.js server + scripts). Secret key bypasses RLS; callers scope by family id.
+  const key =
+    process.env.SUPABASE_SECRET_KEY ??
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   return createClient(url, key, { auth: { persistSession: false } });
 }
 

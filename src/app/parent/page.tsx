@@ -1,10 +1,13 @@
 import Link from "next/link";
 import Image from "next/image";
-import { db, DEFAULT_FAMILY_ID, STORE_KIND } from "@/lib/db";
+import { redirect } from "next/navigation";
+import { db, STORE_KIND } from "@/lib/db";
+import { resolveViewer } from "@/lib/family";
+import { supabaseEnabled } from "@/lib/supabase/server";
 import { blockedReasons, getLibrary } from "@/lib/queries";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMATS, FORMAT_LABELS } from "@/lib/types";
 import { Button, Card, CardSummary, Pill, TopBar } from "@/components/ui";
-import { lock, saveSettings, toggleWhitelist } from "@/app/actions";
+import { lock, saveSettings, signOut, toggleWhitelist } from "@/app/actions";
 import { AddForm } from "./add-form";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +15,9 @@ export const dynamic = "force-dynamic";
 export default async function ParentPage(props: PageProps<"/parent">) {
   const sp = await props.searchParams;
   const filter = typeof sp.filter === "string" ? sp.filter : "all";
-  const fid = DEFAULT_FAMILY_ID;
+  const viewer = await resolveViewer();
+  if (viewer.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent");
+  const fid = viewer.familyId;
   const [lib, settings, channels] = await Promise.all([getLibrary(fid), db.getSettings(fid), db.listChannels()]);
   const approvedChannels = new Set((await db.listWhitelist(fid)).filter((w) => w.kind === "channel").map((w) => w.targetId));
 
@@ -34,7 +39,14 @@ export default async function ParentPage(props: PageProps<"/parent">) {
         right={
           <>
             <Link href="/watch" className="text-sm font-bold text-muted hover:text-ink">Preview kid mode →</Link>
-            <form action={lock}><Button variant="ghost" type="submit">Lock</Button></form>
+            {supabaseEnabled ? (
+              <>
+                <Link href="/parent/devices" className="text-sm font-bold text-muted hover:text-ink">Devices</Link>
+                <form action={signOut}><Button variant="ghost" type="submit">Sign out</Button></form>
+              </>
+            ) : (
+              <form action={lock}><Button variant="ghost" type="submit">Lock</Button></form>
+            )}
           </>
         }
       />
@@ -152,7 +164,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
 
           <p className="text-xs text-muted px-1">
             Storage: <Pill className="bg-line">{STORE_KIND}</Pill>{" "}
-            {STORE_KIND === "local" ? "— data/db.json. Set Supabase env vars to go multi-family." : ""}
+            {STORE_KIND === "local" ? "— data/db.json. Set Supabase env vars to go multi-family." : viewer.email ? `— signed in as ${viewer.email}` : ""}
           </p>
         </aside>
       </main>
