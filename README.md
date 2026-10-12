@@ -38,7 +38,7 @@ parents sign in by magic link, each account owns a family, and kid devices are p
 6-digit code (they never sign in).
 
 1. Create a Supabase project. In the SQL editor, run `supabase/migrations/0001_init.sql`,
-   then `0002_format.sql`, `0003_auth_devices.sql`, `0004_requests.sql`.
+   then `0002_format.sql`, `0003_auth_devices.sql`, `0004_requests.sql`, `0005_open_mode.sql`.
 2. Settings → API Keys: put the Project URL, publishable key, and secret key in `.env.local`
    (see `.env.example`). The app switches stores automatically.
 3. Authentication → URL Configuration: add your site URL(s) (e.g. `http://localhost:3000` and your

@@ -13,6 +13,7 @@ export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
   const wlVideos = new Set(whitelist.filter((w) => w.kind === "video").map((w) => w.targetId));
   const wlChannels = new Set(whitelist.filter((w) => w.kind === "channel").map((w) => w.targetId));
   const overrides = new Set(whitelist.filter((w) => w.kind === "override").map((w) => w.targetId));
+  const autos = new Set(whitelist.filter((w) => w.kind === "auto").map((w) => w.targetId));
 
   const tallies = new Map<string, VideoWithCard["confirmations"]>();
   for (const c of confirmations) {
@@ -30,8 +31,9 @@ export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
     channel: channelById.get(v.channelId),
     card: cardById.get(v.id),
     confirmations: tallies.get(v.id) ?? { agree: 0, flag: 0, flaggedTags: {} },
-    whitelisted: wlVideos.has(v.id) || wlChannels.has(v.channelId) || overrides.has(v.id),
+    whitelisted: wlVideos.has(v.id) || wlChannels.has(v.channelId) || overrides.has(v.id) || autos.has(v.id),
     overridden: overrides.has(v.id),
+    autoApproved: autos.has(v.id),
   }));
 }
 
@@ -74,4 +76,24 @@ export async function getKidScreen(familyId: string) {
     else askable.push(v);
   }
   return { playable, askable };
+}
+
+/**
+ * Would the AI card alone justify playing this without a parent? Used in open mode.
+ * Requires: a real card, no blocked reasons, decent confidence, and an age fit that includes the kid.
+ */
+export function aiPasses(v: VideoWithCard, s: FamilySettings): { pass: boolean; reasons: string[] } {
+  const c = v.card;
+  if (!c || c.reviewer.model === "sample") return { pass: false, reasons: ["Not reviewed yet"] };
+  const reasons = blockedReasons(v, s);
+  if (c.confidence < 0.7) reasons.push("AI wasn't confident");
+  const age = s.kidAge ?? 6;
+  if (c.ageFit.min > age) reasons.push(`Rated for ages ${c.ageFit.min}+`);
+  return { pass: reasons.length === 0, reasons };
+}
+
+/** The single play gate for kid mode. */
+export function canPlay(v: VideoWithCard, s: FamilySettings): boolean {
+  if (v.whitelisted) return blockedReasons(v, s).length === 0;
+  return s.mode === "open" && aiPasses(v, s).pass;
 }

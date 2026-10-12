@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { resolveViewer } from "@/lib/family";
 import { getKidScreen } from "@/lib/queries";
 import { pendingVideoIds } from "@/lib/activity";
+import { db } from "@/lib/db";
 import { askGrownUp } from "@/app/actions";
 import type { VideoWithCard } from "@/lib/types";
 
@@ -14,10 +15,18 @@ const thumb = (v: VideoWithCard) => v.thumbnailUrl ?? `https://i.ytimg.com/vi/${
 export default async function WatchPage() {
   const viewer = await resolveViewer();
   if (!viewer.familyId) redirect("/pair");
-  const [{ playable, askable }, pending] = await Promise.all([getKidScreen(viewer.familyId), pendingVideoIds(viewer.familyId)]);
+  const [{ playable, askable }, pending, settings] = await Promise.all([
+    getKidScreen(viewer.familyId), pendingVideoIds(viewer.familyId), db.getSettings(viewer.familyId),
+  ]);
 
   return (
     <main className="flex-1 px-4 pb-8 space-y-8">
+      {settings.mode !== "locked" && (
+        <form action="/watch/search" className="flex gap-2">
+          <input name="q" placeholder="What do you want to watch?" className="flex-1 rounded-full border-2 border-line bg-surface px-5 py-3 text-xl font-bold outline-none focus:border-accent" />
+          <button type="submit" className="rounded-full bg-accent px-5 py-3 text-xl font-extrabold text-accent-ink active:scale-95">🔍</button>
+        </form>
+      )}
       {playable.length === 0 ? (
         <div className="mt-16 text-center">
           <p className="text-3xl font-extrabold">No videos yet</p>

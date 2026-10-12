@@ -48,4 +48,6 @@ export const DEFAULT_SETTINGS = (familyId: string): FamilySettings => ({
   blockedFormats: ["gameplay_commentary"],
   flagThreshold: 3,
   hideUnreviewed: true,
+  mode: "locked",
+  dailyCheckLimit: 20,
 });

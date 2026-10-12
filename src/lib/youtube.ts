@@ -127,3 +127,43 @@ export async function fetchChannelMeta(channelIdOrHandle: string): Promise<{ id:
   if (!c) return null;
   return { id: c.id, title: c.snippet.title, handle: c.snippet.customUrl, thumbnailUrl: c.snippet.thumbnails?.default?.url, description: c.snippet.description };
 }
+
+export type SearchHit = VideoMeta & { madeForKids: boolean };
+
+/**
+ * Kid-safe YouTube search (Data API only). Strict safe search, embeddable videos only,
+ * then filtered to videos YouTube itself marks "made for kids".
+ */
+export async function searchKidsVideos(query: string, max = 12): Promise<SearchHit[]> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key || !query.trim()) return [];
+  const u = new URL("https://www.googleapis.com/youtube/v3/search");
+  u.search = new URLSearchParams({
+    part: "snippet", type: "video", safeSearch: "strict", videoEmbeddable: "true", videoSyndicated: "true",
+    maxResults: String(Math.min(max * 2, 25)), q: query.trim(), relevanceLanguage: "en", key,
+  }).toString();
+  const sr = await (await fetch(u)).json();
+  const ids: string[] = (sr.items ?? []).map((i: { id: { videoId: string } }) => i.id.videoId).filter(Boolean);
+  if (!ids.length) return [];
+  const vr = await (await fetch(
+    `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,status&id=${ids.join(",")}&key=${key}`,
+  )).json();
+  const out: SearchHit[] = [];
+  for (const item of vr.items ?? []) {
+    const sn = item.snippet;
+    const madeForKids = !!item.status?.madeForKids;
+    if (!madeForKids) continue;
+    out.push({
+      id: item.id,
+      title: sn.title,
+      channelId: sn.channelId,
+      channelTitle: sn.channelTitle,
+      thumbnailUrl: sn.thumbnails?.high?.url ?? thumbnail(item.id),
+      durationSeconds: iso8601DurationToSeconds(item.contentDetails?.duration ?? ""),
+      publishedAt: sn.publishedAt,
+      madeForKids,
+    });
+    if (out.length >= max) break;
+  }
+  return out;
+}

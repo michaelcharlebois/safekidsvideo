@@ -7,12 +7,12 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { ingestChannel, ingestVideo } from "@/lib/ingest";
 import { parseYouTubeUrl } from "@/lib/youtube";
-import { CONCERN_TAGS, FORMATS, type ConcernTag, type VideoFormat } from "@/lib/types";
+import { CONCERN_TAGS, FORMATS, type ConcernTag, type FamilyMode, type VideoFormat } from "@/lib/types";
 import { PARENT_COOKIE } from "@/lib/auth";
 import { createPairingCode, DEVICE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice } from "@/lib/family";
 import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
-import { createRequest, logWatch, resolveRequest } from "@/lib/activity";
-import { getKidScreen } from "@/lib/queries";
+import { checksToday, createRequest, logCheck, logWatch, resolveRequest } from "@/lib/activity";
+import { aiPasses, canPlay, getKidScreen, getLibrary } from "@/lib/queries";
 import { reviewVideo } from "@/lib/reviewer";
 
 /** Resolve the signed-in parent's family, or bounce to sign-in / unlock. */
@@ -89,6 +89,8 @@ export async function saveSettings(form: FormData) {
     blockedTags,
     blockedFormats,
     hideUnreviewed: form.get("hideUnreviewed") === "on",
+    mode: (["locked", "open", "open_ask"].includes(String(form.get("mode"))) ? String(form.get("mode")) : current.mode) as FamilyMode,
+    dailyCheckLimit: Number(form.get("dailyCheckLimit") ?? current.dailyCheckLimit) || current.dailyCheckLimit,
     flagThreshold: Number(form.get("flagThreshold") ?? current.flagThreshold) || current.flagThreshold,
   });
   revalidatePath("/parent");
@@ -207,4 +209,59 @@ export async function recordWatch(videoId: string, completed: boolean) {
   const v = await resolveViewer();
   if (!v.familyId) return;
   await logWatch(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, completed);
+}
+
+// ---- Open mode: kid-triggered AI check ----------------------------------------
+
+export type CheckResult =
+  | { status: "playing"; videoId: string }
+  | { status: "asked"; videoId: string; reasons: string[] }
+  | { status: "limit" }
+  | { status: "error"; message: string }
+  | null;
+
+/**
+ * Kid taps "Check it" on a search result. Ingest the video, review it if needed,
+ * then: open mode + passes → auto-approve and play; otherwise → ask the parent.
+ */
+export async function checkVideo(_prev: CheckResult, form: FormData): Promise<CheckResult> {
+  const v = await resolveViewer();
+  if (!v.familyId) redirect("/pair");
+  const videoId = String(form.get("videoId") ?? "").trim();
+  if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return { status: "error", message: "Bad video id" };
+  const settings = await db.getSettings(v.familyId);
+  if (settings.mode === "locked") return { status: "error", message: "Search is off" };
+  const deviceId = v.role === "device" ? v.deviceId : undefined;
+
+  if ((await checksToday(v.familyId)) >= settings.dailyCheckLimit) {
+    return { status: "limit" };
+  }
+
+  try {
+    const video = await ingestVideo(videoId);
+    let card = await db.getCard(video.id);
+    if (!card || card.reviewer.model === "sample") {
+      card = await reviewVideo(video.id);
+      await db.upsertCard(card);
+    }
+    const lib = await getLibrary(v.familyId);
+    const row = lib.find((x) => x.id === video.id);
+    if (!row) throw new Error("Video vanished");
+
+    if (canPlay(row, settings)) {
+      if (!row.whitelisted) await db.addToWhitelist({ familyId: v.familyId, kind: "auto", targetId: video.id });
+      await logCheck(v.familyId, video.id, deviceId, "passed");
+      revalidatePath("/watch");
+      return { status: "playing", videoId: video.id };
+    }
+    const { reasons } = aiPasses(row, settings);
+    await createRequest(v.familyId, video.id, deviceId);
+    await logCheck(v.familyId, video.id, deviceId, settings.mode === "open_ask" && reasons.length === 0 ? "needs_parent" : "blocked");
+    revalidatePath("/watch");
+    revalidatePath("/parent");
+    return { status: "asked", videoId: video.id, reasons };
+  } catch (e) {
+    await logCheck(v.familyId, videoId, deviceId, "failed");
+    return { status: "error", message: (e as Error).message };
+  }
 }

@@ -123,7 +123,19 @@ export type Confirmation = {
   createdAt: string;
 };
 
-export type WhitelistKind = "channel" | "video" | "override";
+export type WhitelistKind = "channel" | "video" | "override" | "auto";
+
+/**
+ * locked:   approved channels/videos only
+ * open:     kid can search; a video plays if its card clears the family's filters (kid can trigger the AI check)
+ * open_ask: kid can search; anything not already approved goes to the parent first
+ */
+export type FamilyMode = "locked" | "open" | "open_ask";
+export const MODE_LABELS: Record<FamilyMode, { title: string; blurb: string }> = {
+  locked: { title: "Locked", blurb: "Only channels and videos you approve." },
+  open: { title: "Open", blurb: "Kid can search. AI checks each video against your filters; it plays if it passes, asks you if not." },
+  open_ask: { title: "Open, ask first", blurb: "Kid can search, but anything new comes to you before it plays." },
+};
 
 export type WhitelistEntry = {
   familyId: string;
@@ -144,6 +156,9 @@ export type FamilySettings = {
   flagThreshold: number;
   /** hide videos from approved channels until they have a content card */
   hideUnreviewed: boolean;
+  mode: FamilyMode;
+  /** kid-triggered AI checks per day */
+  dailyCheckLimit: number;
 };
 
 /** Aggregate view the UI renders. */
@@ -154,6 +169,8 @@ export type VideoWithCard = Video & {
   whitelisted: boolean;
   /** parent explicitly approved this video over their filters */
   overridden: boolean;
+  /** added by a kid-triggered AI check that passed */
+  autoApproved: boolean;
 };
 
 export type WatchRequest = {

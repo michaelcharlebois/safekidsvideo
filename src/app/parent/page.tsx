@@ -5,7 +5,7 @@ import { db, STORE_KIND } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { blockedReasons, getLibrary } from "@/lib/queries";
-import { CONCERN_LABELS, CONCERN_TAGS, FORMATS, FORMAT_LABELS } from "@/lib/types";
+import { CONCERN_LABELS, CONCERN_TAGS, FORMATS, FORMAT_LABELS, MODE_LABELS, type FamilyMode } from "@/lib/types";
 import { Button, Card, CardSummary, Pill, TopBar } from "@/components/ui";
 import { lock, resolveWatchRequest, saveSettings, signOut, toggleWhitelist } from "@/app/actions";
 import { listPendingRequests } from "@/lib/activity";
@@ -121,7 +121,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                         <input type="hidden" name="targetId" value={v.id} />
                         <input type="hidden" name="on" value={v.whitelisted ? "0" : "1"} />
                         <Button type="submit" variant={v.whitelisted ? "ghost" : "primary"} className="text-xs px-3 py-1.5">
-                          {v.overridden ? "✓ Approved (override)" : v.whitelisted ? "✓ Approved" : "Approve"}
+                          {v.overridden ? "✓ Approved (override)" : v.autoApproved ? "✓ AI-checked" : v.whitelisted ? "✓ Approved" : "Approve"}
                         </Button>
                       </form>
                     </div>
@@ -161,7 +161,20 @@ export default async function ParentPage(props: PageProps<"/parent">) {
 
           <Card className="p-4">
             <form action={saveSettings} className="space-y-3">
-              <h2 className="font-extrabold">Filters</h2>
+              <h2 className="font-extrabold">What can the kid reach?</h2>
+              <div className="space-y-1.5">
+                {(Object.keys(MODE_LABELS) as FamilyMode[]).map((m) => (
+                  <label key={m} className="flex items-start gap-2 text-sm">
+                    <input type="radio" name="mode" value={m} defaultChecked={settings.mode === m} className="mt-1 accent-accent" />
+                    <span><b>{MODE_LABELS[m].title}</b> — <span className="text-muted">{MODE_LABELS[m].blurb}</span></span>
+                  </label>
+                ))}
+              </div>
+              <label className="flex items-center justify-between text-sm gap-2">
+                Kid-triggered AI checks per day
+                <input type="number" name="dailyCheckLimit" min={0} max={200} defaultValue={settings.dailyCheckLimit} className="w-16 rounded-lg border border-line px-2 py-1" />
+              </label>
+              <h2 className="font-extrabold pt-2">Filters</h2>
               <p className="text-xs text-muted">Hide any approved video where the AI found one of these at moderate strength or more, or where enough parents flagged it.</p>
               <div className="grid grid-cols-1 gap-1">
                 {CONCERN_TAGS.map((t) => (

@@ -53,3 +53,26 @@ export async function logWatch(familyId: string, videoId: string, deviceId: stri
     completed,
   });
 }
+
+// ---- kid-triggered AI checks ------------------------------------------------
+
+export type CheckOutcome = "passed" | "blocked" | "needs_parent" | "failed";
+
+export async function checksToday(familyId: string): Promise<number> {
+  if (!on()) return 0;
+  const since = new Date();
+  since.setHours(0, 0, 0, 0);
+  const { count } = await supabaseAdmin()
+    .from("kid_checks")
+    .select("id", { count: "exact", head: true })
+    .eq("family_id", familyId)
+    .gte("created_at", since.toISOString());
+  return count ?? 0;
+}
+
+export async function logCheck(familyId: string, videoId: string, deviceId: string | undefined, outcome: CheckOutcome) {
+  if (!on()) return;
+  await supabaseAdmin().from("kid_checks").insert({
+    family_id: familyId, video_id: videoId, device_id: deviceId && deviceId !== "local" ? deviceId : null, outcome,
+  });
+}
