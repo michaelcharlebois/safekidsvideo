@@ -9,7 +9,9 @@
  *
  * Needs GEMINI_API_KEY. Writes to Supabase if configured, else data/db.json.
  */
-import "dotenv/config";
+import { config as loadEnv } from "dotenv";
+loadEnv({ path: ".env.local" });
+loadEnv();
 import { readFileSync } from "node:fs";
 import { db, STORE_KIND } from "@/lib/db/resolve";
 import { ingestChannel, ingestVideo } from "@/lib/ingest";
