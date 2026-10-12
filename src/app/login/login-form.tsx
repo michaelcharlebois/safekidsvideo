@@ -21,7 +21,7 @@ export function LoginForm({ next }: { next: string }) {
       />
       {state && "error" in state && <p className="text-bad text-sm font-bold">{state.error}</p>}
       <Button type="submit" disabled={pending} className="w-full py-3">
-        {pending ? "Sending…" : "Email me a link"}
+        {pending ? "Sending…" : "Email me a code"}
       </Button>
     </form>
   );
