@@ -5,11 +5,11 @@ import { resolveViewer } from "@/lib/family";
 import { db } from "@/lib/db";
 import { searchKidsVideos } from "@/lib/youtube";
 import { aiPasses, canPlay, getLibrary } from "@/lib/queries";
-import { pendingVideoIds } from "@/lib/activity";
-import { CheckButton } from "./check-button";
+import { pendingCheckIds, pendingVideoIds, recentlyApprovedIds } from "@/lib/activity";
+import { CheckButton, type Suggestion } from "./check-button";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 180; // a kid-triggered review can take a minute or two
+export const maxDuration = 300; // background reviews of long videos run inside this request's budget
 
 export default async function SearchPage(props: PageProps<"/watch/search">) {
   const viewer = await resolveViewer();
@@ -19,12 +19,22 @@ export default async function SearchPage(props: PageProps<"/watch/search">) {
 
   const sp = await props.searchParams;
   const q = typeof sp.q === "string" ? sp.q.slice(0, 80) : "";
-  const [hits, lib, pending] = await Promise.all([
+  const [hits, lib, pending, checking, approved] = await Promise.all([
     q ? searchKidsVideos(q, 12, settings.kidsOnlySearch) : Promise.resolve([]),
     getLibrary(viewer.familyId),
     pendingVideoIds(viewer.familyId),
+    pendingCheckIds(viewer.familyId),
+    recentlyApprovedIds(viewer.familyId),
   ]);
   const byId = new Map(lib.map((v) => [v.id, v]));
+  const ready = lib.filter((v) => canPlay(v, settings));
+  const thumbOf = (v: { id: string; thumbnailUrl?: string }) => v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`;
+  /** Already-cleared videos to offer while a check runs: same channel first, then anything. */
+  const suggestionsFor = (channelId: string): Suggestion[] => {
+    const same = ready.filter((v) => v.channelId === channelId);
+    const rest = ready.filter((v) => v.channelId !== channelId);
+    return [...same, ...rest].slice(0, 3).map((v) => ({ id: v.id, title: v.title, thumbnailUrl: thumbOf(v) }));
+  };
   const noKey = !process.env.YOUTUBE_API_KEY;
 
   return (
@@ -66,11 +76,18 @@ export default async function SearchPage(props: PageProps<"/watch/search">) {
               <p className="px-1 text-xs text-muted truncate">{h.channelTitle}</p>
               <div className="mt-2">
                 {playable ? (
-                  <Link href={`/watch/${h.id}`} className="block w-full rounded-full bg-grass py-2 text-center font-extrabold text-sm">▶ Play</Link>
+                  <Link href={`/watch/${h.id}`} className="block w-full rounded-full bg-grass py-2 text-center font-extrabold text-sm">
+                    {approved.has(h.id) ? "🎉 A grown-up said yes! ▶ Play" : "▶ Play"}
+                  </Link>
                 ) : asked ? (
                   <span className="block w-full rounded-full bg-grass py-2 text-center font-extrabold text-sm">Asked a grown-up!</span>
                 ) : (
-                  <CheckButton videoId={h.id} label={hasCard && verdict && !verdict.pass ? "Ask a grown-up" : "Check it"} />
+                  <CheckButton
+                    videoId={h.id}
+                    label={hasCard && verdict && !verdict.pass ? "Ask a grown-up" : "Check it"}
+                    suggestions={suggestionsFor(h.channelId)}
+                    initiallyChecking={checking.has(h.id) && !hasCard}
+                  />
                 )}
               </div>
             </li>

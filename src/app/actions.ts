@@ -11,7 +11,7 @@ import { CONCERN_TAGS, FORMATS, type ConcernTag, type FamilyMode, type VideoForm
 import { PARENT_COOKIE } from "@/lib/auth";
 import { createPairingCode, DEVICE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice } from "@/lib/family";
 import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
-import { checksToday, createRequest, logCheck, logWatch, resolveRequest } from "@/lib/activity";
+import { checksToday, createRequest, finishCheck, logCheck, logWatch, resolveRequest } from "@/lib/activity";
 import { aiPasses, canPlay, getKidScreen, getLibrary } from "@/lib/queries";
 import { reviewVideo } from "@/lib/reviewer";
 
@@ -221,53 +221,69 @@ export async function recordWatch(videoId: string, completed: boolean) {
 
 export type CheckResult =
   | { status: "playing"; videoId: string }
+  | { status: "checking"; videoId: string }
   | { status: "asked"; videoId: string; reasons: string[] }
   | { status: "limit" }
   | { status: "error"; message: string }
   | null;
 
+/** Given a video that now has a card: play it, or send it to the parent. */
+async function settleCheck(familyId: string, videoId: string, deviceId: string | undefined, checkId: string | null): Promise<CheckResult> {
+  const settings = await db.getSettings(familyId);
+  const lib = await getLibrary(familyId);
+  const row = lib.find((x) => x.id === videoId);
+  if (!row) throw new Error("Video vanished");
+  if (canPlay(row, settings)) {
+    if (!row.whitelisted) await db.addToWhitelist({ familyId, kind: "auto", targetId: videoId });
+    await finishCheck(checkId, "passed");
+    revalidatePath("/watch");
+    revalidatePath("/watch/search");
+    return { status: "playing", videoId };
+  }
+  const { reasons } = aiPasses(row, settings);
+  await createRequest(familyId, videoId, deviceId);
+  await finishCheck(checkId, settings.mode === "open_ask" && reasons.length === 0 ? "needs_parent" : "blocked");
+  revalidatePath("/watch");
+  revalidatePath("/watch/search");
+  revalidatePath("/parent");
+  return { status: "asked", videoId, reasons };
+}
+
 /**
- * Kid taps "Check it" on a search result. Ingest the video, review it if needed,
- * then: open mode + passes → auto-approve and play; otherwise → ask the parent.
+ * Kid taps "Check it" on a search result. If a card already exists this settles
+ * immediately; otherwise the AI review runs in the background and the tile
+ * polls until it's done.
  */
 export async function checkVideo(_prev: CheckResult, form: FormData): Promise<CheckResult> {
   const v = await resolveViewer();
   if (!v.familyId) redirect("/pair");
+  const familyId = v.familyId;
   const videoId = String(form.get("videoId") ?? "").trim();
   if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return { status: "error", message: "Bad video id" };
-  const settings = await db.getSettings(v.familyId);
+  const settings = await db.getSettings(familyId);
   if (settings.mode === "locked") return { status: "error", message: "Search is off" };
   const deviceId = v.role === "device" ? v.deviceId : undefined;
-
-  if ((await checksToday(v.familyId)) >= settings.dailyCheckLimit) {
-    return { status: "limit" };
-  }
+  if ((await checksToday(familyId)) >= settings.dailyCheckLimit) return { status: "limit" };
 
   try {
     const video = await ingestVideo(videoId);
-    let card = await db.getCard(video.id);
-    if (!card || card.reviewer.model === "sample") {
-      card = await reviewVideo(video.id);
-      await db.upsertCard(card);
+    const existing = await db.getCard(video.id);
+    if (existing && existing.reviewer.model !== "sample") {
+      const checkId = await logCheck(familyId, video.id, deviceId, "pending");
+      return await settleCheck(familyId, video.id, deviceId, checkId);
     }
-    const lib = await getLibrary(v.familyId);
-    const row = lib.find((x) => x.id === video.id);
-    if (!row) throw new Error("Video vanished");
-
-    if (canPlay(row, settings)) {
-      if (!row.whitelisted) await db.addToWhitelist({ familyId: v.familyId, kind: "auto", targetId: video.id });
-      await logCheck(v.familyId, video.id, deviceId, "passed");
-      revalidatePath("/watch");
-      return { status: "playing", videoId: video.id };
-    }
-    const { reasons } = aiPasses(row, settings);
-    await createRequest(v.familyId, video.id, deviceId);
-    await logCheck(v.familyId, video.id, deviceId, settings.mode === "open_ask" && reasons.length === 0 ? "needs_parent" : "blocked");
-    revalidatePath("/watch");
-    revalidatePath("/parent");
-    return { status: "asked", videoId: video.id, reasons };
+    const checkId = await logCheck(familyId, video.id, deviceId, "pending");
+    after(async () => {
+      try {
+        await db.upsertCard(await reviewVideo(video.id));
+        await settleCheck(familyId, video.id, deviceId, checkId);
+      } catch (e) {
+        console.error("background review failed", video.id, (e as Error).message);
+        await finishCheck(checkId, "failed");
+      }
+    });
+    return { status: "checking", videoId: video.id };
   } catch (e) {
-    await logCheck(v.familyId, videoId, deviceId, "failed");
     return { status: "error", message: (e as Error).message };
   }
 }

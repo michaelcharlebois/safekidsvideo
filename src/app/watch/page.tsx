@@ -3,9 +3,10 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import { resolveViewer } from "@/lib/family";
 import { getKidScreen } from "@/lib/queries";
-import { pendingVideoIds } from "@/lib/activity";
+import { pendingVideoIds, recentlyApprovedIds } from "@/lib/activity";
 import { db } from "@/lib/db";
 import { askGrownUp } from "@/app/actions";
+import { AutoRefresh } from "./auto-refresh";
 import type { VideoWithCard } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -15,17 +16,34 @@ const thumb = (v: VideoWithCard) => v.thumbnailUrl ?? `https://i.ytimg.com/vi/${
 export default async function WatchPage() {
   const viewer = await resolveViewer();
   if (!viewer.familyId) redirect("/pair");
-  const [{ playable, askable }, pending, settings] = await Promise.all([
-    getKidScreen(viewer.familyId), pendingVideoIds(viewer.familyId), db.getSettings(viewer.familyId),
+  const [{ playable, askable }, pending, settings, approved] = await Promise.all([
+    getKidScreen(viewer.familyId), pendingVideoIds(viewer.familyId), db.getSettings(viewer.familyId), recentlyApprovedIds(viewer.familyId),
   ]);
+  const justApproved = playable.filter((v) => approved.has(v.id));
 
   return (
     <main className="flex-1 px-4 pb-8 space-y-8">
+      {pending.size > 0 && <AutoRefresh />}
       {settings.mode !== "locked" && (
         <form action="/watch/search" className="flex gap-2">
           <input name="q" placeholder="What do you want to watch?" className="flex-1 rounded-full border-2 border-line bg-surface px-5 py-3 text-xl font-bold outline-none focus:border-accent" />
           <button type="submit" className="rounded-full bg-accent px-5 py-3 text-xl font-extrabold text-accent-ink active:scale-95">🔍</button>
         </form>
+      )}
+      {justApproved.length > 0 && (
+        <section className="rounded-2xl bg-sun/60 p-3">
+          <h2 className="font-extrabold text-lg mb-2">🎉 A grown-up said yes!</h2>
+          <ul className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {justApproved.map((v) => (
+              <li key={v.id}>
+                <Link href={`/watch/${v.id}`} className="block rounded-2xl bg-surface p-2 shadow-sm active:scale-[0.97] transition">
+                  <Image src={thumb(v)} alt="" width={480} height={270} unoptimized draggable={false} className="w-full aspect-video rounded-xl object-cover bg-line" />
+                  <p className="mt-2 px-1 pb-1 font-extrabold leading-snug line-clamp-2 text-base">{v.title}</p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
       {playable.length === 0 ? (
         <div className="mt-16 text-center">
