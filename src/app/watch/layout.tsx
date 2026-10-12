@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ExitButton } from "./exit-button";
 import { RemoteNav } from "./remote-nav";
+import { FullscreenButton } from "./fullscreen-button";
+import { KidHeader } from "./kid-header";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { resolveViewer } from "@/lib/family";
 import { db } from "@/lib/db";
@@ -12,7 +14,7 @@ export default async function WatchLayout({ children }: LayoutProps<"/watch">) {
   return (
     <div className="kid-mode flex-1 flex flex-col">
       <RemoteNav />
-      <header className="sticky top-0 z-10 flex items-center justify-between gap-3 px-5 py-3 bg-gradient-to-b from-[#0b1020] to-transparent">
+      <KidHeader>
         <Link href="/watch" className="bigbtn flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xl font-extrabold active:scale-95">
           <span className="text-2xl leading-none">🏠</span><span className="hidden sm:inline">Home</span>
         </Link>
@@ -21,8 +23,11 @@ export default async function WatchLayout({ children }: LayoutProps<"/watch">) {
             🔍 <span>Search</span>
           </Link>
         )}
-        <ExitButton target={supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent"} />
-      </header>
+        <div className="flex items-center gap-2">
+          <FullscreenButton />
+          <ExitButton target={supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent"} />
+        </div>
+      </KidHeader>
       {children}
     </div>
   );

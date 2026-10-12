@@ -73,23 +73,46 @@ export function Player({ playlist, index }: { playlist: Item[]; index: number })
     }
   }, [current.id]);
 
+  // Controls overlay: shows on any key/pointer activity, hides after 3s.
+  const [showUi, setShowUi] = useState(true);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const poke = () => {
+    setShowUi(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setShowUi(false), 3000);
+  };
+  useEffect(() => {
+    hideTimer.current = setTimeout(() => setShowUi(false), 3000);
+    window.addEventListener("keydown", poke);
+    window.addEventListener("pointermove", poke);
+    window.addEventListener("pointerdown", poke);
+    return () => {
+      window.removeEventListener("keydown", poke);
+      window.removeEventListener("pointermove", poke);
+      window.removeEventListener("pointerdown", poke);
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    };
+     
+  }, []);
+
   return (
-    <main className="flex-1 flex flex-col items-center px-3 pb-8">
-      <div className="relative w-full max-w-5xl aspect-video overflow-hidden rounded-2xl bg-black shadow-[0_30px_60px_rgba(0,0,0,.6)]">
-        <div ref={hostRef} className="absolute inset-0 h-full w-full" />
-        {/* Block the title bar / channel avatar / share links at the top of the embed. */}
-        <div className="absolute inset-x-0 top-0 h-14" aria-hidden />
-      </div>
-      <p className="mt-4 text-lg font-extrabold text-center line-clamp-1 text-[var(--kmuted)]">{current.title}</p>
-      <div className="mt-4 flex gap-4">
-        <button onClick={() => router.push("/watch")} className="bigbtn rounded-full bg-white/10 px-7 py-4 text-xl font-extrabold active:scale-95">
-          🏠 Home
-        </button>
-        {playlist.length > 1 && (
-          <button onClick={() => setI((x) => (x + 1) % playlist.length)} className="bigbtn rounded-full bg-[var(--kfocus)] px-7 py-4 text-xl font-extrabold text-[#0b1020] active:scale-95">
-            Next ▶ <span className="hidden sm:inline font-bold opacity-70">{next.title.slice(0, 22)}</span>
+    <main className="fixed inset-0 bg-black">
+      <div ref={hostRef} className="absolute inset-0 h-full w-full" />
+      {/* Block the title bar / channel avatar / share links at the top of the embed. */}
+      <div className="absolute inset-x-0 top-0 h-16" aria-hidden />
+
+      <div className={`absolute inset-x-0 bottom-0 flex flex-col items-center gap-3 bg-gradient-to-t from-black/90 to-transparent px-4 pb-6 pt-16 transition-opacity duration-300 ${showUi ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+        <p className="text-lg font-extrabold text-center line-clamp-1 text-white/80">{current.title}</p>
+        <div className="flex gap-4">
+          <button onClick={() => router.push("/watch")} className="bigbtn rounded-full bg-white/15 px-7 py-4 text-xl font-extrabold text-white active:scale-95">
+            🏠 Home
           </button>
-        )}
+          {playlist.length > 1 && (
+            <button onClick={() => setI((x) => (x + 1) % playlist.length)} className="bigbtn rounded-full bg-[var(--kfocus)] px-7 py-4 text-xl font-extrabold text-[#0b1020] active:scale-95">
+              Next ▶ <span className="hidden sm:inline font-bold opacity-70">{next.title.slice(0, 22)}</span>
+            </button>
+          )}
+        </div>
       </div>
     </main>
   );
