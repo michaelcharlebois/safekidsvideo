@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1920, height=1080">
+  <title>Sift</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1020; color: #f4f6ff; font-family: system-ui, sans-serif; }
+    .wrap { display: flex; height: 100%; align-items: center; justify-content: center; flex-direction: column; gap: 16px; }
+    .logo { width: 96px; height: 96px; border-radius: 22px; background: #ff7a59; display: flex; align-items: center; justify-content: center; font-size: 48px; }
+    p { color: #9aa4c7; font-size: 22px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">▶</div>
+    <p id="msg">Loading Sift…</p>
+  </div>
+  <script>
+    // Hosted web app: the TV app is a shell that loads the live site. Updates ship via Vercel.
+    var SITE = "https://shiftkids.vercel.app/watch";
+    try {
+      // Let the remote's Return/Back reach the page as a key event instead of closing the app.
+      if (window.tizen && tizen.tvinputdevice) {
+        ["MediaPlayPause", "MediaPlay", "MediaPause", "MediaStop"].forEach(function (k) {
+          try { tizen.tvinputdevice.registerKey(k); } catch (e) {}
+        });
+      }
+    } catch (e) {}
+    if (navigator.onLine === false) {
+      document.getElementById("msg").textContent = "No internet connection. Check the TV's Wi-Fi.";
+      window.addEventListener("online", function () { location.replace(SITE); });
+    } else {
+      location.replace(SITE);
+    }
+  </script>
+</body>
+</html>

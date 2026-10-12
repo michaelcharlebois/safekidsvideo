@@ -22,9 +22,13 @@ export function RemoteNav() {
       if (typing) return;
 
       if (BACK_KEYS.has(e.key) || BACK_CODES.has(e.keyCode)) {
+        e.preventDefault();
         if (pathname !== "/watch") {
-          e.preventDefault();
           router.push("/watch");
+        } else {
+          // Already home: inside the Samsung TV app, Return leaves the app like any other app.
+          const t = (window as Window & { tizen?: { application: { getCurrentApplication(): { exit(): void } } } }).tizen;
+          try { t?.application.getCurrentApplication().exit(); } catch { /* not in a Tizen app */ }
         }
         return;
       }
