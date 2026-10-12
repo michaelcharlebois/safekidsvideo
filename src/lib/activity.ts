@@ -1,5 +1,7 @@
 import "server-only";
 import { supabaseAdmin, supabaseEnabled } from "@/lib/supabase/server";
+import { pushToFamily } from "@/lib/push";
+import { db } from "@/lib/db";
 import type { WatchRequest } from "@/lib/types";
 
 /* "Ask a grown-up" requests and watch history. Supabase-only; local mode is a quiet no-op. */
@@ -11,12 +13,22 @@ const toReq = (r: Row): WatchRequest => ({
   id: r.id, familyId: r.family_id, deviceId: r.device_id ?? undefined, videoId: r.video_id, status: r.status, createdAt: r.created_at,
 });
 
-export async function createRequest(familyId: string, videoId: string, deviceId?: string): Promise<"created" | "exists" | "off"> {
+export async function createRequest(
+  familyId: string, videoId: string, deviceId?: string, reason?: string,
+): Promise<"created" | "exists" | "off"> {
   if (!on()) return "off";
   const { error } = await supabaseAdmin()
     .from("watch_requests")
     .insert({ family_id: familyId, video_id: videoId, device_id: deviceId && deviceId !== "local" ? deviceId : null });
   if (error) return /duplicate|unique/i.test(error.message) ? "exists" : (() => { throw new Error(error.message); })();
+  // Ring the doorbell.
+  const video = await db.getVideo(videoId);
+  await pushToFamily(familyId, {
+    title: "Your kid asked for a video",
+    body: `${video?.title ?? videoId}${reason ? ` — ${reason}` : ""}`,
+    url: `/parent/video/${videoId}`,
+    tag: `request-${videoId}`,
+  });
   return "created";
 }
 

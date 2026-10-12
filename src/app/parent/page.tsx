@@ -9,6 +9,9 @@ import { CONCERN_LABELS, CONCERN_TAGS, FORMATS, FORMAT_LABELS, MODE_LABELS, type
 import { Button, Card, CardSummary, Pill, TopBar } from "@/components/ui";
 import { lock, resolveWatchRequest, saveSettings, signOut, toggleWhitelist } from "@/app/actions";
 import { listPendingRequests } from "@/lib/activity";
+import { countSubscriptions, pushEnabled } from "@/lib/push";
+import { NotifyButton } from "./notify-button";
+import { sendTestPush } from "@/app/actions";
 import { AddForm } from "./add-form";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +24,8 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const viewer = await resolveViewer();
   if (viewer.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent");
   const fid = viewer.familyId;
-  const [lib, settings, channels, requests] = await Promise.all([getLibrary(fid), db.getSettings(fid), db.listChannels(), listPendingRequests(fid)]);
+  const [lib, settings, channels, requests, subs] = await Promise.all([getLibrary(fid), db.getSettings(fid), db.listChannels(), listPendingRequests(fid), countSubscriptions(fid)]);
+  const pushTest = typeof sp.push === "string" ? Number(sp.push) : null;
   const byId = new Map(lib.map((v) => [v.id, v]));
   const approvedChannels = new Set((await db.listWhitelist(fid)).filter((w) => w.kind === "channel").map((w) => w.targetId));
 
@@ -141,6 +145,24 @@ export default async function ParentPage(props: PageProps<"/parent">) {
         </section>
 
         <aside className="space-y-4">
+          {supabaseEnabled && (
+            <Card className="p-4 space-y-2">
+              <h2 className="font-extrabold">Notifications</h2>
+              {pushEnabled ? (
+                <>
+                  <NotifyButton vapidPublicKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY} registered={subs} />
+                  {subs > 0 && (
+                    <form action={sendTestPush}>
+                      <Button variant="ghost" type="submit" className="text-xs px-3 py-1">Send a test</Button>
+                      {pushTest !== null && <span className="ml-2 text-xs text-muted">{pushTest ? `sent to ${pushTest} phone${pushTest > 1 ? "s" : ""}` : "nothing registered"}</span>}
+                    </form>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-muted">Not configured — add VAPID keys to the environment.</p>
+              )}
+            </Card>
+          )}
           <Card className="p-4">
             <h2 className="font-extrabold">Approved channels</h2>
             <p className="text-xs text-muted mb-2">Every video from these channels is allowed unless a filter hides it.</p>

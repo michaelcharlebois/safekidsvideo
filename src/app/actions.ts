@@ -14,6 +14,7 @@ import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
 import { checksToday, createRequest, finishCheck, logCheck, logWatch, resolveRequest } from "@/lib/activity";
 import { aiPasses, canPlay, getKidScreen, getLibrary } from "@/lib/queries";
 import { reviewVideo } from "@/lib/reviewer";
+import { pushToFamily, removeSubscription, saveSubscription } from "@/lib/push";
 
 /** Resolve the signed-in parent's family, or bounce to sign-in / unlock. */
 async function requireParent(): Promise<string> {
@@ -257,7 +258,7 @@ async function settleCheck(familyId: string, videoId: string, deviceId: string |
     return { status: "playing", videoId };
   }
   const { reasons } = aiPasses(row, settings);
-  await createRequest(familyId, videoId, deviceId);
+  await createRequest(familyId, videoId, deviceId, reasons[0]);
   await finishCheck(checkId, settings.mode === "open_ask" && reasons.length === 0 ? "needs_parent" : "blocked");
   revalidatePath("/watch");
   revalidatePath("/watch/search");
@@ -286,7 +287,8 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
     const existing = await db.getCard(video.id);
     if ((!existing || existing.reviewer.model === "sample") && (video.durationSeconds ?? 0) > MAX_KID_CHECK_SECONDS) {
       // Too long to auto-check: hand it to the parent instead of burning minutes of Gemini time.
-      await createRequest(familyId, video.id, deviceId);
+      const minutes = Math.round((video.durationSeconds ?? 0) / 60);
+      await createRequest(familyId, video.id, deviceId, `Too long to auto-check (${minutes} min)`);
       await logCheck(familyId, video.id, deviceId, "needs_parent");
       revalidatePath("/parent");
       return { status: "asked", videoId: video.id, reasons: [`Too long to auto-check (${Math.round((video.durationSeconds ?? 0) / 60)} min)`] };
@@ -325,4 +327,23 @@ export async function runReview(form: FormData) {
     }
   });
   redirect(`/parent/video/${videoId}?reviewing=1`);
+}
+
+// ---- Push notifications -------------------------------------------------------
+
+export async function subscribePush(sub: { endpoint: string; keys: { p256dh: string; auth: string } }) {
+  const fid = await requireParent();
+  const h = await headers();
+  await saveSubscription(fid, sub, h.get("user-agent") ?? undefined);
+}
+
+export async function unsubscribePush(endpoint: string) {
+  await requireParent();
+  await removeSubscription(endpoint);
+}
+
+export async function sendTestPush() {
+  const fid = await requireParent();
+  const n = await pushToFamily(fid, { title: "Sift is set up 🎉", body: "You'll get a ping here when your kid asks for a video.", url: "/parent", tag: "test" });
+  redirect(`/parent?push=${n}`);
 }
