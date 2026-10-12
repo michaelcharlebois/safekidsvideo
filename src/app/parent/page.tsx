@@ -214,6 +214,8 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                 <input type="password" name="pin" inputMode="numeric" pattern="\d{4}" maxLength={4} placeholder="••••" className="w-20 rounded-lg border border-line px-2 py-1" />
               </label>
               <Button type="submit" className="w-full">Save</Button>
+              {saved && <p className="text-center text-sm font-bold text-ok">✓ Settings saved</p>}
+              {error && <p className="text-sm font-bold text-bad">Couldn&apos;t save: {error}</p>}
             </form>
           </Card>
 
