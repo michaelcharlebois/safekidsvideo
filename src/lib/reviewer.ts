@@ -61,7 +61,7 @@ export async function reviewVideo(videoId: string, opts: { model?: string } = {}
   const model = opts.model ?? DEFAULT_MODEL;
   const ai = new GoogleGenAI({ apiKey });
 
-  const res = await ai.models.generateContent({
+  const res = await withRetry(() => ai.models.generateContent({
     model,
     contents: [
       {
@@ -78,7 +78,7 @@ export async function reviewVideo(videoId: string, opts: { model?: string } = {}
       responseJsonSchema: z.toJSONSchema(CardSchema),
       temperature: 0.2,
     },
-  });
+  }));
 
   const text = res.text;
   if (!text) throw new Error(`Empty response from ${model} for ${videoId}`);
@@ -108,3 +108,20 @@ export async function reviewVideo(videoId: string, opts: { model?: string } = {}
 }
 
 const round1 = (n: number) => Math.round(n * 2) / 2;
+
+/** Retry transient API errors (503 overloaded, 429 rate limit) with exponential backoff. */
+async function withRetry<T>(fn: () => Promise<T>, attempts = 5): Promise<T> {
+  let delay = 3000;
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = String((e as Error).message ?? e);
+      const transient = /"code":(503|429)|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand/.test(msg);
+      if (!transient || i >= attempts) throw e;
+      process.stdout.write(`(busy, retry ${i}/${attempts - 1} in ${delay / 1000}s) `);
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay * 2, 30000);
+    }
+  }
+}
