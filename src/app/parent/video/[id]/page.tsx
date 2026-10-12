@@ -6,12 +6,15 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { blockedReasons, getLibrary } from "@/lib/queries";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS } from "@/lib/types";
 import { Button, Card, ConcernPill, PacePill, Pill, Stars, TopBar } from "@/components/ui";
-import { confirmCard, toggleWhitelist } from "@/app/actions";
+import { confirmCard, runReview, toggleWhitelist } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300; // parent-triggered reviews run in the background within this budget
 
 export default async function VideoPage(props: PageProps<"/parent/video/[id]">) {
   const { id } = await props.params;
+  const sp = await props.searchParams;
+  const reviewing = sp.reviewing === "1";
   const viewer = await resolveViewer();
   if (viewer.role !== "parent") redirect(supabaseEnabled ? `/login?next=/parent/video/${id}` : `/unlock?next=/parent/video/${id}`);
   const fid = viewer.familyId;
@@ -58,9 +61,26 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
         )}
 
         {!c ? (
-          <Card className="p-6 text-center">
-            <p className="font-bold">No content card yet.</p>
-            <p className="text-sm text-muted mt-1">Run <code className="bg-line px-1 rounded">npm run review -- {v.id}</code> to generate one.</p>
+          <Card className="p-6 text-center space-y-3">
+            {reviewing ? (
+              <>
+                <p className="font-bold">Reviewing now…</p>
+                <p className="text-sm text-muted">
+                  {v.durationSeconds ? `${Math.round(v.durationSeconds / 60)} minutes of video; ` : ""}this can take a few minutes. Refresh to check.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-bold">No content card yet.</p>
+                {v.durationSeconds && v.durationSeconds > 30 * 60 ? (
+                  <p className="text-sm text-muted">This one is {Math.round(v.durationSeconds / 60)} minutes long — too long for a kid-triggered check, but you can run it.</p>
+                ) : null}
+                <form action={runReview}>
+                  <input type="hidden" name="videoId" value={v.id} />
+                  <Button type="submit">Run AI review</Button>
+                </form>
+              </>
+            )}
           </Card>
         ) : (
           <>

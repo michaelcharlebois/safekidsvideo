@@ -190,7 +190,7 @@ export async function askGrownUp(form: FormData): Promise<void> {
   if (!video.card && process.env.GEMINI_API_KEY) {
     after(async () => {
       try {
-        await db.upsertCard(await reviewVideo(videoId));
+        await db.upsertCard(await reviewVideo(videoId, { durationSeconds: video.durationSeconds }));
       } catch (e) {
         console.error("auto-review failed", videoId, (e as Error).message);
       }
@@ -218,6 +218,8 @@ export async function recordWatch(videoId: string, completed: boolean) {
 }
 
 // ---- Open mode: kid-triggered AI check ----------------------------------------
+
+const MAX_KID_CHECK_SECONDS = 30 * 60;
 
 export type CheckResult =
   | { status: "playing"; videoId: string }
@@ -268,6 +270,13 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
   try {
     const video = await ingestVideo(videoId);
     const existing = await db.getCard(video.id);
+    if ((!existing || existing.reviewer.model === "sample") && (video.durationSeconds ?? 0) > MAX_KID_CHECK_SECONDS) {
+      // Too long to auto-check: hand it to the parent instead of burning minutes of Gemini time.
+      await createRequest(familyId, video.id, deviceId);
+      await logCheck(familyId, video.id, deviceId, "needs_parent");
+      revalidatePath("/parent");
+      return { status: "asked", videoId: video.id, reasons: [`Too long to auto-check (${Math.round((video.durationSeconds ?? 0) / 60)} min)`] };
+    }
     if (existing && existing.reviewer.model !== "sample") {
       const checkId = await logCheck(familyId, video.id, deviceId, "pending");
       return await settleCheck(familyId, video.id, deviceId, checkId);
@@ -275,7 +284,7 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
     const checkId = await logCheck(familyId, video.id, deviceId, "pending");
     after(async () => {
       try {
-        await db.upsertCard(await reviewVideo(video.id));
+        await db.upsertCard(await reviewVideo(video.id, { durationSeconds: video.durationSeconds }));
         await settleCheck(familyId, video.id, deviceId, checkId);
       } catch (e) {
         console.error("background review failed", video.id, (e as Error).message);
@@ -286,4 +295,20 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
   } catch (e) {
     return { status: "error", message: (e as Error).message };
   }
+}
+
+/** Parent runs (or re-runs) the AI review for one video from the dashboard. Background. */
+export async function runReview(form: FormData) {
+  await requireParent();
+  const videoId = String(form.get("videoId"));
+  const video = await db.getVideo(videoId);
+  if (!video || !process.env.GEMINI_API_KEY) return;
+  after(async () => {
+    try {
+      await db.upsertCard(await reviewVideo(video.id, { durationSeconds: video.durationSeconds }));
+    } catch (e) {
+      console.error("review failed", video.id, (e as Error).message);
+    }
+  });
+  redirect(`/parent/video/${videoId}?reviewing=1`);
 }

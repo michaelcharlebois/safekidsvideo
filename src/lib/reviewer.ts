@@ -69,7 +69,14 @@ Pay special attention to pacing and sound, which reviewers tend to under-report.
 ${TAXONOMY}
 ${FORMAT_GUIDE}`;
 
-export async function reviewVideo(videoId: string, opts: { model?: string } = {}): Promise<ContentCard> {
+/** Frames per second to send Gemini: full rate for short videos, sparser for long ones (cost + speed). */
+export function fpsForDuration(seconds?: number): number | undefined {
+  if (!seconds || seconds <= 8 * 60) return undefined; // Gemini default (1 fps)
+  if (seconds <= 20 * 60) return 0.5;
+  return 0.25;
+}
+
+export async function reviewVideo(videoId: string, opts: { model?: string; durationSeconds?: number } = {}): Promise<ContentCard> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
   const model = opts.model ?? DEFAULT_MODEL;
@@ -81,7 +88,10 @@ export async function reviewVideo(videoId: string, opts: { model?: string } = {}
       {
         role: "user",
         parts: [
-          { fileData: { fileUri: videoUrl(videoId), mimeType: "video/*" } },
+          {
+            fileData: { fileUri: videoUrl(videoId), mimeType: "video/*" },
+            ...(fpsForDuration(opts.durationSeconds) ? { videoMetadata: { fps: fpsForDuration(opts.durationSeconds) } } : {}),
+          },
           { text: "Review this video for parents. Return only the JSON card." },
         ],
       },
