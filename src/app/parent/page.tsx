@@ -16,6 +16,8 @@ export const dynamic = "force-dynamic";
 export default async function ParentPage(props: PageProps<"/parent">) {
   const sp = await props.searchParams;
   const filter = typeof sp.filter === "string" ? sp.filter : "all";
+  const error = typeof sp.error === "string" ? sp.error : null;
+  const saved = sp.saved === "1";
   const viewer = await resolveViewer();
   if (viewer.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent");
   const fid = viewer.familyId;
@@ -54,6 +56,8 @@ export default async function ParentPage(props: PageProps<"/parent">) {
       />
       <main className="mx-auto w-full max-w-5xl px-4 py-6 grid gap-6 lg:grid-cols-[1fr_320px]">
         <section className="space-y-4">
+          {error && <Card className="p-3 border-bad/40 bg-bad/5 text-sm"><b className="text-bad">Couldn&apos;t save:</b> {error}</Card>}
+          {saved && <Card className="p-3 border-ok/40 bg-ok/5 text-sm font-bold text-ok">Settings saved.</Card>}
           {requests.length > 0 && (
             <Card className="p-4 border-sun bg-sun/30">
               <h2 className="font-extrabold">🙋 Asked for ({requests.length})</h2>

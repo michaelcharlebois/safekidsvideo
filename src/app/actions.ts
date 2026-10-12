@@ -82,7 +82,8 @@ export async function saveSettings(form: FormData) {
   const pin = String(form.get("pin") ?? "").trim();
   const blockedTags = CONCERN_TAGS.filter((t) => form.get(`block:${t}`) === "on") as ConcernTag[];
   const blockedFormats = FORMATS.filter((f) => form.get(`blockfmt:${f}`) === "on") as VideoFormat[];
-  await db.saveSettings({
+  try {
+    await db.saveSettings({
     ...current,
     pinHash: /^\d{4}$/.test(pin) ? pin : current.pinHash,
     kidAge: Number(form.get("kidAge") ?? current.kidAge) || current.kidAge,
@@ -92,9 +93,13 @@ export async function saveSettings(form: FormData) {
     mode: (["locked", "open", "open_ask"].includes(String(form.get("mode"))) ? String(form.get("mode")) : current.mode) as FamilyMode,
     dailyCheckLimit: Number(form.get("dailyCheckLimit") ?? current.dailyCheckLimit) || current.dailyCheckLimit,
     flagThreshold: Number(form.get("flagThreshold") ?? current.flagThreshold) || current.flagThreshold,
-  });
+    });
+  } catch (e) {
+    redirect(`/parent?error=${encodeURIComponent((e as Error).message)}`);
+  }
   revalidatePath("/parent");
   revalidatePath("/watch");
+  redirect("/parent?saved=1");
 }
 
 export type UnlockResult = { error: string } | null;
