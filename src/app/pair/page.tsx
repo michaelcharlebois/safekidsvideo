@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { PairForm } from "./pair-form";
+import { RemoteNav } from "@/app/watch/remote-nav";
 
 /** The screen a kid's tablet lands on before it's paired. */
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export default async function PairPage() {
   if (!supabaseEnabled) redirect("/watch");
   return (
     <main className="kid-mode flex-1 flex items-center justify-center px-6">
+      <RemoteNav home="/pair" />
       <div className="w-full max-w-sm text-center">
         <p className="text-4xl">📺</p>
         <h1 className="mt-2 text-2xl font-extrabold">Connect this device</h1>

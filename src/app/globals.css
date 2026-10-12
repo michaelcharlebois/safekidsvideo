@@ -79,11 +79,14 @@ body {
   transition: transform 160ms ease, box-shadow 160ms ease;
   outline: none;
 }
-.kid-mode .tile:focus-visible,
+/* Focus lands on the link/button INSIDE the tile, so the ring keys off :focus-within.
+   Plain :focus (not :focus-visible) — TV engines don't always flag D-pad focus as "visible". */
+.kid-mode .tile:focus-within,
 .kid-mode .tile:hover {
   transform: scale(1.06);
   box-shadow: 0 0 0 5px var(--kfocus), 0 20px 40px rgba(0, 0, 0, 0.5);
   z-index: 1;
 }
 .kid-mode .tile:active { transform: scale(0.98); }
-.kid-mode .bigbtn:focus-visible { box-shadow: 0 0 0 5px var(--kfocus); outline: none; }
+.kid-mode .bigbtn:focus,
+.kid-mode input:focus { box-shadow: 0 0 0 5px var(--kfocus); outline: none; }

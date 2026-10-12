@@ -1,8 +1,17 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, type KeyboardEvent } from "react";
 import { pairDevice } from "@/app/actions";
 import { Button } from "@/components/ui";
+
+/** Remote number keys arrive as key events but TV engines don't always type them — do it ourselves. */
+function onDigitKey(e: KeyboardEvent<HTMLInputElement>) {
+  const digit = /^\d$/.test(e.key) ? e.key : e.keyCode >= 48 && e.keyCode <= 57 ? String(e.keyCode - 48) : null;
+  if (!digit) return;
+  e.preventDefault();
+  const el = e.currentTarget;
+  if (el.value.length < el.maxLength) el.value += digit;
+}
 
 export function PairForm() {
   const [state, action, pending] = useActionState(pairDevice, null);
@@ -16,11 +25,12 @@ export function PairForm() {
         autoFocus
         autoComplete="one-time-code"
         placeholder="000000"
+        onKeyDown={onDigitKey}
         className="w-full rounded-xl border border-line bg-white/10 text-white px-4 py-4 text-center text-3xl tracking-[0.4em] font-extrabold outline-none focus:border-accent"
       />
       <input
         name="name"
-        placeholder="Name this device (e.g. Living room iPad)"
+        placeholder="Name this device (e.g. Living room TV)"
         className="w-full rounded-xl border border-line bg-white/10 text-white px-4 py-2 text-sm outline-none focus:border-accent"
       />
       {state?.error && <p className="text-bad text-sm font-bold">{state.error}</p>}
