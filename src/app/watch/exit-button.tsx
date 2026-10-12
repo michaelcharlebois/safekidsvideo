@@ -42,7 +42,7 @@ export function ExitButton({ target }: { target: string }) {
       onClick={tap}
       onContextMenu={(e) => e.preventDefault()}
       style={{ touchAction: "none", WebkitUserSelect: "none", userSelect: "none" }}
-      className={`h-9 w-9 rounded-full border border-line text-muted text-xs font-bold transition ${holding ? "bg-sun scale-110" : "bg-surface/70"}`}
+      className={`h-9 w-9 rounded-full text-xs font-bold transition ${holding ? "bg-[var(--kfocus)] text-[#0b1020] scale-110" : "bg-white/5 text-white/30"}`}
     >
       ⚙
     </button>

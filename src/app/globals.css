@@ -48,3 +48,42 @@ body {
   -webkit-touch-callout: none;
   touch-action: manipulation;
 }
+
+/* ---- Kid mode theme: dark, cinematic, remote-friendly ---- */
+.kid-mode {
+  --kbg: #0b1020;
+  --kbg2: #141b33;
+  --kink: #f4f6ff;
+  --kmuted: #9aa4c7;
+  --kfocus: #ffd23f;
+  background: radial-gradient(120% 80% at 50% -10%, #223064 0%, var(--kbg) 55%) fixed;
+  color: var(--kink);
+  min-height: 100dvh;
+}
+.kid-mode .shelf {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding: 0.5rem 1.25rem 1rem;
+  scrollbar-width: none;
+}
+.kid-mode .shelf::-webkit-scrollbar { display: none; }
+.kid-mode .tile {
+  flex: 0 0 auto;
+  width: clamp(200px, 30vw, 340px);
+  scroll-snap-align: start;
+  border-radius: 1.25rem;
+  overflow: hidden;
+  background: var(--kbg2);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+  outline: none;
+}
+.kid-mode .tile:focus-visible,
+.kid-mode .tile:hover {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 5px var(--kfocus), 0 20px 40px rgba(0, 0, 0, 0.5);
+  z-index: 1;
+}
+.kid-mode .tile:active { transform: scale(0.98); }
+.kid-mode .bigbtn:focus-visible { box-shadow: 0 0 0 5px var(--kfocus); outline: none; }

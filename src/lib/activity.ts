@@ -122,3 +122,23 @@ export async function recentlyApprovedIds(familyId: string): Promise<Set<string>
     .gte("resolved_at", since);
   return new Set((data ?? []).map((r: { video_id: string }) => r.video_id));
 }
+
+/** The last few distinct videos this family's kid played, newest first — the "Keep watching" shelf. */
+export async function recentWatchIds(familyId: string, limit = 8): Promise<string[]> {
+  if (!on()) return [];
+  const { data } = await supabaseAdmin()
+    .from("watch_events")
+    .select("video_id,started_at")
+    .eq("family_id", familyId)
+    .order("started_at", { ascending: false })
+    .limit(limit * 4);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const r of (data ?? []) as { video_id: string }[]) {
+    if (seen.has(r.video_id)) continue;
+    seen.add(r.video_id);
+    out.push(r.video_id);
+    if (out.length >= limit) break;
+  }
+  return out;
+}

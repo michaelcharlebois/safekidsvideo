@@ -8,11 +8,11 @@ export const dynamic = "force-dynamic";
 export default async function PairPage() {
   if (!supabaseEnabled) redirect("/watch");
   return (
-    <main className="flex-1 flex items-center justify-center px-6 bg-sky/40">
+    <main className="kid-mode flex-1 flex items-center justify-center px-6">
       <div className="w-full max-w-sm text-center">
         <p className="text-4xl">📺</p>
         <h1 className="mt-2 text-2xl font-extrabold">Connect this device</h1>
-        <p className="mt-1 text-muted text-sm">
+        <p className="mt-1 text-[var(--kmuted)] text-sm">
           A grown-up: open the parent dashboard on your phone, go to <b>Devices</b>, and type the 6-digit code here.
         </p>
         <PairForm />

@@ -74,20 +74,20 @@ export function Player({ playlist, index }: { playlist: Item[]; index: number })
   }, [current.id]);
 
   return (
-    <main className="flex-1 flex flex-col items-center px-3 pb-6">
-      <div className="relative w-full max-w-4xl aspect-video overflow-hidden rounded-2xl bg-black shadow-lg">
+    <main className="flex-1 flex flex-col items-center px-3 pb-8">
+      <div className="relative w-full max-w-5xl aspect-video overflow-hidden rounded-2xl bg-black shadow-[0_30px_60px_rgba(0,0,0,.6)]">
         <div ref={hostRef} className="absolute inset-0 h-full w-full" />
         {/* Block the title bar / channel avatar / share links at the top of the embed. */}
         <div className="absolute inset-x-0 top-0 h-14" aria-hidden />
       </div>
-      <p className="mt-3 text-lg font-extrabold text-center line-clamp-2">{current.title}</p>
-      <div className="mt-4 flex gap-3">
-        <button onClick={() => router.push("/watch")} className="rounded-full bg-surface px-6 py-3 text-lg font-extrabold shadow active:scale-95">
-          ⌂ All videos
+      <p className="mt-4 text-lg font-extrabold text-center line-clamp-1 text-[var(--kmuted)]">{current.title}</p>
+      <div className="mt-4 flex gap-4">
+        <button onClick={() => router.push("/watch")} className="bigbtn rounded-full bg-white/10 px-7 py-4 text-xl font-extrabold active:scale-95">
+          🏠 Home
         </button>
         {playlist.length > 1 && (
-          <button onClick={() => setI((x) => (x + 1) % playlist.length)} className="rounded-full bg-sun px-6 py-3 text-lg font-extrabold shadow active:scale-95">
-            Next ▶ <span className="font-semibold text-muted hidden sm:inline">{next.title.slice(0, 24)}</span>
+          <button onClick={() => setI((x) => (x + 1) % playlist.length)} className="bigbtn rounded-full bg-[var(--kfocus)] px-7 py-4 text-xl font-extrabold text-[#0b1020] active:scale-95">
+            Next ▶ <span className="hidden sm:inline font-bold opacity-70">{next.title.slice(0, 22)}</span>
           </button>
         )}
       </div>

@@ -33,14 +33,14 @@ export function CheckButton({
   }, [checking, pending, router]);
 
   if (checking) return <Checking suggestions={suggestions} />;
-  if (state?.status === "asked") return <Pill tone="bg-sun">Asked a grown-up!</Pill>;
-  if (state?.status === "limit") return <Pill tone="bg-line">No more checks today</Pill>;
-  if (state?.status === "error") return <Pill tone="bg-line">Hmm, try again</Pill>;
+  if (state?.status === "asked") return <Pill tone="bg-white/10">Asked a grown-up!</Pill>;
+  if (state?.status === "limit") return <Pill tone="bg-white/10">No more checks today</Pill>;
+  if (state?.status === "error") return <Pill tone="bg-white/10">Hmm, try again</Pill>;
 
   return (
     <form action={action}>
       <input type="hidden" name="videoId" value={videoId} />
-      <button type="submit" className="w-full rounded-full bg-sun py-2 font-extrabold text-sm active:scale-95">{label}</button>
+      <button type="submit" className="bigbtn w-full rounded-full bg-[var(--kfocus)] py-2 font-extrabold text-sm text-[#0b1020] active:scale-95">{label}</button>
     </form>
   );
 }
@@ -57,10 +57,10 @@ function Checking({ suggestions }: { suggestions: Suggestion[] }) {
   }, []);
   return (
     <div className="space-y-2">
-      <span className="block w-full rounded-full bg-sky py-2 text-center font-bold text-xs animate-pulse">🔍 {WAITING[i]}</span>
+      <span className="block w-full rounded-full bg-white/15 py-2 text-center font-bold text-xs animate-pulse">🔍 {WAITING[i]}</span>
       {suggestions.length > 0 && (
-        <div className="rounded-xl bg-bg p-2">
-          <p className="text-[11px] font-extrabold text-muted mb-1">While you wait, these are ready:</p>
+        <div className="rounded-xl bg-black/30 p-2">
+          <p className="text-[11px] font-extrabold text-[var(--kmuted)] mb-1">While you wait, these are ready:</p>
           <ul className="flex gap-2">
             {suggestions.slice(0, 3).map((s) => (
               <li key={s.id} className="flex-1 min-w-0">
