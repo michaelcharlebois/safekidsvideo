@@ -123,9 +123,12 @@ export type Confirmation = {
   createdAt: string;
 };
 
+export type WhitelistKind = "channel" | "video" | "override";
+
 export type WhitelistEntry = {
   familyId: string;
-  kind: "channel" | "video";
+  /** channel: all its videos; video: this video; override: this video even if filters would hide it */
+  kind: WhitelistKind;
   targetId: string;
   createdAt: string;
 };
@@ -139,6 +142,8 @@ export type FamilySettings = {
   blockedTags: ConcernTag[];
   blockedFormats: VideoFormat[];
   flagThreshold: number;
+  /** hide videos from approved channels until they have a content card */
+  hideUnreviewed: boolean;
 };
 
 /** Aggregate view the UI renders. */
@@ -147,4 +152,15 @@ export type VideoWithCard = Video & {
   card?: ContentCard;
   confirmations: { agree: number; flag: number; flaggedTags: Partial<Record<ConcernTag, number>> };
   whitelisted: boolean;
+  /** parent explicitly approved this video over their filters */
+  overridden: boolean;
+};
+
+export type WatchRequest = {
+  id: string;
+  familyId: string;
+  deviceId?: string;
+  videoId: string;
+  status: "pending" | "approved" | "denied";
+  createdAt: string;
 };

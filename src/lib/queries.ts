@@ -12,6 +12,7 @@ export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
   const cardById = new Map(cards.map((c) => [c.videoId, c]));
   const wlVideos = new Set(whitelist.filter((w) => w.kind === "video").map((w) => w.targetId));
   const wlChannels = new Set(whitelist.filter((w) => w.kind === "channel").map((w) => w.targetId));
+  const overrides = new Set(whitelist.filter((w) => w.kind === "override").map((w) => w.targetId));
 
   const tallies = new Map<string, VideoWithCard["confirmations"]>();
   for (const c of confirmations) {
@@ -29,7 +30,8 @@ export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
     channel: channelById.get(v.channelId),
     card: cardById.get(v.id),
     confirmations: tallies.get(v.id) ?? { agree: 0, flag: 0, flaggedTags: {} },
-    whitelisted: wlVideos.has(v.id) || wlChannels.has(v.channelId),
+    whitelisted: wlVideos.has(v.id) || wlChannels.has(v.channelId) || overrides.has(v.id),
+    overridden: overrides.has(v.id),
   }));
 }
 
@@ -39,6 +41,8 @@ export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
  */
 export function blockedReasons(v: VideoWithCard, s: FamilySettings): string[] {
   const out: string[] = [];
+  if (v.overridden) return out;
+  if (!v.card && s.hideUnreviewed) return ["Not reviewed yet"];
   if (v.card?.format && s.blockedFormats.includes(v.card.format)) out.push(FORMAT_LABELS[v.card.format]);
   for (const tag of s.blockedTags) {
     const ai = v.card?.concerns.find((c) => c.tag === tag);
@@ -53,4 +57,21 @@ export function blockedReasons(v: VideoWithCard, s: FamilySettings): string[] {
 export async function getKidFeed(familyId: string) {
   const [lib, settings] = await Promise.all([getLibrary(familyId), db.getSettings(familyId)]);
   return lib.filter((v) => v.whitelisted && blockedReasons(v, settings).length === 0);
+}
+
+/**
+ * Kid screen, both rows: what plays now, and what the kid may *ask* for —
+ * videos from approved channels that a filter or a missing review is hiding.
+ * Nothing outside approved channels/videos is ever shown.
+ */
+export async function getKidScreen(familyId: string) {
+  const [lib, settings] = await Promise.all([getLibrary(familyId), db.getSettings(familyId)]);
+  const playable: VideoWithCard[] = [];
+  const askable: VideoWithCard[] = [];
+  for (const v of lib) {
+    if (!v.whitelisted) continue;
+    if (blockedReasons(v, settings).length === 0) playable.push(v);
+    else askable.push(v);
+  }
+  return { playable, askable };
 }

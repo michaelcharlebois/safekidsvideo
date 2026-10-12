@@ -6,6 +6,7 @@ import type {
   FamilySettings,
   Video,
   WhitelistEntry,
+  WhitelistKind,
 } from "@/lib/types";
 
 /**
@@ -36,7 +37,7 @@ export interface Store {
   saveSettings(s: FamilySettings): Promise<void>;
   listWhitelist(familyId: string): Promise<WhitelistEntry[]>;
   addToWhitelist(e: Omit<WhitelistEntry, "createdAt">): Promise<void>;
-  removeFromWhitelist(familyId: string, kind: "channel" | "video", targetId: string): Promise<void>;
+  removeFromWhitelist(familyId: string, kind: WhitelistKind, targetId: string): Promise<void>;
 }
 
 export const DEFAULT_SETTINGS = (familyId: string): FamilySettings => ({
@@ -46,4 +47,5 @@ export const DEFAULT_SETTINGS = (familyId: string): FamilySettings => ({
   blockedTags: ["violence", "scary_imagery", "monsters"] as ConcernTag[],
   blockedFormats: ["gameplay_commentary"],
   flagThreshold: 3,
+  hideUnreviewed: true,
 });

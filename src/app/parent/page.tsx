@@ -7,7 +7,8 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { blockedReasons, getLibrary } from "@/lib/queries";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMATS, FORMAT_LABELS } from "@/lib/types";
 import { Button, Card, CardSummary, Pill, TopBar } from "@/components/ui";
-import { lock, saveSettings, signOut, toggleWhitelist } from "@/app/actions";
+import { lock, resolveWatchRequest, saveSettings, signOut, toggleWhitelist } from "@/app/actions";
+import { listPendingRequests } from "@/lib/activity";
 import { AddForm } from "./add-form";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,8 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const viewer = await resolveViewer();
   if (viewer.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent");
   const fid = viewer.familyId;
-  const [lib, settings, channels] = await Promise.all([getLibrary(fid), db.getSettings(fid), db.listChannels()]);
+  const [lib, settings, channels, requests] = await Promise.all([getLibrary(fid), db.getSettings(fid), db.listChannels(), listPendingRequests(fid)]);
+  const byId = new Map(lib.map((v) => [v.id, v]));
   const approvedChannels = new Set((await db.listWhitelist(fid)).filter((w) => w.kind === "channel").map((w) => w.targetId));
 
   const rows = lib
@@ -52,6 +54,38 @@ export default async function ParentPage(props: PageProps<"/parent">) {
       />
       <main className="mx-auto w-full max-w-5xl px-4 py-6 grid gap-6 lg:grid-cols-[1fr_320px]">
         <section className="space-y-4">
+          {requests.length > 0 && (
+            <Card className="p-4 border-sun bg-sun/30">
+              <h2 className="font-extrabold">🙋 Asked for ({requests.length})</h2>
+              <ul className="mt-2 space-y-3">
+                {requests.map((r) => {
+                  const v = byId.get(r.videoId);
+                  if (!v) return null;
+                  const why = blockedReasons(v, settings);
+                  return (
+                    <li key={r.id} className="flex gap-3 rounded-xl bg-surface p-3">
+                      <Link href={`/parent/video/${v.id}`} className="shrink-0">
+                        <Image src={v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`} alt="" width={160} height={90} unoptimized className="rounded-lg w-28 aspect-video object-cover bg-line" />
+                      </Link>
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <Link href={`/parent/video/${v.id}`} className="font-extrabold leading-snug hover:underline line-clamp-2">{v.title}</Link>
+                        <p className="text-xs text-muted">{v.channel?.title ?? v.channelId} · asked {new Date(r.createdAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}</p>
+                        <CardSummary v={v} blocked={why} />
+                        {why.length > 0 && <p className="text-xs text-bad font-bold">Hidden because: {why.join(", ")}</p>}
+                        <form action={resolveWatchRequest} className="flex gap-2 pt-1">
+                          <input type="hidden" name="requestId" value={r.id} />
+                          <input type="hidden" name="videoId" value={v.id} />
+                          <Button type="submit" name="decision" value="approve" className="text-xs px-3 py-1.5">✓ Approve</Button>
+                          <Button type="submit" name="decision" value="deny" variant="ghost" className="text-xs px-3 py-1.5">Not now</Button>
+                        </form>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          )}
+
           <Card className="p-4">
             <h2 className="font-extrabold">Approve a channel or video</h2>
             <p className="text-sm text-muted">Paste any YouTube link or an @handle. Videos get a content card once the reviewer runs.</p>
@@ -87,7 +121,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                         <input type="hidden" name="targetId" value={v.id} />
                         <input type="hidden" name="on" value={v.whitelisted ? "0" : "1"} />
                         <Button type="submit" variant={v.whitelisted ? "ghost" : "primary"} className="text-xs px-3 py-1.5">
-                          {v.whitelisted ? "✓ Approved" : "Approve"}
+                          {v.overridden ? "✓ Approved (override)" : v.whitelisted ? "✓ Approved" : "Approve"}
                         </Button>
                       </form>
                     </div>
@@ -137,6 +171,10 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                   </label>
                 ))}
               </div>
+              <label className="flex items-center gap-2 text-sm pt-1">
+                <input type="checkbox" name="hideUnreviewed" defaultChecked={settings.hideUnreviewed} className="accent-accent" />
+                Hide videos until they have a content card
+              </label>
               <p className="text-xs text-muted pt-1">Hide these kinds of videos entirely:</p>
               <div className="grid grid-cols-1 gap-1">
                 {FORMATS.filter((f) => f !== "other").map((f) => (

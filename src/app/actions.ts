@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies, headers } from "next/headers";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -10,6 +11,9 @@ import { CONCERN_TAGS, FORMATS, type ConcernTag, type VideoFormat } from "@/lib/
 import { PARENT_COOKIE } from "@/lib/auth";
 import { createPairingCode, DEVICE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice } from "@/lib/family";
 import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
+import { createRequest, logWatch, resolveRequest } from "@/lib/activity";
+import { getKidScreen } from "@/lib/queries";
+import { reviewVideo } from "@/lib/reviewer";
 
 /** Resolve the signed-in parent's family, or bounce to sign-in / unlock. */
 async function requireParent(): Promise<string> {
@@ -84,6 +88,7 @@ export async function saveSettings(form: FormData) {
     kidAge: Number(form.get("kidAge") ?? current.kidAge) || current.kidAge,
     blockedTags,
     blockedFormats,
+    hideUnreviewed: form.get("hideUnreviewed") === "on",
     flagThreshold: Number(form.get("flagThreshold") ?? current.flagThreshold) || current.flagThreshold,
   });
   revalidatePath("/parent");
@@ -160,4 +165,46 @@ export async function unpairDevice(form: FormData) {
   const fid = await requireParent();
   await revokeDevice(fid, String(form.get("deviceId")));
   revalidatePath("/parent/devices");
+}
+
+// ---- "Ask a grown-up" --------------------------------------------------------
+
+export async function askGrownUp(form: FormData): Promise<void> {
+  const v = await resolveViewer();
+  if (!v.familyId) redirect("/pair");
+  const videoId = String(form.get("videoId"));
+  // Only videos the family has already approved at the channel level can be asked for.
+  const screen = await getKidScreen(v.familyId);
+  const video = screen.askable.find((x) => x.id === videoId);
+  if (!video) return;
+  await createRequest(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined);
+  // No card yet? Review it now so the parent sees a card, not a blank.
+  if (!video.card && process.env.GEMINI_API_KEY) {
+    after(async () => {
+      try {
+        await db.upsertCard(await reviewVideo(videoId));
+      } catch (e) {
+        console.error("auto-review failed", videoId, (e as Error).message);
+      }
+    });
+  }
+  revalidatePath("/watch");
+  revalidatePath("/parent");
+}
+
+export async function resolveWatchRequest(form: FormData) {
+  const fid = await requireParent();
+  const requestId = String(form.get("requestId"));
+  const videoId = String(form.get("videoId"));
+  const approve = form.get("decision") === "approve";
+  await resolveRequest(fid, requestId, approve ? "approved" : "denied");
+  if (approve) await db.addToWhitelist({ familyId: fid, kind: "override", targetId: videoId });
+  revalidatePath("/parent");
+  revalidatePath("/watch");
+}
+
+export async function recordWatch(videoId: string, completed: boolean) {
+  const v = await resolveViewer();
+  if (!v.familyId) return;
+  await logWatch(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, completed);
 }

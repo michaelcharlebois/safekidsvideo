@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { recordWatch } from "@/app/actions";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare global {
@@ -21,6 +22,7 @@ export function Player({ playlist, index }: { playlist: Item[]; index: number })
   const router = useRouter();
   const hostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
+  const started = useRef<Set<string>>(new Set());
   const [i, setI] = useState(index);
   const current = playlist[i];
   const next = playlist[(i + 1) % playlist.length];
@@ -34,7 +36,13 @@ export function Player({ playlist, index }: { playlist: Item[]; index: number })
         playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1, controls: 1, fs: 0, iv_load_policy: 3, disablekb: 1 },
         events: {
           onStateChange: (e: any) => {
+            const id = e.target?.getVideoData?.()?.video_id;
+            if (e.data === window.YT.PlayerState.PLAYING && id && !started.current.has(id)) {
+              started.current.add(id);
+              void recordWatch(id, false);
+            }
             if (e.data === window.YT.PlayerState.ENDED) {
+              if (id) void recordWatch(id, true);
               setI((x) => (x + 1) % playlist.length);
             }
           },
