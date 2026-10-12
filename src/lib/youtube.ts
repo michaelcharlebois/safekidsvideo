@@ -108,10 +108,30 @@ export async function fetchChannelUploads(channelIdOrHandle: string, max = 10): 
   const uploads = c.contentDetails.relatedPlaylists.uploads;
   const pl = await (await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploads}&maxResults=${max}&key=${key}`)).json();
   const ids: string[] = (pl.items ?? []).map((i: { snippet: { resourceId: { videoId: string } } }) => i.snippet.resourceId.videoId);
+  return dataApiVideos(ids, key);
+}
+
+/** Batched metadata: up to 50 ids per request. Skips shorts-length? No — keeps everything embeddable. */
+async function dataApiVideos(ids: string[], key: string): Promise<VideoMeta[]> {
   const out: VideoMeta[] = [];
-  for (const id of ids) {
-    const m = await dataApiVideo(id, key);
-    if (m) out.push(m);
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,status&id=${chunk.join(",")}&key=${key}`);
+    if (!res.ok) continue;
+    const j = await res.json();
+    for (const item of j.items ?? []) {
+      if (item.status?.embeddable === false) continue;
+      const sn = item.snippet;
+      out.push({
+        id: item.id,
+        title: sn.title,
+        channelId: sn.channelId,
+        channelTitle: sn.channelTitle,
+        thumbnailUrl: sn.thumbnails?.high?.url ?? thumbnail(item.id),
+        durationSeconds: iso8601DurationToSeconds(item.contentDetails?.duration ?? ""),
+        publishedAt: sn.publishedAt,
+      });
+    }
   }
   return out;
 }

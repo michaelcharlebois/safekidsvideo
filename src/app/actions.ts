@@ -15,6 +15,7 @@ import { checksToday, createRequest, finishCheck, logCheck, logWatch, resolveReq
 import { aiPasses, canPlay, getKidScreen, getLibrary } from "@/lib/queries";
 import { reviewVideo } from "@/lib/reviewer";
 import { pushToFamily, removeSubscription, saveSubscription } from "@/lib/push";
+import { runPipeline } from "@/lib/pipeline";
 
 /** Resolve the signed-in parent's family, or bounce to sign-in / unlock. */
 async function requireParent(): Promise<string> {
@@ -37,7 +38,7 @@ export async function addByUrl(_prev: AddResult | null, form: FormData): Promise
       return { ok: true, message: `Added "${v.title}" to the approved list.` };
     }
     if (parsed.kind === "channel") {
-      const { channelId, videos } = await ingestChannel(input, 5);
+      const { channelId, videos } = await ingestChannel(input, 20);
       await db.addToWhitelist({ familyId: fid, kind: "channel", targetId: channelId });
       revalidatePath("/parent");
       return {
@@ -346,4 +347,17 @@ export async function sendTestPush() {
   const fid = await requireParent();
   const n = await pushToFamily(fid, { title: "Sift is set up 🎉", body: "You'll get a ping here when your kid asks for a video.", url: "/parent", tag: "test" });
   redirect(`/parent?push=${n}`);
+}
+
+/** Dashboard: review the next few unreviewed videos from this family's approved channels, in the background. */
+export async function reviewNextBatch() {
+  const fid = await requireParent();
+  after(async () => {
+    try {
+      await runPipeline({ familyId: fid, maxReviews: 5, uploadsPerChannel: 10 });
+    } catch (e) {
+      console.error("batch review failed", (e as Error).message);
+    }
+  });
+  redirect("/parent?batch=1");
 }

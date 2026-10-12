@@ -11,10 +11,11 @@ import { lock, resolveWatchRequest, saveSettings, signOut, toggleWhitelist } fro
 import { listPendingRequests } from "@/lib/activity";
 import { countSubscriptions, pushEnabled } from "@/lib/push";
 import { NotifyButton } from "./notify-button";
-import { sendTestPush } from "@/app/actions";
+import { reviewNextBatch, sendTestPush } from "@/app/actions";
 import { AddForm } from "./add-form";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300; // background batch reviews run within this budget
 
 export default async function ParentPage(props: PageProps<"/parent">) {
   const sp = await props.searchParams;
@@ -26,6 +27,9 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const fid = viewer.familyId;
   const [lib, settings, channels, requests, subs] = await Promise.all([getLibrary(fid), db.getSettings(fid), db.listChannels(), listPendingRequests(fid), countSubscriptions(fid)]);
   const pushTest = typeof sp.push === "string" ? Number(sp.push) : null;
+  const batchStarted = sp.batch === "1";
+  const approvedChannelIds = new Set((await db.listWhitelist(fid)).filter((w) => w.kind === "channel").map((w) => w.targetId));
+  const backlog = lib.filter((v) => approvedChannelIds.has(v.channelId) && (!v.card || v.card.reviewer.model === "sample") && (v.durationSeconds ?? 0) <= 20 * 60).length;
   const byId = new Map(lib.map((v) => [v.id, v]));
   const approvedChannels = new Set((await db.listWhitelist(fid)).filter((w) => w.kind === "channel").map((w) => w.targetId));
 
@@ -163,6 +167,19 @@ export default async function ParentPage(props: PageProps<"/parent">) {
               )}
             </Card>
           )}
+          <Card className="p-4 space-y-2">
+            <h2 className="font-extrabold">Pipeline</h2>
+            <p className="text-xs text-muted">
+              Approved channels are refreshed and pre-reviewed every night.{" "}
+              {backlog > 0 ? <b className="text-ink">{backlog} video{backlog === 1 ? "" : "s"} waiting for a card.</b> : "Everything short is reviewed."}
+            </p>
+            {backlog > 0 && (
+              <form action={reviewNextBatch}>
+                <Button type="submit" variant="ghost" className="text-xs px-3 py-1">Review next 5 now</Button>
+                {batchStarted && <span className="ml-2 text-xs text-ok font-bold">Started — a few minutes.</span>}
+              </form>
+            )}
+          </Card>
           <Card className="p-4">
             <h2 className="font-extrabold">Approved channels</h2>
             <p className="text-xs text-muted mb-2">Every video from these channels is allowed unless a filter hides it.</p>

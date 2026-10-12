@@ -59,6 +59,13 @@ parents sign in by magic link, each account owns a family, and kid devices are p
 Flow: parent opens `/login` → types the emailed code → `/parent`. Parent → **Devices** → make a code.
 Tablet opens `/pair` → types the code → lands in kid mode, permanently.
 
+## The pipeline
+
+Approving a channel pulls its 20 most recent uploads onto the kid's home screen. A nightly
+job (`/api/cron/sync`, scheduled in `vercel.json`; set `CRON_SECRET`) refreshes every approved
+channel and pre-reviews up to 20 new videos, so new uploads arrive already carded. The parent
+dashboard has a "Review next 5 now" button; `npm run pipeline` does the same from a terminal.
+
 ## Layout
 
 ```

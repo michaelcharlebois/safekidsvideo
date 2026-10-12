@@ -31,13 +31,18 @@ export async function ingestVideo(input: string): Promise<Video> {
 }
 
 /** Add a channel (and, with a YouTube API key, its recent uploads). Returns stored videos. */
-export async function ingestChannel(input: string, maxVideos = 5): Promise<{ channelId: string; videos: Video[] }> {
+export async function ingestChannel(input: string, maxVideos = 20): Promise<{ channelId: string; videos: Video[] }> {
   const p = parseYouTubeUrl(input);
   if (p.kind !== "channel") throw new Error(`Not a YouTube channel URL or @handle: ${input}`);
   const meta = await fetchChannelMeta(p.id);
   if (!meta) throw new Error(`Channel not found: ${p.id}`);
   const now = new Date().toISOString();
   await db.upsertChannel({ ...meta, createdAt: (await db.getChannel(meta.id))?.createdAt ?? now });
+  // Before a YouTube key existed, channels were stored under their @handle. Re-point those videos.
+  const legacyId = meta.handle && meta.handle !== meta.id ? meta.handle : p.id.startsWith("@") ? p.id : null;
+  if (legacyId && legacyId !== meta.id) {
+    for (const v of await db.listVideos({ channelId: legacyId })) await db.upsertVideo({ ...v, channelId: meta.id });
+  }
   const uploads = await fetchChannelUploads(meta.id, maxVideos);
   const videos: Video[] = [];
   for (const u of uploads) videos.push(await saveMeta({ ...u, channelId: meta.id }));

@@ -14,7 +14,7 @@ const cachedSearch = unstable_cache(
 );
 import { aiPasses, canPlay, getLibrary } from "@/lib/queries";
 import { pendingCheckIds, pendingVideoIds, recentlyApprovedIds } from "@/lib/activity";
-import { CheckButton, type Suggestion } from "./check-button";
+import { CheckButton, type Suggestion } from "../check-button";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // background reviews of long videos run inside this request's budget
