@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #fbf7f0;
+  --surface: #ffffff;
+  --ink: #1f1b16;
+  --muted: #6b645b;
+  --line: #e8e0d3;
+  --accent: #ff7a59;
+  --accent-ink: #ffffff;
+  --ok: #2f9e6b;
+  --warn: #d98c1f;
+  --bad: #d64545;
+  --sky: #cfe8ff;
+  --sun: #ffe08a;
+  --grass: #c9f0c0;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-sky: var(--sky);
+  --color-sun: var(--sun);
+  --color-grass: var(--grass);
+  --font-sans: "Nunito", ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif;
+  --radius-xl: 1.25rem;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+/* Kid mode: no text selection, no long-press menus, big targets */
+.kid-mode {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
