@@ -7,7 +7,7 @@ import { CONCERN_TAGS, type ContentCard } from "@/lib/types";
 import { videoUrl } from "@/lib/youtube";
 
 export const REVIEWER_VERSION = "1";
-export const DEFAULT_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+export const DEFAULT_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
 
 const FindingSchema = z.object({
   tag: z.enum(CONCERN_TAGS),
