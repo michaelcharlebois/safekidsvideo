@@ -142,6 +142,20 @@ export async function signIn(_prev: SignInResult, form: FormData): Promise<SignI
   return { sent: true, email };
 }
 
+export type VerifyResult = { error: string } | null;
+
+/** Second step of sign-in: the 6-digit code from the email. Works regardless of which browser opened the email. */
+export async function verifyCode(_prev: VerifyResult, form: FormData): Promise<VerifyResult> {
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const token = String(form.get("code") ?? "").replace(/\D/g, "");
+  const next = String(form.get("next") ?? "/parent");
+  if (token.length < 6) return { error: "Enter the 6-digit code from the email." };
+  const sb = await supabaseAuthClient();
+  const { error } = await sb.auth.verifyOtp({ email, token, type: "email" });
+  if (error) return { error: "That code didn't work. Codes expire after an hour — request a new one if needed." };
+  redirect(next.startsWith("/") ? next : "/parent");
+}
+
 export async function signOut() {
   const sb = await supabaseAuthClient();
   await sb.auth.signOut();

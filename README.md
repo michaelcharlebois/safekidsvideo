@@ -46,7 +46,17 @@ parents sign in by magic link, each account owns a family, and kid devices are p
 4. `npm run seed` loads the sample channels/videos/cards, then `npm run review -- --all` replaces
    the sample cards with real reviews.
 
-Flow: parent opens `/login` → email link → `/parent`. Parent → **Devices** → make a code.
+5. Authentication → Email Templates → **Magic Link**: replace the body with something like
+
+   ```html
+   <h2>Your Sift sign-in code</h2>
+   <p style="font-size:32px;letter-spacing:.3em"><b>{{ .Token }}</b></p>
+   <p>Or open this link on the same device: <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink">Sign in</a></p>
+   ```
+
+   The code is what people actually use on phones; the link is a fallback that doesn't depend on which browser opens it.
+
+Flow: parent opens `/login` → types the emailed code → `/parent`. Parent → **Devices** → make a code.
 Tablet opens `/pair` → types the code → lands in kid mode, permanently.
 
 ## Layout
