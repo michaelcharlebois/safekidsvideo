@@ -13,6 +13,7 @@ import { countSubscriptions, pushEnabled } from "@/lib/push";
 import { NotifyButton } from "./notify-button";
 import { reviewNextBatch, sendTestPush } from "@/app/actions";
 import { AddForm } from "./add-form";
+import { SearchAdd } from "./search-add";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // background batch reviews run within this budget
@@ -100,8 +101,12 @@ export default async function ParentPage(props: PageProps<"/parent">) {
 
           <Card className="p-4">
             <h2 className="font-extrabold">Approve a channel or video</h2>
-            <p className="text-sm text-muted">Paste any YouTube link or an @handle. Videos get a content card once the reviewer runs.</p>
-            <AddForm />
+            <p className="text-sm text-muted">Search YouTube and approve from the results. Approving a channel pulls its recent uploads; videos get a content card once the reviewer runs.</p>
+            <SearchAdd approvedChannels={[...approvedChannels]} approvedVideos={lib.filter((v) => v.whitelisted).map((v) => v.id)} />
+            <details className="mt-3 text-sm">
+              <summary className="cursor-pointer font-bold text-muted">Or paste a link / @handle</summary>
+              <AddForm />
+            </details>
           </Card>
 
           <div className="flex flex-wrap items-center gap-2 text-sm">

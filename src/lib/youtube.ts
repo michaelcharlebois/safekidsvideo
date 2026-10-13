@@ -188,3 +188,43 @@ export async function searchKidsVideos(query: string, max = 12, kidsOnly = false
   }
   return out;
 }
+
+export type ChannelHit = { id: string; title: string; handle?: string; thumbnailUrl?: string; description?: string; subscribers?: number; videoCount?: number };
+export type ParentSearch = { channels: ChannelHit[]; videos: VideoMeta[] };
+
+/**
+ * Parent search: channels and videos for a free-text query, so a parent can approve
+ * "Super Simple Songs" without hunting for a link. Strict safe search, embeddable only.
+ */
+export async function searchForParent(query: string): Promise<ParentSearch> {
+  const key = process.env.YOUTUBE_API_KEY;
+  const q = query.trim();
+  if (!key || !q) return { channels: [], videos: [] };
+  const search = (type: "channel" | "video", max: number) => {
+    const u = new URL("https://www.googleapis.com/youtube/v3/search");
+    u.search = new URLSearchParams({
+      part: "snippet", type, safeSearch: "strict", maxResults: String(max), q, relevanceLanguage: "en", key,
+      ...(type === "video" ? { videoEmbeddable: "true", videoSyndicated: "true" } : {}),
+    }).toString();
+    return fetch(u).then((r) => r.json());
+  };
+  const [cs, vs] = await Promise.all([search("channel", 6), search("video", 10)]);
+
+  const channelIds: string[] = (cs.items ?? []).map((i: { id: { channelId: string } }) => i.id.channelId).filter(Boolean);
+  let channels: ChannelHit[] = [];
+  if (channelIds.length) {
+    const cj = await (await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${channelIds.join(",")}&key=${key}`)).json();
+    const byId = new Map<string, ChannelHit>();
+    for (const c of cj.items ?? []) {
+      byId.set(c.id, {
+        id: c.id, title: c.snippet.title, handle: c.snippet.customUrl, thumbnailUrl: c.snippet.thumbnails?.default?.url,
+        description: c.snippet.description, subscribers: Number(c.statistics?.subscriberCount) || undefined, videoCount: Number(c.statistics?.videoCount) || undefined,
+      });
+    }
+    channels = channelIds.map((id) => byId.get(id)).filter((c): c is ChannelHit => !!c);
+  }
+
+  const videoIds: string[] = (vs.items ?? []).map((i: { id: { videoId: string } }) => i.id.videoId).filter(Boolean);
+  const videos = videoIds.length ? await dataApiVideos(videoIds, key) : [];
+  return { channels, videos };
+}

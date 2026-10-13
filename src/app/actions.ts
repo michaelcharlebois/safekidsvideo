@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { ingestChannel, ingestVideo } from "@/lib/ingest";
-import { parseYouTubeUrl } from "@/lib/youtube";
+import { parseYouTubeUrl, searchForParent, type ParentSearch } from "@/lib/youtube";
 import { CONCERN_TAGS, FORMATS, type ConcernTag, type FamilyMode, type VideoFormat } from "@/lib/types";
 import { PARENT_COOKIE } from "@/lib/auth";
 import { createPairingCode, DEVICE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice } from "@/lib/family";
@@ -51,6 +51,21 @@ export async function addByUrl(_prev: AddResult | null, form: FormData): Promise
     return { ok: false, error: "That doesn't look like a YouTube video or channel link." };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
+  }
+}
+
+export type ParentSearchResult = { query: string; results: ParentSearch; error?: string };
+
+/** Parent search of YouTube: channels + videos to approve without hunting for links. */
+export async function parentSearch(_prev: ParentSearchResult | null, form: FormData): Promise<ParentSearchResult> {
+  await requireParent();
+  const query = String(form.get("q") ?? "").trim();
+  if (!query) return { query, results: { channels: [], videos: [] } };
+  if (!process.env.YOUTUBE_API_KEY) return { query, results: { channels: [], videos: [] }, error: "Search needs a YOUTUBE_API_KEY." };
+  try {
+    return { query, results: await searchForParent(query) };
+  } catch (e) {
+    return { query, results: { channels: [], videos: [] }, error: (e as Error).message };
   }
 }
 
