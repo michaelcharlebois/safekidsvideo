@@ -26,7 +26,7 @@ export default async function DevicesPage() {
           {codes.length > 0 && (
             <ul className="mt-3 flex flex-wrap gap-3">
               {codes.map((c) => (
-                <li key={c.code} className="rounded-xl bg-sun px-5 py-3 text-3xl font-extrabold tracking-[0.3em]">{c.code}</li>
+                <li key={c.code} className="rounded-xl bg-sun px-5 py-3 text-2xl sm:text-3xl font-extrabold tracking-[0.2em]">{c.code}</li>
               ))}
             </ul>
           )}

@@ -22,7 +22,7 @@ export const maxDuration = 300; // background reviews of long videos run inside 
 export default async function SearchPage(props: PageProps<"/watch/search">) {
   const viewer = await resolveViewer();
   if (!viewer.familyId) redirect("/pair");
-  const settings = await db.getSettings(viewer.familyId);
+  const settings = await db.getSettings(viewer.familyId, viewer.profileId);
   if (settings.mode === "locked") redirect("/watch");
 
   const sp = await props.searchParams;

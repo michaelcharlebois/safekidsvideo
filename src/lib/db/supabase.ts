@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Channel, Confirmation, ContentCard, ReviewerNotes, Video } from "@/lib/types";
-import { DEFAULT_SETTINGS, type Store } from "./store";
+import type { Channel, Confirmation, ContentCard, Profile, ReviewerNotes, Video } from "@/lib/types";
+import { DEFAULT_PROFILE, mergeSettings, type Store } from "./store";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -29,6 +29,17 @@ const toCard = (r: any): ContentCard => ({
   parentRecommendation: r.parent_recommendation, confidence: Number(r.confidence),
   reviewer: { model: r.reviewer_model, version: r.reviewer_version, reviewedAt: r.reviewed_at, revisions: r.revisions ?? 0, notesVersion: r.notes_version ?? undefined },
   usage: r.input_tokens != null ? { inputTokens: r.input_tokens, outputTokens: r.output_tokens ?? 0, costUsd: Number(r.cost_usd ?? 0) } : undefined,
+});
+const toProfile = (r: any): Profile => ({
+  id: r.id, familyId: r.family_id, name: r.name, age: r.age ?? undefined, avatar: r.avatar ?? "🦊", interests: r.interests ?? [],
+  mode: r.mode ?? "locked", blockedTags: r.blocked_tags ?? [], blockedFormats: r.blocked_formats ?? [], hideUnreviewed: r.hide_unreviewed ?? true,
+  dailyCheckLimit: r.daily_check_limit ?? 20, kidsOnlySearch: r.kids_only_search ?? false, dailyMinutes: r.daily_minutes ?? undefined,
+  bedtime: r.bedtime ?? undefined, sort: r.sort ?? 0, createdAt: r.created_at,
+});
+const fromProfile = (p: Omit<Profile, "createdAt"> & { createdAt?: string }) => ({
+  ...(p.id ? { id: p.id } : {}), family_id: p.familyId, name: p.name, age: p.age ?? null, avatar: p.avatar, interests: p.interests,
+  mode: p.mode, blocked_tags: p.blockedTags, blocked_formats: p.blockedFormats, hide_unreviewed: p.hideUnreviewed,
+  daily_check_limit: p.dailyCheckLimit, kids_only_search: p.kidsOnlySearch, daily_minutes: p.dailyMinutes ?? null, bedtime: p.bedtime ?? null, sort: p.sort,
 });
 const toNotes = (r: any): ReviewerNotes => ({ version: r.version, notes: r.notes, stats: r.stats ?? undefined, source: r.source, createdAt: r.created_at });
 const toConfirmation = (r: any): Confirmation => ({
@@ -122,15 +133,36 @@ export const supabaseStore: Store = {
     return toNotes(d);
   },
 
-  async getSettings(familyId) {
-    const d = must<any>(await client().from("families").select("*").eq("id", familyId).maybeSingle());
-    if (!d) return DEFAULT_SETTINGS(familyId);
-    return { familyId: d.id, pinHash: d.pin_hash, kidAge: d.kid_age ?? undefined, blockedTags: d.blocked_tags, blockedFormats: d.blocked_formats ?? [], flagThreshold: d.flag_threshold, hideUnreviewed: d.hide_unreviewed ?? true, mode: d.mode ?? "locked", dailyCheckLimit: d.daily_check_limit ?? 20, kidsOnlySearch: d.kids_only_search ?? false };
+  async getSettings(familyId, profileId) {
+    const d = must<any>(await client().from("families").select("id,pin_hash,flag_threshold,kid_age").eq("id", familyId).maybeSingle());
+    const fam = { familyId, pinHash: d?.pin_hash ?? "1234", flagThreshold: d?.flag_threshold ?? 3 };
+    let profiles = await this.listProfiles(familyId);
+    if (!profiles.length) profiles = [await this.upsertProfile({ ...DEFAULT_PROFILE(familyId, "My kid", d?.kid_age ?? 6), id: "" })];
+    const p = profiles.find((x) => x.id === profileId) ?? profiles[0];
+    return mergeSettings(fam, p);
   },
   async saveSettings(s) {
-    must(await client().from("families").upsert({
-      id: s.familyId, pin_hash: s.pinHash, kid_age: s.kidAge, blocked_tags: s.blockedTags, blocked_formats: s.blockedFormats, flag_threshold: s.flagThreshold, hide_unreviewed: s.hideUnreviewed, mode: s.mode, daily_check_limit: s.dailyCheckLimit, kids_only_search: s.kidsOnlySearch,
-    }));
+    must(await client().from("families").update({ pin_hash: s.pinHash, flag_threshold: s.flagThreshold }).eq("id", s.familyId));
+    if (s.profileId) {
+      must(await client().from("profiles").update({
+        age: s.kidAge ?? null, mode: s.mode, blocked_tags: s.blockedTags, blocked_formats: s.blockedFormats, hide_unreviewed: s.hideUnreviewed,
+        daily_check_limit: s.dailyCheckLimit, kids_only_search: s.kidsOnlySearch, daily_minutes: s.dailyMinutes ?? null, bedtime: s.bedtime ?? null,
+      }).eq("id", s.profileId).eq("family_id", s.familyId));
+    }
+  },
+  async listProfiles(familyId) {
+    return must(await client().from("profiles").select("*").eq("family_id", familyId).order("sort").order("created_at")).map(toProfile);
+  },
+  async getProfile(id) {
+    const d = must<any>(await client().from("profiles").select("*").eq("id", id).maybeSingle());
+    return d ? toProfile(d) : undefined;
+  },
+  async upsertProfile(p) {
+    const d = must<any>(await client().from("profiles").upsert(fromProfile(p)).select("*").single());
+    return toProfile(d);
+  },
+  async deleteProfile(id) {
+    must(await client().from("profiles").delete().eq("id", id));
   },
   async listWhitelist(familyId) {
     return must(await client().from("whitelist").select("*").eq("family_id", familyId)).map((r: any) => ({

@@ -8,9 +8,18 @@ import { PARENT_COOKIE } from "@/lib/auth";
 export const DEVICE_COOKIE = "skv_device";
 
 export type Viewer =
-  | { role: "parent"; familyId: string; email?: string; admin: boolean }
-  | { role: "device"; familyId: string; deviceId: string; deviceName: string }
+  | { role: "parent"; familyId: string; email?: string; admin: boolean; profileId?: string }
+  | { role: "device"; familyId: string; deviceId: string; deviceName: string; profileId?: string }
   | { role: "none"; familyId: null };
+
+/** Which kid is watching (or which kid the parent is looking at). A cookie, validated against the family. */
+export const PROFILE_COOKIE = "sift_profile";
+async function profileFor(familyId: string, cookieValue?: string): Promise<string | undefined> {
+  if (!cookieValue) return undefined;
+  const { db } = await import("@/lib/db");
+  const p = await db.getProfile(cookieValue);
+  return p && p.familyId === familyId ? p.id : undefined;
+}
 
 /** Global knobs (reviewer notes, learn-now) are limited to ADMIN_EMAILS — comma-separated. Unset = nobody. */
 export function isAdminEmail(email?: string | null): boolean {
@@ -32,9 +41,10 @@ export async function resolveViewer(): Promise<Viewer> {
   const c = await cookies();
   if (!supabaseEnabled || STORE_KIND === "local") {
     const isParent = c.get(PARENT_COOKIE)?.value === "1";
+    const profileId = await profileFor(DEFAULT_FAMILY_ID, c.get(PROFILE_COOKIE)?.value);
     return isParent
-      ? { role: "parent", familyId: DEFAULT_FAMILY_ID, admin: true } // single-family local mode: you're the admin
-      : { role: "device", familyId: DEFAULT_FAMILY_ID, deviceId: "local", deviceName: "This device" };
+      ? { role: "parent", familyId: DEFAULT_FAMILY_ID, admin: true, profileId } // single-family local mode: you're the admin
+      : { role: "device", familyId: DEFAULT_FAMILY_ID, deviceId: "local", deviceName: "This device", profileId };
   }
 
   // Parent?
@@ -42,7 +52,7 @@ export async function resolveViewer(): Promise<Viewer> {
   const { data: { user } } = await sb.auth.getUser();
   if (user) {
     const familyId = await familyForUser(user.id);
-    return { role: "parent", familyId, email: user.email, admin: isAdminEmail(user.email) };
+    return { role: "parent", familyId, email: user.email, admin: isAdminEmail(user.email), profileId: await profileFor(familyId, c.get(PROFILE_COOKIE)?.value) };
   }
 
   // Paired device?
@@ -55,7 +65,7 @@ export async function resolveViewer(): Promise<Viewer> {
       .maybeSingle();
     if (data && !data.revoked_at) {
       void supabaseAdmin().from("devices").update({ last_seen_at: new Date().toISOString() }).eq("id", data.id);
-      return { role: "device", familyId: data.family_id, deviceId: data.id, deviceName: data.name };
+      return { role: "device", familyId: data.family_id, deviceId: data.id, deviceName: data.name, profileId: await profileFor(data.family_id, c.get(PROFILE_COOKIE)?.value) };
     }
   }
   return { role: "none", familyId: null };
@@ -81,7 +91,7 @@ export async function createPairingCode(familyId: string): Promise<{ code: strin
   const sb = supabaseAdmin();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   for (let attempt = 0; attempt < 5; attempt++) {
-    const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+    const code = String(randomInt(0, 100_000_000)).padStart(8, "0");
     const { error } = await sb.from("pairing_codes").insert({ code, family_id: familyId, expires_at: expiresAt });
     if (!error) return { code, expiresAt };
   }

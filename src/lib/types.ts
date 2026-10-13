@@ -173,8 +173,35 @@ export type WhitelistEntry = {
   createdAt: string;
 };
 
+/** A kid. Each has their own viewing mode, filters and limits; the family shares PIN + crowd threshold. */
+export type Profile = {
+  id: string;
+  familyId: string;
+  name: string;
+  age?: number;
+  avatar: string; // emoji
+  interests: string[];
+  mode: FamilyMode;
+  blockedTags: ConcernTag[];
+  blockedFormats: VideoFormat[];
+  hideUnreviewed: boolean;
+  dailyCheckLimit: number;
+  kidsOnlySearch: boolean;
+  dailyMinutes?: number; // screen-time limit
+  bedtime?: string; // "HH:MM"
+  sort: number;
+  createdAt: string;
+};
+export const AVATARS = ["🦊", "🐼", "🦄", "🐸", "🐙", "🦖", "🐧", "🦁", "🐰", "🐢", "🚀", "🌈"];
+
+/** Effective settings for one kid on one family: family-level fields + that kid's profile. */
 export type FamilySettings = {
   familyId: string;
+  profileId?: string;
+  profileName?: string;
+  profileAvatar?: string;
+  dailyMinutes?: number;
+  bedtime?: string;
   /** 4-digit PIN to exit kid mode; stored hashed in Supabase, plain in local dev */
   pinHash: string;
   kidAge?: number;

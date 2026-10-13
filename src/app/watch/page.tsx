@@ -15,7 +15,7 @@ export default async function WatchPage() {
   if (!viewer.familyId) redirect("/pair");
   const fid = viewer.familyId;
   const [lib, settings, approved, recent] = await Promise.all([
-    getLibrary(fid), db.getSettings(fid), recentlyApprovedIds(fid), recentWatchIds(fid),
+    getLibrary(fid), db.getSettings(fid, viewer.profileId), recentlyApprovedIds(fid), recentWatchIds(fid, 8, viewer.profileId),
   ]);
 
   const byId = new Map(lib.map((v) => [v.id, v]));

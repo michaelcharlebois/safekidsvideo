@@ -14,17 +14,17 @@ const toReq = (r: Row): WatchRequest => ({
 });
 
 export async function createRequest(
-  familyId: string, videoId: string, deviceId?: string, reason?: string,
+  familyId: string, videoId: string, deviceId?: string, reason?: string, profileId?: string,
 ): Promise<"created" | "exists" | "off"> {
   if (!on()) return "off";
   const { error } = await supabaseAdmin()
     .from("watch_requests")
-    .insert({ family_id: familyId, video_id: videoId, device_id: deviceId && deviceId !== "local" ? deviceId : null });
+    .insert({ family_id: familyId, video_id: videoId, device_id: deviceId && deviceId !== "local" ? deviceId : null, profile_id: profileId ?? null });
   if (error) return /duplicate|unique/i.test(error.message) ? "exists" : (() => { throw new Error(error.message); })();
   // Ring the doorbell.
-  const video = await db.getVideo(videoId);
+  const [video, profile] = await Promise.all([db.getVideo(videoId), profileId ? db.getProfile(profileId) : undefined]);
   await pushToFamily(familyId, {
-    title: "Your kid asked for a video",
+    title: `${profile?.name ?? "Your kid"} asked for a video`,
     body: `${video?.title ?? videoId}${reason ? ` — ${reason}` : ""}`,
     url: `/parent/video/${videoId}`,
     tag: `request-${videoId}`,
@@ -56,12 +56,13 @@ export async function resolveRequest(familyId: string, requestId: string, status
     .match({ id: requestId, family_id: familyId, status: "pending" });
 }
 
-export async function logWatch(familyId: string, videoId: string, deviceId: string | undefined, completed: boolean) {
+export async function logWatch(familyId: string, videoId: string, deviceId: string | undefined, completed: boolean, profileId?: string) {
   if (!on()) return;
   await supabaseAdmin().from("watch_events").insert({
     family_id: familyId,
     video_id: videoId,
     device_id: deviceId && deviceId !== "local" ? deviceId : null,
+    profile_id: profileId ?? null,
     completed,
   });
 }
@@ -70,23 +71,25 @@ export async function logWatch(familyId: string, videoId: string, deviceId: stri
 
 export type CheckOutcome = "pending" | "passed" | "blocked" | "needs_parent" | "failed";
 
-export async function checksToday(familyId: string): Promise<number> {
+export async function checksToday(familyId: string, profileId?: string): Promise<number> {
   if (!on()) return 0;
   const since = new Date();
   since.setHours(0, 0, 0, 0);
-  const { count } = await supabaseAdmin()
+  let q = supabaseAdmin()
     .from("kid_checks")
     .select("id", { count: "exact", head: true })
     .eq("family_id", familyId)
     .gte("created_at", since.toISOString());
+  if (profileId) q = q.eq("profile_id", profileId);
+  const { count } = await q;
   return count ?? 0;
 }
 
-export async function logCheck(familyId: string, videoId: string, deviceId: string | undefined, outcome: CheckOutcome): Promise<string | null> {
+export async function logCheck(familyId: string, videoId: string, deviceId: string | undefined, outcome: CheckOutcome, profileId?: string): Promise<string | null> {
   if (!on()) return null;
   const { data } = await supabaseAdmin()
     .from("kid_checks")
-    .insert({ family_id: familyId, video_id: videoId, device_id: deviceId && deviceId !== "local" ? deviceId : null, outcome })
+    .insert({ family_id: familyId, video_id: videoId, device_id: deviceId && deviceId !== "local" ? deviceId : null, outcome, profile_id: profileId ?? null })
     .select("id")
     .single();
   return data?.id ?? null;
@@ -124,14 +127,16 @@ export async function recentlyApprovedIds(familyId: string): Promise<Set<string>
 }
 
 /** The last few distinct videos this family's kid played, newest first — the "Keep watching" shelf. */
-export async function recentWatchIds(familyId: string, limit = 8): Promise<string[]> {
+export async function recentWatchIds(familyId: string, limit = 8, profileId?: string): Promise<string[]> {
   if (!on()) return [];
-  const { data } = await supabaseAdmin()
+  let q = supabaseAdmin()
     .from("watch_events")
     .select("video_id,started_at")
     .eq("family_id", familyId)
     .order("started_at", { ascending: false })
     .limit(limit * 4);
+  if (profileId) q = q.eq("profile_id", profileId);
+  const { data } = await q;
   const seen = new Set<string>();
   const out: string[] = [];
   for (const r of (data ?? []) as { video_id: string }[]) {

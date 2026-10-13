@@ -26,7 +26,11 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const viewer = await resolveViewer();
   if (viewer.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent");
   const fid = viewer.familyId;
-  const [lib, settings, channels, requests, subs] = await Promise.all([getLibrary(fid), db.getSettings(fid), db.listChannels(), listPendingRequests(fid), countSubscriptions(fid)]);
+  const profiles = await db.listProfiles(fid);
+  const kidParam = typeof sp.kid === "string" && profiles.some((p) => p.id === sp.kid) ? sp.kid : undefined;
+  const kidId = kidParam ?? viewer.profileId ?? profiles[0]?.id;
+  const [lib, settings, channels, requests, subs] = await Promise.all([getLibrary(fid), db.getSettings(fid, kidId), db.listChannels(), listPendingRequests(fid), countSubscriptions(fid)]);
+  const kid = profiles.find((p) => p.id === kidId);
   const pushTest = typeof sp.push === "string" ? Number(sp.push) : null;
   const batchStarted = sp.batch === "1";
   const approvedChannelIds = new Set((await db.listWhitelist(fid)).filter((w) => w.kind === "channel").map((w) => w.targetId));
@@ -54,6 +58,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
             <Link href="/watch" className="text-sm font-bold text-muted hover:text-ink">Preview kid mode →</Link>
             {supabaseEnabled ? (
               <>
+                <Link href="/parent/kids" className="text-sm font-bold text-muted hover:text-ink">Kids</Link>
                 <Link href="/parent/devices" className="text-sm font-bold text-muted hover:text-ink">Devices</Link>
                 <Link href="/parent/reviewer" className="text-sm font-bold text-muted hover:text-ink">Reviewer</Link>
                 <form action={signOut}><Button variant="ghost" type="submit">Sign out</Button></form>
@@ -209,8 +214,17 @@ export default async function ParentPage(props: PageProps<"/parent">) {
           </Card>
 
           <Card className="p-4">
-            <form action={saveSettings} className="space-y-3">
-              <h2 className="font-extrabold">What can the kid reach?</h2>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {profiles.map((p) => (
+                <Link key={p.id} href={`/parent?kid=${p.id}`} className={`rounded-full px-3 py-1 text-sm font-bold border ${p.id === kidId ? "bg-ink text-bg border-ink" : "border-line hover:bg-surface"}`}>
+                  {p.avatar} {p.name}
+                </Link>
+              ))}
+              <Link href="/parent/kids" className="rounded-full px-3 py-1 text-sm font-bold border border-dashed border-line text-muted hover:bg-surface">+ Add a kid</Link>
+            </div>
+            <form action={saveSettings} className="mt-3 space-y-3">
+              <input type="hidden" name="profileId" value={kidId ?? ""} />
+              <h2 className="font-extrabold">What can {kid?.name ?? "the kid"} reach?</h2>
               <div className="space-y-1.5">
                 {(Object.keys(MODE_LABELS) as FamilyMode[]).map((m) => (
                   <label key={m} className="flex items-start gap-2 text-sm">
@@ -255,8 +269,17 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                 <input type="number" name="flagThreshold" min={1} max={50} defaultValue={settings.flagThreshold} className="w-16 rounded-lg border border-line px-2 py-1" />
               </label>
               <label className="flex items-center justify-between text-sm gap-2">
-                Kid&apos;s age
-                <input type="number" name="kidAge" min={1} max={14} defaultValue={settings.kidAge} className="w-16 rounded-lg border border-line px-2 py-1" />
+                {kid?.name ?? "Kid"}&apos;s age
+                <input type="number" name="kidAge" min={1} max={17} defaultValue={settings.kidAge} className="w-16 rounded-lg border border-line px-2 py-1" />
+              </label>
+              <h2 className="font-extrabold pt-2">Screen time</h2>
+              <label className="flex items-center justify-between text-sm gap-2">
+                Minutes per day <span className="text-muted text-xs ml-auto mr-2">blank = no limit</span>
+                <input type="number" name="dailyMinutes" min={5} max={600} step={5} defaultValue={settings.dailyMinutes ?? ""} className="w-20 rounded-lg border border-line px-2 py-1" />
+              </label>
+              <label className="flex items-center justify-between text-sm gap-2">
+                Done for the day at <span className="text-muted text-xs ml-auto mr-2">TV&apos;s local time</span>
+                <input type="time" name="bedtime" defaultValue={settings.bedtime ?? ""} className="rounded-lg border border-line px-2 py-1" />
               </label>
               <label className="flex items-center justify-between text-sm gap-2">
                 New PIN

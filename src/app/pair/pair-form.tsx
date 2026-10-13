@@ -20,13 +20,13 @@ export function PairForm() {
       <input
         name="code"
         inputMode="numeric"
-        pattern="\d{6}"
-        maxLength={6}
+        pattern="\d{6,8}"
+        maxLength={8}
         autoFocus
         autoComplete="one-time-code"
-        placeholder="000000"
+        placeholder="00000000"
         onKeyDown={onDigitKey}
-        className="w-full rounded-xl border border-line bg-white/10 text-white px-4 py-4 text-center text-3xl tracking-[0.4em] font-extrabold outline-none focus:border-accent"
+        className="w-full rounded-xl border border-line bg-white/10 text-white px-4 py-4 text-center text-3xl tracking-[0.3em] font-extrabold outline-none focus:border-accent"
       />
       <input
         name="name"

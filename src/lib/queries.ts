@@ -43,8 +43,8 @@ export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
 }
 
 /** What the kid actually sees: whitelisted AND not blocked by the family's filters. */
-export async function getKidFeed(familyId: string) {
-  const [lib, settings] = await Promise.all([getLibrary(familyId), db.getSettings(familyId)]);
+export async function getKidFeed(familyId: string, profileId?: string) {
+  const [lib, settings] = await Promise.all([getLibrary(familyId), db.getSettings(familyId, profileId)]);
   return lib.filter((v) => v.whitelisted && blockedReasons(v, settings).length === 0);
 }
 
@@ -53,8 +53,8 @@ export async function getKidFeed(familyId: string) {
  * videos from approved channels that a filter or a missing review is hiding.
  * Nothing outside approved channels/videos is ever shown.
  */
-export async function getKidScreen(familyId: string) {
-  const [lib, settings] = await Promise.all([getLibrary(familyId), db.getSettings(familyId)]);
+export async function getKidScreen(familyId: string, profileId?: string) {
+  const [lib, settings] = await Promise.all([getLibrary(familyId), db.getSettings(familyId, profileId)]);
   const playable: VideoWithCard[] = [];
   const askable: VideoWithCard[] = [];
   for (const v of lib) {

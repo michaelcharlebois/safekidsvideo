@@ -10,7 +10,8 @@ import { parseYouTubeUrl, searchForParent, type ParentSearch } from "@/lib/youtu
 import { CONCERN_TAGS, FORMATS, type ConcernTag, type ConfirmationVerdict, type FamilyMode, type TagVote, type VideoFormat } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
-import { createPairingCode, DEVICE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice } from "@/lib/family";
+import { createPairingCode, DEVICE_COOKIE, PROFILE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice } from "@/lib/family";
+import { DEFAULT_PROFILE } from "@/lib/db/store";
 import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
 import { checksToday, createRequest, finishCheck, logCheck, logWatch, resolveRequest } from "@/lib/activity";
 import { aiPasses, canPlay, getKidScreen, getLibrary } from "@/lib/queries";
@@ -140,7 +141,8 @@ export async function saveReviewerNotes(form: FormData) {
 
 export async function saveSettings(form: FormData) {
   const fid = await requireParent();
-  const current = await db.getSettings(fid);
+  const profileId = String(form.get("profileId") ?? "") || undefined;
+  const current = await db.getSettings(fid, profileId);
   const pin = String(form.get("pin") ?? "").trim();
   const blockedTags = CONCERN_TAGS.filter((t) => form.get(`block:${t}`) === "on") as ConcernTag[];
   const blockedFormats = FORMATS.filter((f) => form.get(`blockfmt:${f}`) === "on") as VideoFormat[];
@@ -156,13 +158,15 @@ export async function saveSettings(form: FormData) {
     dailyCheckLimit: Number(form.get("dailyCheckLimit") ?? current.dailyCheckLimit) || current.dailyCheckLimit,
     kidsOnlySearch: form.get("kidsOnlySearch") === "on",
     flagThreshold: Number(form.get("flagThreshold") ?? current.flagThreshold) || current.flagThreshold,
+    dailyMinutes: Number(form.get("dailyMinutes")) > 0 ? Number(form.get("dailyMinutes")) : undefined,
+    bedtime: /^\d{2}:\d{2}$/.test(String(form.get("bedtime") ?? "")) ? String(form.get("bedtime")) : undefined,
     });
   } catch (e) {
-    redirect(`/parent?error=${encodeURIComponent((e as Error).message)}`);
+    redirect(`/parent?kid=${profileId ?? ""}&error=${encodeURIComponent((e as Error).message)}`);
   }
   revalidatePath("/parent");
   revalidatePath("/watch");
-  redirect("/parent?saved=1");
+  redirect(`/parent?kid=${profileId ?? ""}&saved=1`);
 }
 
 export type UnlockResult = { error: string } | null;
@@ -237,7 +241,7 @@ export type PairResult = { error: string } | null;
 export async function pairDevice(_prev: PairResult, form: FormData): Promise<PairResult> {
   const code = String(form.get("code") ?? "").replace(/\D/g, "");
   const name = String(form.get("name") ?? "").trim().slice(0, 40);
-  if (code.length !== 6) return { error: "Enter the 6-digit code." };
+  if (code.length !== 8 && code.length !== 6) return { error: "Enter the 8-digit code." };
   const r = await redeemPairingCode(code, name);
   if ("error" in r) return { error: r.error };
   const c = await cookies();
@@ -258,10 +262,10 @@ export async function askGrownUp(form: FormData): Promise<void> {
   if (!v.familyId) redirect("/pair");
   const videoId = String(form.get("videoId"));
   // Only videos the family has already approved at the channel level can be asked for.
-  const screen = await getKidScreen(v.familyId);
+  const screen = await getKidScreen(v.familyId, v.profileId);
   const video = screen.askable.find((x) => x.id === videoId);
   if (!video) return;
-  await createRequest(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined);
+  await createRequest(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, undefined, v.profileId);
   // No card yet? Review it now so the parent sees a card, not a blank.
   if (!video.card && process.env.GEMINI_API_KEY) {
     after(async () => {
@@ -290,7 +294,53 @@ export async function resolveWatchRequest(form: FormData) {
 export async function recordWatch(videoId: string, completed: boolean) {
   const v = await resolveViewer();
   if (!v.familyId) return;
-  await logWatch(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, completed);
+  await logWatch(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, completed, v.profileId);
+}
+
+// ---- Kid profiles -------------------------------------------------------------
+
+/** Kid picks who's watching (or parent picks which kid to look at). */
+export async function selectProfile(form: FormData) {
+  const v = await resolveViewer();
+  if (!v.familyId) redirect("/pair");
+  const id = String(form.get("profileId") ?? "");
+  const p = await db.getProfile(id);
+  if (!p || p.familyId !== v.familyId) redirect("/watch/who");
+  const c = await cookies();
+  c.set(PROFILE_COOKIE, p.id, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
+  const next = String(form.get("next") ?? "/watch");
+  redirect(next.startsWith("/") ? next : "/watch");
+}
+
+export type ProfileResult = { ok: true } | { error: string } | null;
+
+export async function saveProfile(_prev: ProfileResult, form: FormData): Promise<ProfileResult> {
+  const fid = await requireParent();
+  const id = String(form.get("id") ?? "");
+  const name = String(form.get("name") ?? "").trim().slice(0, 30);
+  if (!name) return { error: "Give them a name." };
+  const ageRaw = Number(form.get("age"));
+  const age = Number.isFinite(ageRaw) && ageRaw > 0 ? Math.min(17, ageRaw) : undefined;
+  const avatar = String(form.get("avatar") ?? "🦊").slice(0, 4);
+  const interests = String(form.get("interests") ?? "").split(",").map((x) => x.trim()).filter(Boolean).slice(0, 12);
+  const existing = id ? await db.getProfile(id) : undefined;
+  if (id && (!existing || existing.familyId !== fid)) return { error: "Not your kid." };
+  const base = existing ?? { ...DEFAULT_PROFILE(fid, name, age), sort: (await db.listProfiles(fid)).length };
+  // A new kid inherits sensible defaults for their age: under 5 → locked; 5+ → ask-first.
+  const mode = existing ? existing.mode : (age ?? 6) < 5 ? "locked" : "open_ask";
+  const saved = await db.upsertProfile({ ...base, id: existing?.id ?? "", name, age, avatar, interests, mode });
+  revalidatePath("/parent"); revalidatePath("/parent/kids"); revalidatePath("/watch");
+  if (!existing) { const c = await cookies(); c.set(PROFILE_COOKIE, saved.id, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 }); }
+  return { ok: true };
+}
+
+export async function deleteProfile(form: FormData) {
+  const fid = await requireParent();
+  const id = String(form.get("id") ?? "");
+  const p = await db.getProfile(id);
+  if (p && p.familyId === fid && (await db.listProfiles(fid)).length > 1) await db.deleteProfile(id);
+  revalidatePath("/parent"); revalidatePath("/parent/kids");
+  redirect("/parent/kids");
 }
 
 // ---- Open mode: kid-triggered AI check ----------------------------------------
@@ -306,8 +356,8 @@ export type CheckResult =
   | null;
 
 /** Given a video that now has a card: play it, or send it to the parent. */
-async function settleCheck(familyId: string, videoId: string, deviceId: string | undefined, checkId: string | null): Promise<CheckResult> {
-  const settings = await db.getSettings(familyId);
+async function settleCheck(familyId: string, videoId: string, deviceId: string | undefined, checkId: string | null, profileId?: string): Promise<CheckResult> {
+  const settings = await db.getSettings(familyId, profileId);
   const lib = await getLibrary(familyId);
   const row = lib.find((x) => x.id === videoId);
   if (!row) throw new Error("Video vanished");
@@ -319,7 +369,7 @@ async function settleCheck(familyId: string, videoId: string, deviceId: string |
     return { status: "playing", videoId };
   }
   const { reasons } = aiPasses(row, settings);
-  await createRequest(familyId, videoId, deviceId, reasons[0]);
+  await createRequest(familyId, videoId, deviceId, reasons[0], profileId);
   await finishCheck(checkId, settings.mode === "open_ask" && reasons.length === 0 ? "needs_parent" : "blocked");
   revalidatePath("/watch");
   revalidatePath("/watch/search");
@@ -338,10 +388,11 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
   const familyId = v.familyId;
   const videoId = String(form.get("videoId") ?? "").trim();
   if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return { status: "error", message: "Bad video id" };
-  const settings = await db.getSettings(familyId);
+  const profileId = v.profileId;
+  const settings = await db.getSettings(familyId, profileId);
   if (settings.mode === "locked") return { status: "error", message: "Search is off" };
   const deviceId = v.role === "device" ? v.deviceId : undefined;
-  if ((await checksToday(familyId)) >= settings.dailyCheckLimit) return { status: "limit" };
+  if ((await checksToday(familyId, profileId)) >= settings.dailyCheckLimit) return { status: "limit" };
 
   try {
     const video = await ingestVideo(videoId);
@@ -349,20 +400,20 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
     if ((!existing || existing.reviewer.model === "sample") && (video.durationSeconds ?? 0) > MAX_KID_CHECK_SECONDS) {
       // Too long to auto-check: hand it to the parent instead of burning minutes of Gemini time.
       const minutes = Math.round((video.durationSeconds ?? 0) / 60);
-      await createRequest(familyId, video.id, deviceId, `Too long to auto-check (${minutes} min)`);
-      await logCheck(familyId, video.id, deviceId, "needs_parent");
+      await createRequest(familyId, video.id, deviceId, `Too long to auto-check (${minutes} min)`, profileId);
+      await logCheck(familyId, video.id, deviceId, "needs_parent", profileId);
       revalidatePath("/parent");
       return { status: "asked", videoId: video.id, reasons: [`Too long to auto-check (${Math.round((video.durationSeconds ?? 0) / 60)} min)`] };
     }
     if (existing && existing.reviewer.model !== "sample") {
-      const checkId = await logCheck(familyId, video.id, deviceId, "pending");
-      return await settleCheck(familyId, video.id, deviceId, checkId);
+      const checkId = await logCheck(familyId, video.id, deviceId, "pending", profileId);
+      return await settleCheck(familyId, video.id, deviceId, checkId, profileId);
     }
-    const checkId = await logCheck(familyId, video.id, deviceId, "pending");
+    const checkId = await logCheck(familyId, video.id, deviceId, "pending", profileId);
     after(async () => {
       try {
         await db.upsertCard(await reviewVideo(video.id, { durationSeconds: video.durationSeconds }));
-        await settleCheck(familyId, video.id, deviceId, checkId);
+        await settleCheck(familyId, video.id, deviceId, checkId, profileId);
       } catch (e) {
         console.error("background review failed", video.id, (e as Error).message);
         await finishCheck(checkId, "failed");

@@ -1,8 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Channel, Confirmation, ContentCard, FamilySettings, ReviewerNotes, Video, WhitelistEntry } from "@/lib/types";
-import { DEFAULT_SETTINGS, type Store } from "./store";
+import type { Channel, Confirmation, ContentCard, FamilySettings, Profile, ReviewerNotes, Video, WhitelistEntry } from "@/lib/types";
+import { DEFAULT_PROFILE, DEFAULT_SETTINGS, mergeSettings, type Store } from "./store";
 
 type Db = {
   channels: Channel[];
@@ -12,6 +12,7 @@ type Db = {
   reviewerNotes?: ReviewerNotes[];
   whitelist: WhitelistEntry[];
   settings: FamilySettings[];
+  profiles?: Profile[];
 };
 
 const DB_PATH = path.join(process.cwd(), "data", "db.json");
@@ -126,14 +127,51 @@ export const localStore: Store = {
     await persist(db);
   },
 
-  async getSettings(familyId) {
+  async getSettings(familyId, profileId) {
     const db = await load();
-    // Merge with defaults so settings saved before a new field existed still work.
-    return { ...DEFAULT_SETTINGS(familyId), ...db.settings.find((s) => s.familyId === familyId) };
+    // Family-level fields (merged with defaults so old files still work).
+    const fam = { ...DEFAULT_SETTINGS(familyId), ...db.settings.find((s) => s.familyId === familyId) };
+    db.profiles ??= [];
+    let profiles = db.profiles.filter((p) => p.familyId === familyId).sort((a, b) => a.sort - b.sort);
+    if (!profiles.length) {
+      // First run: carry the legacy family settings into a default profile.
+      const p: Profile = { ...DEFAULT_PROFILE(familyId, "My kid", fam.kidAge), id: randomUUID(), createdAt: new Date().toISOString(),
+        mode: fam.mode, blockedTags: fam.blockedTags, blockedFormats: fam.blockedFormats, hideUnreviewed: fam.hideUnreviewed, dailyCheckLimit: fam.dailyCheckLimit, kidsOnlySearch: fam.kidsOnlySearch };
+      db.profiles.push(p);
+      await persist(db);
+      profiles = [p];
+    }
+    const p = profiles.find((x) => x.id === profileId) ?? profiles[0];
+    return mergeSettings({ familyId, pinHash: fam.pinHash, flagThreshold: fam.flagThreshold }, p);
   },
   async saveSettings(s) {
     const db = await load();
-    upsertBy(db.settings, s, (x) => x.familyId);
+    const fam = { ...DEFAULT_SETTINGS(s.familyId), ...db.settings.find((x) => x.familyId === s.familyId), pinHash: s.pinHash, flagThreshold: s.flagThreshold };
+    upsertBy(db.settings, fam, (x) => x.familyId);
+    db.profiles ??= [];
+    const p = db.profiles.find((x) => x.id === s.profileId && x.familyId === s.familyId);
+    if (p) Object.assign(p, { age: s.kidAge, mode: s.mode, blockedTags: s.blockedTags, blockedFormats: s.blockedFormats, hideUnreviewed: s.hideUnreviewed, dailyCheckLimit: s.dailyCheckLimit, kidsOnlySearch: s.kidsOnlySearch, dailyMinutes: s.dailyMinutes, bedtime: s.bedtime });
+    await persist(db);
+  },
+  async listProfiles(familyId) {
+    await this.getSettings(familyId); // ensures the default profile exists
+    return ((await load()).profiles ?? []).filter((p) => p.familyId === familyId).sort((a, b) => a.sort - b.sort);
+  },
+  async getProfile(id) {
+    return ((await load()).profiles ?? []).find((p) => p.id === id);
+  },
+  async upsertProfile(p) {
+    const db = await load();
+    db.profiles ??= [];
+    const existing = db.profiles.find((x) => x.id === p.id);
+    const rec: Profile = { ...(existing ?? {}), ...p, id: p.id || randomUUID(), createdAt: existing?.createdAt ?? p.createdAt ?? new Date().toISOString() } as Profile;
+    if (existing) Object.assign(existing, rec); else db.profiles.push(rec);
+    await persist(db);
+    return rec;
+  },
+  async deleteProfile(id) {
+    const db = await load();
+    db.profiles = (db.profiles ?? []).filter((p) => p.id !== id);
     await persist(db);
   },
   async listWhitelist(familyId) {

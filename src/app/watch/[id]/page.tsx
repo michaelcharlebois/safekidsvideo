@@ -10,7 +10,7 @@ export default async function PlayPage(props: PageProps<"/watch/[id]">) {
   const { id } = await props.params;
   const viewer = await resolveViewer();
   if (!viewer.familyId) redirect("/pair");
-  const [lib, settings] = await Promise.all([getLibrary(viewer.familyId), db.getSettings(viewer.familyId)]);
+  const [lib, settings] = await Promise.all([getLibrary(viewer.familyId), db.getSettings(viewer.familyId, viewer.profileId)]);
   const feed = lib.filter((v) => canPlay(v, settings));
   const i = feed.findIndex((v) => v.id === id);
   if (i < 0) notFound(); // not approved / doesn't pass — kid mode never plays it
