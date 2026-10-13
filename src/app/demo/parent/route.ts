@@ -9,6 +9,15 @@ export const dynamic = "force-dynamic";
 /** /demo/parent?key=… — sign in as the demo parent and land on the dashboard. */
 export async function GET(req: NextRequest) {
   if (!demoKeyOk(req.nextUrl.searchParams.get("key"))) return new NextResponse("Not found", { status: 404 });
+  try {
+    return await enter(req);
+  } catch (e) {
+    console.error("demo parent failed", e);
+    return new NextResponse(`Demo setup failed: ${(e as Error).message}`, { status: 500, headers: { "content-type": "text/plain; charset=utf-8" } });
+  }
+}
+
+async function enter(req: NextRequest) {
   const userId = await ensureDemoUser();
   await ensureDemoFamily(userId, req.nextUrl.searchParams.get("reset") === "1");
   const c = await cookies();
