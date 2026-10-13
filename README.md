@@ -126,7 +126,7 @@ Per kid: minutes per day and a "done for the day" time (dashboard → kid tab �
 
 ## Demo access
 
-Set `DEMO_KEY` (a long random string), `DEMO_PASSWORD` (another; never shared) and optionally `DEMO_EXPIRES` (ISO date), then send a reviewer `https://<site>/demo?key=<DEMO_KEY>`. They get two doors — Parent (signs in as `demo@siftkids.com`) and Kid screen (pairs that browser as a device) — into a separate demo family with two kids and the best-reviewed shared channels approved. No email or pairing codes. The demo family is never an admin and never sees billing; "Reset the demo family" wipes its choices. Unset `DEMO_KEY` (or let it expire) and every `/demo` URL 404s.
+Set `DEMO_KEY` (a long random string), `DEMO_PASSWORD` (another; never shared) and optionally `DEMO_EXPIRES` (ISO date), then send a reviewer `https://<site>/demo?key=<DEMO_KEY>`. They get two doors — Parent (signs in as `demo@siftkids.com`) and Kid screen (pairs that browser as a device) — into a separate demo family with two kids and the best-reviewed shared channels approved. No email or pairing codes. The demo family is never an admin and never sees billing; "Reset the demo family" wipes its choices. A fresh or reset demo family is seeded with ~30 days of synthetic viewing per kid (`seedDemoActivity` in `src/lib/demo.ts`): after-school and weekend sessions, favourite channels and rewatches, skips (more on frenetic videos), mood check-ins that dip on long/frantic days, and two pending requests. Unset `DEMO_KEY` (or let it expire) and every `/demo` URL 404s.
 
 ## Layout
 
