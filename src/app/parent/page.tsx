@@ -6,15 +6,17 @@ import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { getLibrary } from "@/lib/queries";
-import { needsDecision, reviewEligibility } from "@/lib/gate";
+import { reviewEligibility } from "@/lib/gate";
 import { playStatus, type PlayStatus } from "@/lib/status";
 import { MODE_LABELS, type VideoWithCard } from "@/lib/types";
 import { Button, buttonClass, Card, EmptyState, Meter, Notice, SectionHeader, StatusBadge, Tag } from "@/components/ui";
 import { IconAlert, IconArrowDown, IconArrowUp, IconChannels, IconChevron, IconClock, IconHand, IconPlayCircle, IconPlus, IconTv } from "@/components/icons";
 import { approvePack, grantMoreTime, moveChannel, resolveWatchRequest, reviewNextBatch, toggleWhitelist } from "@/app/actions";
 import { localDay, watchEventsSince } from "@/lib/checkin";
-import { forKid, orderShelves, tasteFrom } from "@/lib/arrange";
-import { listPendingRequests, recentWatchIds } from "@/lib/activity";
+import { orderShelves, tasteFrom } from "@/lib/arrange";
+import { kidHome } from "@/lib/kid-home";
+import { forChild, pendingDecisions } from "@/lib/inbox";
+import { listPendingRequests, recentlyApprovedIds, recentWatchIds } from "@/lib/activity";
 import { minutesUsedToday } from "@/lib/screentime";
 import { AddForm } from "./add-form";
 import { SearchAdd } from "./search-add";
@@ -28,7 +30,7 @@ export const maxDuration = 300; // background batch reviews run within this budg
 /** Library filters (?view=). Names kept for existing links; labels are the new status words. */
 type View = "visible" | "hidden" | "unreviewed";
 const VIEW_OF: Record<PlayStatus, View> = { plays: "visible", allowed: "visible", reviewing: "unreviewed", held: "hidden", hidden: "hidden", blocked: "hidden", outside: "hidden" };
-const VIEW_LABEL: Record<View, string> = { visible: "Ready", hidden: "Held back", unreviewed: "Being reviewed" };
+const VIEW_LABEL: Record<View, string> = { visible: "Ready", hidden: "Held back", unreviewed: "Awaiting review" };
 const thumb = (v: { id: string; thumbnailUrl?: string }) => v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`;
 const fmtTime = (hhmm?: string) => {
   if (!hhmm) return "";
@@ -52,12 +54,11 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const profiles = await db.listProfiles(fid);
   const kidId = (typeof sp.kid === "string" && profiles.some((p) => p.id === sp.kid) ? sp.kid : undefined) ?? viewer.profileId ?? profiles[0]?.id;
   const kid = profiles.find((p) => p.id === kidId);
-  const [lib, settings, channels, allRequests, wl, recent, events, usedToday] = await Promise.all([
-    getLibrary(fid, kidId), db.getSettings(fid, kidId), db.listChannels(), listPendingRequests(fid), db.listWhitelist(fid), recentWatchIds(fid, 6, kidId),
+  const [lib, settings, channels, allRequests, wl, recent, approvedIds, events, usedToday] = await Promise.all([
+    getLibrary(fid, kidId), db.getSettings(fid, kidId), db.listChannels(), listPendingRequests(fid), db.listWhitelist(fid), recentWatchIds(fid, 8, kidId), recentlyApprovedIds(fid, kidId),
     watchEventsSince(fid, new Date(Date.now() - 30 * 86_400_000).toISOString()), // eslint-disable-line react-hooks/purity -- server component
     kidId ? minutesUsedToday(fid, kidId, family.timezone) : Promise.resolve(0),
   ]);
-  const name = kid?.name ?? "your child";
   const approvedChannels = new Set(wl.filter((w) => w.kind === "channel" && w.profileId == null).map((w) => w.targetId));
   const moreAsk = typeof sp.more === "string" ? profiles.find((p) => p.id === sp.more) : undefined;
   const batchStarted = typeof sp.batch === "string" ? Number(sp.batch) : 0;
@@ -66,29 +67,31 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const byId = new Map(lib.map((v) => [v.id, v]));
 
   // Everything below derives from the gate's decision for this child.
-  const mine = lib.filter((v) => v.whitelisted); // in their library, or allowed / cleared for them
+  // The child's content, from the SAME selector the kid home screen uses (lib/kid-home.ts): inventory is
+  // what's in their library at all (blocked and unreviewed included, so they can be managed); "ready" is
+  // inventory ∩ authorize(), i.e. exactly the kid screen's playable set.
+  const home = kidHome({
+    lib, settings, recentIds: recent, approvedIds, now: Date.now(), // eslint-disable-line react-hooks/purity -- server component
+    taste: tasteFrom(events.filter((e) => !kidId || e.profileId === kidId || !e.profileId), byId),
+  });
+  const mine = home.inventory;
   const stat = new Map(mine.map((v) => [v.id, playStatus(v, settings)]));
   const viewOf = (v: VideoWithCard) => VIEW_OF[stat.get(v.id)?.status ?? playStatus(v, settings).status];
-  const ready = mine.filter((v) => viewOf(v) === "visible");
+  const ready = home.playable;
   const reviewing = mine.filter((v) => viewOf(v) === "unreviewed");
-  const undecided = mine.filter((v) => needsDecision(v, settings));
+  // This child's pending decisions, deduplicated exactly like the Review inbox (lib/inbox.ts).
+  const decisions = kid ? forChild(pendingDecisions({ requests: allRequests, children: [{ profile: kid, settings, lib }], legacy: [] }), kid.id) : [];
+  const undecided = decisions.flatMap((d) => (d.kind === "held" && byId.get(d.videoId) ? [byId.get(d.videoId)!] : []));
   // This child's asks, plus old asks that never recorded a child (Review lets you pick one).
-  const requests = allRequests.filter((r) => (r.profileId === kidId || !r.profileId) && byId.has(r.videoId));
+  const requests = allRequests.filter((r) => decisions.some((d) => d.kind === "request" && d.requestId === r.id) && byId.has(r.videoId));
   const needsYou = requests.length + undecided.length;
   const backlog = reviewing.filter((v) => (v.durationSeconds ?? 0) <= 20 * 60).length;
   const limit = settings.dailyMinutes ? settings.dailyMinutes + (settings.bonusDay === localDay(family.timezone) ? settings.bonusMinutes ?? 0 : 0) : undefined;
 
   // The kid screen, in miniature: the same shelves they see.
-  const keepWatching = recent.map((id) => byId.get(id)).filter((v): v is VideoWithCard => !!v && viewOf(v) === "visible");
-  const byChannel = new Map<string, VideoWithCard[]>();
-  for (const v of ready) byChannel.set(v.channelId, [...(byChannel.get(v.channelId) ?? []), v]);
-  const taste = tasteFrom(events.filter((e) => !kidId || e.profileId === kidId || !e.profileId), byId);
-  const forYou = ready.length >= 6 ? forKid(ready, settings, taste, 8) : [];
-  const tvShelves = [
-    ...(forYou.length ? [{ id: "for-you", title: `For ${name}`, videos: forYou }] : []),
-    ...(keepWatching.length ? [{ id: "recent", title: "Keep watching", videos: keepWatching }] : []),
-    ...orderShelves([...byChannel.entries()].map(([id, vids]) => ({ id, title: vids[0].channel?.title ?? id, videos: vids.sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "")) })), settings.channelOrder),
-  ].slice(0, 2);
+  const keepWatching = home.keepWatching;
+  const tvShelves = home.shelves.slice(0, 2); // the first shelves, titled exactly as on the kid screen
+  const readyChannels = new Set(ready.map((v) => v.channelId)).size;
 
   // Channels (family content sources) with what each means for this child.
   const groups = [...approvedChannels].map((id) => {
@@ -167,7 +170,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
       {/* ---- four counts, each a door ---- */}
       <section aria-label={`${kid.name} at a glance`} className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile href={libHref("visible")} icon={<IconPlayCircle />} tone="ok" value={ready.length} label="Ready to watch" sub="Reviewed and within the rules" />
-        <StatTile href={libHref("unreviewed")} icon={<IconClock />} tone="pending" value={reviewing.length} label="Being reviewed" sub="Won't play until reviewed" />
+        <StatTile href={libHref("unreviewed")} icon={<IconClock />} tone="pending" value={reviewing.length} label="Awaiting review" sub="Won't play until an AI review passes" />
         <StatTile href={`/parent/review?kid=${kidId}`} icon={<IconAlert />} tone={needsYou ? "warn" : "quiet"} value={needsYou} label="Needs your decision" sub={requests.length ? `${requests.length} asked by ${kid.name}` : "Held back by filters"} />
         <StatTile href={`/parent/stats?kid=${kidId}`} icon={<IconTv />} tone="forest" value={`${usedToday}`} unit="min" label={limit ? `of ${limit} min today` : "watched today"} meter={limit ? { value: usedToday, max: limit } : undefined} />
       </section>
@@ -260,7 +263,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                   ))}
                 </div>
               )}
-              <p className="mt-4 text-xs text-ivory/65">{ready.length} video{ready.length === 1 ? "" : "s"} ready across {byChannel.size} channel{byChannel.size === 1 ? "" : "s"}.</p>
+              <p className="mt-4 text-xs text-ivory/65">The first {tvShelves.length === 1 ? "shelf" : `${tvShelves.length} shelves`} of {home.shelves.length}, as {kid.name} sees them. {ready.length} video{ready.length === 1 ? "" : "s"} ready across {readyChannels} channel{readyChannels === 1 ? "" : "s"}.</p>
             </div>
           </section>
 
@@ -304,8 +307,8 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                   {orderedGroups.map((g, idx) => (
                     <li key={g.id} className="flex items-center gap-1 pl-2">
                       <div className="flex flex-col text-muted">
-                        <form action={moveChannel}><input type="hidden" name="profileId" value={kidId} /><input type="hidden" name="channelId" value={g.id} /><input type="hidden" name="dir" value="up" /><button type="submit" disabled={idx === 0} aria-label={`Move ${g.title} up`} className="block rounded-md p-0.5 hover:text-forest disabled:opacity-25"><IconArrowUp size={16} /></button></form>
-                        <form action={moveChannel}><input type="hidden" name="profileId" value={kidId} /><input type="hidden" name="channelId" value={g.id} /><input type="hidden" name="dir" value="down" /><button type="submit" disabled={idx === orderedGroups.length - 1} aria-label={`Move ${g.title} down`} className="block rounded-md p-0.5 hover:text-forest disabled:opacity-25"><IconArrowDown size={16} /></button></form>
+                        <form action={moveChannel}><input type="hidden" name="profileId" value={kidId} /><input type="hidden" name="channelId" value={g.id} /><input type="hidden" name="dir" value="up" /><button type="submit" disabled={idx === 0} aria-label={`Move ${g.title} up`} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-sand-soft hover:text-forest disabled:opacity-25 sm:h-7 sm:w-7"><IconArrowUp size={18} /></button></form>
+                        <form action={moveChannel}><input type="hidden" name="profileId" value={kidId} /><input type="hidden" name="channelId" value={g.id} /><input type="hidden" name="dir" value="down" /><button type="submit" disabled={idx === orderedGroups.length - 1} aria-label={`Move ${g.title} down`} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-sand-soft hover:text-forest disabled:opacity-25 sm:h-7 sm:w-7"><IconArrowDown size={18} /></button></form>
                       </div>
                       <Link href={`/parent/channel/${g.id}`} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 hover:bg-sand-soft">
                         <ChannelAvatar channel={g.channel} name={g.title} size={40} />
@@ -313,7 +316,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                           <span className="block truncate font-bold text-forest">{g.title}</span>
                           <span className="mt-1 flex flex-wrap gap-1.5">
                             {g.ready > 0 && <StatusBadge status="plays" className="py-0.5">{g.ready} ready</StatusBadge>}
-                            {g.reviewing > 0 && <StatusBadge status="reviewing" className="py-0.5">{g.reviewing} being reviewed</StatusBadge>}
+                            {g.reviewing > 0 && <StatusBadge status="reviewing" className="py-0.5">{g.reviewing} awaiting review</StatusBadge>}
                             {g.held > 0 && <StatusBadge status="held" className="py-0.5">{g.held} held back</StatusBadge>}
                             {!g.ready && !g.reviewing && !g.held && <span className="text-xs text-muted">No videos yet</span>}
                           </span>
@@ -366,7 +369,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
             <ul className="mt-3 divide-y divide-sand text-sm">
               <SummaryRow href={`/parent?kid=${kidId}#channels`} icon={<IconChannels size={18} />} label="Channels in your library" value={approvedChannels.size} />
               <SummaryRow href={libHref("visible")} icon={<IconPlayCircle size={18} />} label={`Ready for ${kid.name}`} value={ready.length} />
-              <SummaryRow href={libHref("unreviewed")} icon={<IconClock size={18} />} label="Being reviewed" value={reviewing.length} />
+              <SummaryRow href={libHref("unreviewed")} icon={<IconClock size={18} />} label="Awaiting review" value={reviewing.length} />
               <SummaryRow href={libHref("hidden")} icon={<IconAlert size={18} />} label="Held back" value={mine.length - ready.length - reviewing.length} />
             </ul>
           </Card>

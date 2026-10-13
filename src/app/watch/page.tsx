@@ -1,13 +1,12 @@
 import { redirect } from "next/navigation";
 import { resolveViewer } from "@/lib/family";
-import { canPlay, childSettings, getLibrary } from "@/lib/queries";
-import { reviewEligibility } from "@/lib/gate";
+import { childSettings, getLibrary } from "@/lib/queries";
+import { kidHome } from "@/lib/kid-home";
 import { recentlyApprovedIds, recentWatchIds } from "@/lib/activity";
 import { watchEventsSince } from "@/lib/checkin";
-import { forKid, orderShelves, tasteFrom } from "@/lib/arrange";
+import { tasteFrom } from "@/lib/arrange";
 import { AutoRefresh } from "./auto-refresh";
 import { ChannelAvatar, PlayTile, Shelf } from "./kid-ui";
-import type { VideoWithCard } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // kid-triggered reviews run in the background within this budget
@@ -24,38 +23,13 @@ export default async function WatchPage() {
 
   if (!settings) redirect("/watch/who");
   const byId = new Map(lib.map((v) => [v.id, v]));
-  // Home shows this child's library: sources (channels / added videos), explicit approvals, and — only while in
-  // Open mode — videos their own checks cleared. Every tile goes through the one gate.
-  const mine = lib.filter((v) => v.inLibrary || v.overridden || (v.autoApproved && settings.mode === "open"));
-  const ok = (v: VideoWithCard) => canPlay(v, settings);
-  const playable = mine.filter(ok);
-  const justApproved = playable.filter((v) => approved.has(v.id));
-  const keepWatching = recent.map((id) => byId.get(id)).filter((v): v is VideoWithCard => !!v && ok(v));
-  const taste = tasteFrom(events.filter((e) => !viewer.profileId || e.profileId === viewer.profileId || !e.profileId), byId);
-  const forYou = playable.length >= 6 ? forKid(playable, settings, taste, 8) : [];
-
-  // Home is only things that play. Unchecked videos live under Search, not in front of a six-year-old.
-  const byChannel = new Map<string, VideoWithCard[]>();
-  for (const v of mine) byChannel.set(v.channelId, [...(byChannel.get(v.channelId) ?? []), v]);
-  const FRESH_MS = 30 * 60 * 1000;
-  const now = Date.now(); // eslint-disable-line react-hooks/purity -- server component, rendered per request
-  const shelves = [...byChannel.entries()]
-    .map(([channelId, vids]) => {
-      const videos = vids.filter(ok).sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
-      const unreviewed = vids.filter((v) => !reviewEligibility(v.card).eligible).length;
-      const added = vids[0].channel?.createdAt ? Date.parse(vids[0].channel.createdAt) : 0;
-      return {
-        channelId,
-        channel: vids[0].channel,
-        title: vids[0].channel?.title ?? channelId.replace(/^@/, ""),
-        videos,
-        // A channel approved in the last half hour with nothing cleared yet is still being checked.
-        checking: videos.length === 0 && unreviewed > 0 && now - added < FRESH_MS ? unreviewed : 0,
-      };
-    })
-    .filter((s) => s.videos.length > 0 || s.checking > 0);
-  const ordered = orderShelves(shelves.map((x) => ({ ...x, id: x.channelId })), settings.channelOrder);
-  const stillChecking = shelves.some((s) => s.checking > 0);
+  // The one definition of this child's home screen (shared with the parent dashboard's preview).
+  const home = kidHome({
+    lib, settings, recentIds: recent, approvedIds: approved, now: Date.now(), // eslint-disable-line react-hooks/purity -- server component, rendered per request
+    taste: tasteFrom(events.filter((e) => !viewer.profileId || e.profileId === viewer.profileId || !e.profileId), byId),
+  });
+  const { inventory: mine, justApproved, keepWatching, forYou, channels: ordered } = home;
+  const stillChecking = ordered.some((s) => s.checking > 0);
 
   return (
     <main className="flex-1 px-5 pb-12 pt-2 space-y-6">

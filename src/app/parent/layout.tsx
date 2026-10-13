@@ -2,8 +2,8 @@ import { Suspense } from "react";
 import { resolveViewer } from "@/lib/family";
 import { db } from "@/lib/db";
 import { listPendingRequests } from "@/lib/activity";
-import { getLibrary } from "@/lib/queries";
-import { needsDecision } from "@/lib/gate";
+import { getLibraries } from "@/lib/queries";
+import { pendingDecisions } from "@/lib/inbox";
 import { ParentNav, type NavKid } from "./parent-nav";
 
 /**
@@ -16,11 +16,13 @@ export default async function ParentLayout({ children }: LayoutProps<"/parent">)
   let kids: NavKid[] = [];
   let defaultKidId: string | undefined;
   if (v.role === "parent") {
-    const settings = await db.getSettings(v.familyId, v.profileId); // the parent's selected child, else the first
-    const [requests, lib, profiles] = await Promise.all([listPendingRequests(v.familyId), getLibrary(v.familyId, settings.profileId), db.listProfiles(v.familyId)]);
-    defaultKidId = settings.profileId;
-    badge = requests.length + lib.filter((x) => needsDecision(x, settings) && !requests.some((r) => r.videoId === x.id)).length;
-    kids = profiles.map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, asks: requests.filter((r) => r.profileId === p.id).length }));
+    // One count for the whole family: every pending decision across all children (see lib/inbox.ts).
+    const [requests, children, legacy] = await Promise.all([listPendingRequests(v.familyId), getLibraries(v.familyId), db.listLegacyGrants(v.familyId)]);
+    const items = pendingDecisions({ requests, children, legacy });
+    badge = items.length;
+    defaultKidId = (v.profileId && children.some((c) => c.profile.id === v.profileId) ? v.profileId : undefined) ?? children[0]?.profile.id;
+    // Per child (sidebar): decisions that name that child. Unattributed requests and old records count only in the total.
+    kids = children.map(({ profile: p }) => ({ id: p.id, name: p.name, avatar: p.avatar, pending: items.filter((i) => (i.kind === "request" || i.kind === "held") && i.profileId === p.id).length }));
   }
   return (
     <div className="flex flex-1 flex-col pb-20 md:pb-0 lg:flex-row lg:pb-0">

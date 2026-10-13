@@ -6,7 +6,7 @@ import type { FamilySettings, VideoWithCard } from "@/lib/types";
 export type PlayStatus =
   | "plays"      // passes the AI review + this child's rules, and has a source for them
   | "allowed"    // a parent explicitly allowed it for this child
-  | "reviewing"  // no usable AI review yet (none, low confidence, or incomplete)
+  | "reviewing"  // no usable AI review yet (none, low confidence, or incomplete); not necessarily running now
   | "held"       // reviewed, but this child's rules hold it back — waiting on a parent's call
   | "hidden"     // a parent chose "Keep hidden" for this child
   | "blocked"    // a parent chose "Never" (for this child or the whole family)
@@ -15,7 +15,7 @@ export type PlayStatus =
 export const STATUS_LABEL: Record<PlayStatus, string> = {
   plays: "Plays",
   allowed: "Allowed by you",
-  reviewing: "Being reviewed",
+  reviewing: "Awaiting review",
   held: "Held back",
   hidden: "Kept hidden",
   blocked: "Blocked",

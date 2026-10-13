@@ -16,6 +16,21 @@ export async function getLibrary(familyId: string, profileId?: string): Promise<
   return buildLibrary({ videos, channels, cards, confirmations, whitelist, profileId });
 }
 
+/**
+ * Every child's library from ONE read of the shared data (the inbox and the Review badge look at all
+ * children at once). Each entry is scoped to its child exactly like getLibrary(familyId, profileId).
+ */
+export async function getLibraries(familyId: string) {
+  const [videos, channels, whitelist, profiles] = await Promise.all([db.listVideos(), db.listChannels(), db.listWhitelist(familyId), db.listProfiles(familyId)]);
+  const ids = videos.map((v) => v.id);
+  const [cards, confirmations] = await Promise.all([db.listCards(ids), db.listConfirmations(ids)]);
+  return Promise.all(profiles.map(async (profile) => ({
+    profile,
+    settings: await db.getSettings(familyId, profile.id),
+    lib: buildLibrary({ videos, channels, cards, confirmations, whitelist, profileId: profile.id }),
+  })));
+}
+
 /** One video as each child in the family sees it: flags + the gate's decision, per child. */
 export async function videoForChildren(familyId: string, videoId: string) {
   const [video, channels, card, confirmations, whitelist, profiles] = await Promise.all([

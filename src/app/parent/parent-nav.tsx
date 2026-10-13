@@ -17,7 +17,7 @@ const TABS: Tab[] = [
 /** Pages that are "about one child" (take ?kid=); switching child keeps you on them. Elsewhere it goes Home. */
 const PER_CHILD = ["/parent", "/parent/review", "/parent/settings", "/parent/stats", "/parent/insights", "/parent/checkin"];
 
-export type NavKid = { id: string; name: string; avatar: string; asks: number };
+export type NavKid = { id: string; name: string; avatar: string; pending: number };
 
 /**
  * The parent shell's navigation, one component, three layouts:
@@ -29,9 +29,10 @@ export type NavKid = { id: string; name: string; avatar: string; asks: number };
 export function ParentNav({ badge = 0, kids, defaultKidId }: { badge?: number; kids: NavKid[]; defaultKidId?: string }) {
   const pathname = usePathname();
   const sp = useSearchParams();
-  const activeKid = (sp.get("kid") && kids.some((k) => k.id === sp.get("kid")) ? sp.get("kid") : null) ?? defaultKidId ?? kids[0]?.id;
+  // The Review inbox shows every child unless filtered, so no child is "selected" there by default.
+  const activeKid = (sp.get("kid") && kids.some((k) => k.id === sp.get("kid")) ? sp.get("kid") : null) ?? (pathname === "/parent/review" ? null : defaultKidId ?? kids[0]?.id);
   const kidHref = (id: string) => `${PER_CHILD.includes(pathname) ? pathname : "/parent"}?kid=${id}`;
-  const tabHref = (t: Tab) => (activeKid && (t.href === "/parent" || t.href === "/parent/review") ? `${t.href}?kid=${activeKid}` : t.href);
+  const tabHref = (t: Tab) => (activeKid && t.href === "/parent" ? `${t.href}?kid=${activeKid}` : t.href);
   const Badge = ({ n, className = "" }: { n: number; className?: string }) =>
     n > 0 ? <span className={`min-w-5 rounded-full bg-apricot px-1.5 text-center text-[11px] font-extrabold leading-5 text-forest ${className}`} aria-label={`${n} waiting`}>{n}</span> : null;
 
@@ -65,7 +66,7 @@ export function ParentNav({ badge = 0, kids, defaultKidId }: { badge?: number; k
                     className={`flex items-center gap-3 rounded-xl px-3 py-2 font-semibold ${k.id === activeKid ? "bg-sage-soft text-forest" : "text-ink hover:bg-sand-soft"}`}>
                     <span className="flex h-9 w-9 items-center justify-center rounded-full bg-surface text-xl ring-1 ring-sand" aria-hidden>{k.avatar}</span>
                     <span className="flex-1 truncate">{k.name}</span>
-                    <Badge n={k.asks} />
+                    <Badge n={k.pending} />
                   </Link>
                 </li>
               ))}
