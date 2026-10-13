@@ -1,0 +1,464 @@
+{
+ "channels": [
+  {
+   "id": "@Pinkfong",
+   "title": "Pinkfong Baby Shark",
+   "handle": "@Pinkfong",
+   "createdAt": "2026-10-12T00:00:00Z"
+  },
+  {
+   "id": "@SuperSimpleSongs",
+   "title": "Super Simple Songs",
+   "handle": "@SuperSimpleSongs",
+   "createdAt": "2026-10-12T00:00:00Z"
+  },
+  {
+   "id": "@Cocomelon",
+   "title": "Cocomelon",
+   "handle": "@Cocomelon",
+   "createdAt": "2026-10-12T00:00:00Z"
+  }
+ ],
+ "videos": [
+  {
+   "id": "XqZsoesa55w",
+   "channelId": "@Pinkfong",
+   "title": "Baby Shark Dance",
+   "thumbnailUrl": "https://i.ytimg.com/vi/XqZsoesa55w/hqdefault.jpg",
+   "durationSeconds": 136,
+   "createdAt": "2026-10-12T00:00:00Z"
+  },
+  {
+   "id": "yCjJyiqpAuU",
+   "channelId": "@SuperSimpleSongs",
+   "title": "Twinkle Twinkle Little Star",
+   "thumbnailUrl": "https://i.ytimg.com/vi/yCjJyiqpAuU/hqdefault.jpg",
+   "durationSeconds": 180,
+   "createdAt": "2026-10-12T00:00:00Z"
+  },
+  {
+   "id": "e_04ZrNroTo",
+   "channelId": "@SuperSimpleSongs",
+   "title": "The Wheels on the Bus",
+   "thumbnailUrl": "https://i.ytimg.com/vi/e_04ZrNroTo/hqdefault.jpg",
+   "durationSeconds": 160,
+   "createdAt": "2026-10-12T00:00:00Z"
+  },
+  {
+   "id": "WRVsOCh907o",
+   "channelId": "@Cocomelon",
+   "title": "Bath Song",
+   "thumbnailUrl": "https://i.ytimg.com/vi/WRVsOCh907o/hqdefault.jpg",
+   "durationSeconds": 190,
+   "createdAt": "2026-10-12T00:00:00Z"
+  }
+ ],
+ "cards": [
+  {
+   "videoId": "yCjJyiqpAuU",
+   "synopsis": "A test card.",
+   "format": "song",
+   "ageFit": {
+    "min": 2,
+    "max": 7
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fine for little ones.",
+   "confidence": 0.92,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-13T00:00:00Z",
+    "version": "t"
+   }
+  },
+  {
+   "videoId": "e_04ZrNroTo",
+   "synopsis": "A test card.",
+   "format": "song",
+   "ageFit": {
+    "min": 2,
+    "max": 7
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": true,
+     "intensity": 3
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fine for little ones.",
+   "confidence": 0.92,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-13T00:00:00Z",
+    "version": "t"
+   }
+  },
+  {
+   "videoId": "XqZsoesa55w",
+   "synopsis": "A family of cartoon sharks swims and dances to the Baby Shark song while two kids mimic the hand motions. Bright, repetitive, and very high energy.",
+   "ageFit": {
+    "min": 2,
+    "max": 6
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": true,
+     "intensity": 1,
+     "timestamp": "0:45",
+     "evidence": "Volume and tempo jump on the 'run away' verse"
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": true,
+     "intensity": 2,
+     "timestamp": "1:10",
+     "evidence": "Rapid cuts between sharks and dancing kids"
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "frenetic",
+   "educationalValue": 1.5,
+   "rating": 3.5,
+   "parentRecommendation": "Harmless but overstimulating. Fine as a one-off dance break; not something to loop before bed.",
+   "confidence": 0.9,
+   "reviewer": {
+    "model": "sample",
+    "version": "0",
+    "reviewedAt": "2026-10-12T00:00:00Z"
+   }
+  },
+  {
+   "videoId": "WRVsOCh907o",
+   "synopsis": "JJ and family make bath time a game with bubbles and rubber ducks. Bright 3D animation, quick scene changes, and a very catchy hook.",
+   "ageFit": {
+    "min": 1,
+    "max": 4
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": true,
+     "intensity": 2,
+     "timestamp": "0:30",
+     "evidence": "Cuts every 2\u20133 seconds through most of the song"
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "frenetic",
+   "educationalValue": 2,
+   "rating": 3,
+   "parentRecommendation": "Content is fine; pacing is the issue. Skews younger than 6.",
+   "confidence": 0.85,
+   "reviewer": {
+    "model": "sample",
+    "version": "0",
+    "reviewedAt": "2026-10-12T00:00:00Z"
+   }
+  }
+ ],
+ "confirmations": [],
+ "whitelist": [
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "kind": "channel",
+   "targetId": "@SuperSimpleSongs",
+   "createdAt": "2026-10-12T00:00:00Z"
+  },
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "kind": "video",
+   "targetId": "XqZsoesa55w",
+   "createdAt": "2026-10-12T00:00:00Z"
+  }
+ ],
+ "settings": [],
+ "_comment": "Sample data so the app works before any API keys exist. Cards marked reviewer.model = 'sample' are illustrative, NOT real reviews. Run `npm run review -- <urls>` to replace them with real AI reviews.",
+ "profiles": [
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "name": "Maya",
+   "age": 6,
+   "avatar": "\ud83e\udd8a",
+   "interests": [],
+   "mode": "locked",
+   "blockedTags": [
+    "violence",
+    "scary_imagery",
+    "monsters"
+   ],
+   "blockedFormats": [
+    "gameplay_commentary"
+   ],
+   "hideUnreviewed": true,
+   "dailyCheckLimit": 20,
+   "kidsOnlySearch": false,
+   "sort": 0,
+   "id": "e6148654-0dd2-4da9-ac82-3bb897a87d83",
+   "createdAt": "2026-10-13T07:03:25.726Z"
+  },
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "name": "Leo",
+   "age": 4,
+   "avatar": "\ud83d\udc22",
+   "interests": [],
+   "mode": "locked",
+   "blockedTags": [
+    "violence",
+    "scary_imagery",
+    "monsters"
+   ],
+   "blockedFormats": [
+    "gameplay_commentary"
+   ],
+   "hideUnreviewed": true,
+   "dailyCheckLimit": 20,
+   "kidsOnlySearch": false,
+   "sort": 1,
+   "id": "11111111-2222-4333-8444-555555555555",
+   "createdAt": "2026-10-13T07:03:25.726Z"
+  }
+ ],
+ "whitelistPre0018": [],
+ "legacyGrants": [
+  {
+   "id": "lg-auto-1",
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "kind": "auto",
+   "targetId": "WRVsOCh907o",
+   "createdAt": "2026-09-01T00:00:00Z",
+   "candidateProfileIds": [
+    "e6148654-0dd2-4da9-ac82-3bb897a87d83",
+    "11111111-2222-4333-8444-555555555555"
+   ]
+  }
+ ],
+ "schema": 18
+}
