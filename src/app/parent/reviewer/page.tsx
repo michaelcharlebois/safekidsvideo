@@ -61,8 +61,9 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
           <p className="mt-2 text-xs text-muted">Age range votes — fine for younger: {stats.age.younger} · about right: {stats.age.right} · needs older: {stats.age.older}</p>
         </Card>
 
+        {admin && (
         <Card className="p-4">
-          <h2 className="font-extrabold">Spend <span className="text-muted font-bold">· last 30 days, estimated</span></h2>
+          <h2 className="font-extrabold">Spend <span className="text-muted font-bold">· last 30 days, estimated · admins only</span></h2>
           <div className="mt-3 grid grid-cols-3 gap-2 text-center">
             <Stat label="Reviews" value={String(spend.reviews)} sub={`${spend.metered} metered`} />
             <Stat label="Total" value={`$${spend.total.toFixed(2)}`} sub={`$${spend.perReview.toFixed(3)} / review`} />
@@ -76,9 +77,10 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
           <div className="mt-3">
             <div className="flex items-center justify-between text-sm"><span className="font-bold">Last 24 hours</span><span className={last24 >= DAILY_BUDGET_USD ? "font-bold text-bad" : "text-muted"}>${last24.toFixed(2)} of ${DAILY_BUDGET_USD.toFixed(2)}</span></div>
             <div className="mt-1 h-2 rounded-full bg-line"><div className={`h-2 rounded-full ${last24 >= DAILY_BUDGET_USD ? "bg-bad" : "bg-ink"}`} style={{ width: `${Math.min(100, Math.round((100 * last24) / Math.max(0.01, DAILY_BUDGET_USD)))}%` }} /></div>
-            <p className="mt-1 text-xs text-muted">All-in cap across every family and job. When it&apos;s reached, nightly jobs stop and a kid&apos;s &ldquo;Check it&rdquo; becomes a request to you instead.</p>
+            <p className="mt-1 text-xs text-muted">All-in cap across every family and job. When it&apos;s reached, nightly jobs stop and a kid&apos;s &ldquo;Check it&rdquo; becomes a request to the parent instead.</p>
           </div>
         </Card>
+        )}
 
         <Card className="p-4">
           <div className="flex items-start justify-between gap-3">

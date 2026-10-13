@@ -588,7 +588,7 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
       } catch (e) {
         if (e instanceof BudgetExceededError) {
           // Out of reviewer budget for today: ask the parent instead of failing the kid.
-          await createRequest(familyId, video.id, deviceId, "Sift's daily review budget is used up", profileId);
+          await createRequest(familyId, video.id, deviceId, "Couldn't be checked automatically right now", profileId);
           await finishCheck(checkId, "needs_parent");
           revalidatePath("/parent");
           return;
