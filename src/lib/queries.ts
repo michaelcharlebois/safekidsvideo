@@ -1,91 +1,56 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { type ConcernTag, type FamilySettings, type VideoWithCard } from "@/lib/types";
-import { blockedReasons } from "@/lib/gate";
-export { blockedReasons };
+import type { FamilySettings, VideoWithCard } from "@/lib/types";
+import { authorize, blockedReasons, buildLibrary, canPlay, needsDecision, playableFor, screen } from "@/lib/gate";
+export { authorize, blockedReasons, canPlay, needsDecision, playableFor, screen };
 
-/** Every known video, joined with channel, AI card, confirmation tallies, and whitelist status. */
-export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
+/**
+ * Every known video, joined with channel, AI card, crowd tallies, and the grants that apply to
+ * `profileId`. Kid surfaces MUST pass the child; with no child you get the family-wide view, which
+ * authorize() refuses for playback.
+ */
+export async function getLibrary(familyId: string, profileId?: string): Promise<VideoWithCard[]> {
   const [videos, channels, whitelist] = await Promise.all([db.listVideos(), db.listChannels(), db.listWhitelist(familyId)]);
   const ids = videos.map((v) => v.id);
   const [cards, confirmations] = await Promise.all([db.listCards(ids), db.listConfirmations(ids)]);
+  return buildLibrary({ videos, channels, cards, confirmations, whitelist, profileId });
+}
 
-  const channelById = new Map(channels.map((c) => [c.id, c]));
-  const cardById = new Map(cards.map((c) => [c.videoId, c]));
-  const wlVideos = new Set(whitelist.filter((w) => w.kind === "video").map((w) => w.targetId));
-  const wlChannels = new Set(whitelist.filter((w) => w.kind === "channel").map((w) => w.targetId));
-  const overrides = new Set(whitelist.filter((w) => w.kind === "override").map((w) => w.targetId));
-  const autos = new Set(whitelist.filter((w) => w.kind === "auto").map((w) => w.targetId));
-  const blocks = new Set(whitelist.filter((w) => w.kind === "block").map((w) => w.targetId));
-  const dismissed = new Set(whitelist.filter((w) => w.kind === "dismissed").map((w) => w.targetId));
-
-  const tallies = new Map<string, VideoWithCard["confirmations"]>();
-  const blank = (): VideoWithCard["confirmations"] => ({ agree: 0, flag: 0, flaggedTags: {}, overcalledTags: {} });
-  for (const c of confirmations) {
-    const t = tallies.get(c.videoId) ?? blank();
-    if (c.verdict === "agree") t.agree++;
-    else t.flag++;
-    for (const tag of c.tags ?? []) if (!c.tagVotes?.[tag]) t.flaggedTags[tag] = (t.flaggedTags[tag] ?? 0) + 1;
-    for (const [tag, vote] of Object.entries(c.tagVotes ?? {}) as [ConcernTag, string][]) {
-      if (vote === "missed") t.flaggedTags[tag] = (t.flaggedTags[tag] ?? 0) + 1;
-      if (vote === "overcall") t.overcalledTags[tag] = (t.overcalledTags[tag] ?? 0) + 1;
-    }
-    tallies.set(c.videoId, t);
-  }
-
-  return videos.map((v) => ({
-    ...v,
-    channel: channelById.get(v.channelId),
-    card: cardById.get(v.id),
-    confirmations: tallies.get(v.id) ?? blank(),
-    whitelisted: !blocks.has(v.id) && (wlVideos.has(v.id) || wlChannels.has(v.channelId) || overrides.has(v.id) || autos.has(v.id)),
-    blockedByParent: blocks.has(v.id),
-    dismissed: dismissed.has(v.id),
-    overridden: overrides.has(v.id),
-    autoApproved: autos.has(v.id),
+/** One video as each child in the family sees it: flags + the gate's decision, per child. */
+export async function videoForChildren(familyId: string, videoId: string) {
+  const [video, channels, card, confirmations, whitelist, profiles] = await Promise.all([
+    db.getVideo(videoId), db.listChannels(), db.getCard(videoId), db.listConfirmations([videoId]), db.listWhitelist(familyId), db.listProfiles(familyId),
+  ]);
+  if (!video) return null;
+  const base = { videos: [video], channels, cards: card ? [card] : [], confirmations, whitelist };
+  const family = buildLibrary({ ...base })[0];
+  const perChild = await Promise.all(profiles.map(async (p) => {
+    const settings = await db.getSettings(familyId, p.id);
+    const v = buildLibrary({ ...base, profileId: p.id })[0];
+    return { profile: p, settings, v, decision: authorize(v, settings) };
   }));
+  const addedDirectly = whitelist.some((w) => w.kind === "video" && w.targetId === videoId && w.profileId == null);
+  const channelApproved = whitelist.some((w) => w.kind === "channel" && w.targetId === video.channelId && w.profileId == null);
+  return { video: family, perChild, addedDirectly, channelApproved };
 }
 
-/** What the kid actually sees: whitelisted AND not blocked by the family's filters. */
-export async function getKidFeed(familyId: string, profileId?: string) {
-  const [lib, settings] = await Promise.all([getLibrary(familyId), db.getSettings(familyId, profileId)]);
-  return lib.filter((v) => v.whitelisted && blockedReasons(v, settings).length === 0);
+/** Settings for a specific child, or null — never "the first profile" — so kid surfaces fail closed. */
+export async function childSettings(familyId: string, profileId: string | undefined): Promise<FamilySettings | null> {
+  if (!profileId) return null;
+  const p = await db.getProfile(profileId);
+  if (!p || p.familyId !== familyId) return null;
+  return db.getSettings(familyId, profileId);
 }
 
-/**
- * Kid screen, both rows: what plays now, and what the kid may *ask* for —
- * videos from approved channels that a filter or a missing review is hiding.
- * Nothing outside approved channels/videos is ever shown.
- */
-export async function getKidScreen(familyId: string, profileId?: string) {
-  const [lib, settings] = await Promise.all([getLibrary(familyId), db.getSettings(familyId, profileId)]);
+/** What the kid sees: what plays now, and what's in their library but held back (askable). */
+export async function getKidScreen(familyId: string, profileId: string) {
+  const [lib, settings] = await Promise.all([getLibrary(familyId, profileId), childSettings(familyId, profileId)]);
+  if (!settings) return { playable: [] as VideoWithCard[], askable: [] as VideoWithCard[], settings: null };
   const playable: VideoWithCard[] = [];
   const askable: VideoWithCard[] = [];
   for (const v of lib) {
-    if (!v.whitelisted) continue;
-    if (blockedReasons(v, settings).length === 0) playable.push(v);
-    else askable.push(v);
+    if (canPlay(v, settings)) playable.push(v);
+    else if (v.inLibrary && !v.blockedByParent) askable.push(v);
   }
-  return { playable, askable };
-}
-
-/**
- * Would the AI card alone justify playing this without a parent? Used in open mode.
- * Requires: a real card, no blocked reasons, decent confidence, and an age fit that includes the kid.
- */
-export function aiPasses(v: VideoWithCard, s: FamilySettings): { pass: boolean; reasons: string[] } {
-  const c = v.card;
-  if (!c || c.reviewer.model === "sample") return { pass: false, reasons: ["Not reviewed yet"] };
-  const reasons = blockedReasons(v, s);
-  if (c.confidence < 0.7) reasons.push("AI wasn't confident");
-  const age = s.kidAge ?? 6;
-  if (c.ageFit.min > age) reasons.push(`Rated for ages ${c.ageFit.min}+`);
-  return { pass: reasons.length === 0, reasons };
-}
-
-/** The single play gate for kid mode. */
-export function canPlay(v: VideoWithCard, s: FamilySettings): boolean {
-  if (v.blockedByParent) return false;
-  if (v.whitelisted) return blockedReasons(v, s).length === 0;
-  return s.mode === "open" && aiPasses(v, s).pass;
+  return { playable, askable, settings };
 }

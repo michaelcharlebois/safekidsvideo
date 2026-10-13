@@ -165,12 +165,33 @@ export const MODE_LABELS: Record<FamilyMode, { title: string; blurb: string }> =
   open_ask: { title: "Open, ask first", blurb: "Kid can search, but anything new comes to you before it plays." },
 };
 
+/**
+ * A family's grants and decisions about content.
+ *  - channel / video: content SOURCES (family-wide today; per-child possible). Never authorization on their own —
+ *    every video still needs an eligible review and must pass the child's rules.
+ *  - override: explicit "Allow for <child>" — the only thing that plays an unreviewed or filtered video. Child-scoped.
+ *  - auto: record that a child's open-mode check cleared it. Child-scoped; grants nothing outside Open mode.
+ *  - block / dismissed: restrictive decisions; child-scoped, or family-wide (null profile) for legacy blocks.
+ */
 export type WhitelistEntry = {
   familyId: string;
-  /** channel: all its videos; video: this video; override: this video even if filters would hide it */
+  /** null/undefined = applies to every child in the family */
+  profileId?: string | null;
   kind: WhitelistKind;
   targetId: string;
   createdAt: string;
+};
+
+/** A pre-0018 approval that couldn't be attributed to one child. Held for a parent to re-assign; grants nothing. */
+export type LegacyGrant = {
+  id: string;
+  familyId: string;
+  kind: "override" | "auto";
+  targetId: string;
+  createdAt: string;
+  candidateProfileIds: string[];
+  resolvedAt?: string;
+  resolution?: string;
 };
 
 export type Plan = "trial" | "active" | "past_due" | "canceled" | "free";
@@ -241,7 +262,7 @@ export type FamilySettings = {
   blockedTags: ConcernTag[];
   blockedFormats: VideoFormat[];
   flagThreshold: number;
-  /** hide videos from approved channels until they have a content card */
+  /** @deprecated ignored by the gate — unreviewed videos never play automatically */
   hideUnreviewed: boolean;
   mode: FamilyMode;
   /** kid-triggered AI checks per day */
@@ -255,15 +276,20 @@ export type VideoWithCard = Video & {
   channel?: Channel;
   card?: ContentCard;
   confirmations: { agree: number; flag: number; flaggedTags: Partial<Record<ConcernTag, number>>; overcalledTags: Partial<Record<ConcernTag, number>> };
+  /** in this child's library via a content source (approved channel or added video). Not authorization. */
+  inLibrary: boolean;
+  /** inLibrary || explicitly allowed || cleared by this child's open-mode check — "shows up somewhere for this child" */
   whitelisted: boolean;
-  /** parent said never, for this video */
+  /** parent said never, for this video (for this child, or family-wide) */
   blockedByParent: boolean;
   /** parent looked at the hidden video and chose to leave it hidden */
   dismissed: boolean;
-  /** parent explicitly approved this video over their filters */
+  /** parent explicitly allowed this video for THIS child ("Allow for <child>") */
   overridden: boolean;
-  /** added by a kid-triggered AI check that passed */
+  /** this child's open-mode check cleared it (a record; only meaningful while the child is in Open mode) */
   autoApproved: boolean;
+  /** which child the flags above were computed for; undefined = family-wide view */
+  scopedTo?: string;
 };
 
 export type WatchRequest = {
