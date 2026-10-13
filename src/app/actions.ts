@@ -14,9 +14,9 @@ import { askForMoreTime, grantBonusMinutes } from "@/lib/screentime";
 import { CONCERN_TAGS, FORMATS, type ConcernTag, type ConfirmationVerdict, type FamilyMode, type TagVote, type VideoFormat } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
-import { assignDevice, createPairingCode, DEVICE_COOKIE, devicePinLock, PROFILE_COOKIE, recordDevicePinAttempt, redeemPairingCode, resolveViewer, revokeDevice, setDeviceActiveProfile } from "@/lib/family";
-import { addVideoToLibrary, allowForChild, approveRequest, decideForChild, GrantError, recordOpenClearance, resolveLegacy } from "@/lib/grants";
-import { hashPin, pinIsSet, verifyPin } from "@/lib/pin";
+import { assignDevice, createPairingCode, DEVICE_COOKIE, claimDevicePinAttempt, devicePinSucceeded, PinCheckUnavailable, PROFILE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice, setDeviceActiveProfile } from "@/lib/family";
+import { addVideoToLibrary, allowForChild, approveRequest, decideForChild, GrantError, NeedsUnreviewedConfirm, recordOpenClearance, resolveLegacy, unhideForFamily as unhideForFamilyGrant } from "@/lib/grants";
+import { hashPin, newPinProblem, pinIsSet, verifyPin } from "@/lib/pin";
 import { nextAuthorized, reviewEligibility } from "@/lib/gate";
 import { timeState } from "@/lib/screentime";
 import { DEFAULT_PROFILE } from "@/lib/db/store";
@@ -167,12 +167,16 @@ export async function saveSettings(form: FormData) {
   const profileId = String(form.get("profileId") ?? "") || undefined;
   const current = await db.getSettings(fid, profileId);
   const pin = String(form.get("pin") ?? "").trim();
+  if (pin) {
+    const problem = newPinProblem(pin); // 4 digits, and never the old default 1234
+    if (problem) redirect(`/parent/settings?kid=${profileId ?? ""}&error=${encodeURIComponent(problem)}`);
+  }
   const blockedTags = CONCERN_TAGS.filter((t) => form.get(`block:${t}`) === "on") as ConcernTag[];
   const blockedFormats = FORMATS.filter((f) => form.get(`blockfmt:${f}`) === "on") as VideoFormat[];
   try {
     await db.saveSettings({
     ...current,
-    pinHash: /^\d{4}$/.test(pin) ? hashPin(pin) : current.pinHash,
+    pinHash: pin ? hashPin(pin) : current.pinHash,
     kidAge: Number(form.get("kidAge") ?? current.kidAge) || current.kidAge,
     blockedTags,
     blockedFormats,
@@ -212,7 +216,7 @@ export async function unlock(_prev: UnlockResult, form: FormData): Promise<Unloc
   if (!verifyPin(pin, settings.pinHash)) return { error: "Wrong PIN" };
   const c = await cookies();
   c.set(PARENT_COOKIE, "1", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 12 });
-  redirect(next.startsWith("/") ? next : "/parent");
+  redirect(isLocalPath(next) ? next : "/parent");
 }
 
 export async function lock() {
@@ -251,7 +255,7 @@ export async function verifyCode(_prev: VerifyResult, form: FormData): Promise<V
   const sb = await supabaseAuthClient();
   const { error } = await sb.auth.verifyOtp({ email, token, type: "email" });
   if (error) return { error: "That code didn't work. Codes expire after an hour — request a new one if needed." };
-  redirect(next.startsWith("/") ? next : "/parent");
+  redirect(isLocalPath(next) ? next : "/parent");
 }
 
 export async function signOut() {
@@ -267,7 +271,7 @@ export async function newPairingCode(form?: FormData) {
   await createPairingCode(fid);
   revalidatePath("/parent/devices");
   const next = String(form?.get("next") ?? "");
-  if (next.startsWith("/")) redirect(next);
+  if (isLocalPath(next)) redirect(next);
 }
 
 export type PairResult = { error: string } | null;
@@ -315,6 +319,18 @@ export async function askGrownUp(form: FormData): Promise<void> {
   revalidatePath("/parent");
 }
 
+/**
+ * Where to send a parent who tried to allow an unreviewed video without confirming: the review page's
+ * disclosure step, carrying everything needed to resubmit the same decision with confirm=1.
+ */
+function unreviewedConfirmUrl(e: NeedsUnreviewedConfirm, via: "request" | "queue" | "legacy", ref: string, kid: string) {
+  const q = new URLSearchParams({ kid, confirm: e.videoId, for: e.profileId, via, ref, why: e.reason });
+  return `/parent/review?${q}`;
+}
+/** Same-site path only ("/x", not "//host" or "/\\host"), so `next` can't redirect off-site. */
+const isLocalPath = (p: string) => p.startsWith("/") && !p.startsWith("//") && !p.startsWith("/\\");
+const confirmed = (form: FormData) => form.get("confirm") === "1";
+
 export async function resolveWatchRequest(form: FormData) {
   const fid = await requireParent();
   const requestId = String(form.get("requestId"));
@@ -324,8 +340,9 @@ export async function resolveWatchRequest(form: FormData) {
   if (approve) {
     try {
       // Allowed for the child who asked. Old requests with no child need the parent to pick one.
-      await approveRequest(db, fid, req, String(form.get("profileId") ?? "") || null);
+      await approveRequest(db, fid, req, String(form.get("profileId") ?? "") || null, { confirmedUnreviewed: confirmed(form) });
     } catch (e) {
+      if (e instanceof NeedsUnreviewedConfirm) redirect(unreviewedConfirmUrl(e, "request", requestId, e.profileId));
       if (e instanceof GrantError) redirect(`/parent/review?error=${encodeURIComponent(e.message)}`);
       throw e;
     }
@@ -335,7 +352,7 @@ export async function resolveWatchRequest(form: FormData) {
   revalidatePath("/parent/review");
   revalidatePath("/watch");
   const next = String(form.get("next") ?? "");
-  if (next.startsWith("/")) redirect(next);
+  if (isLocalPath(next)) redirect(next);
 }
 
 export async function recordWatchEnd(videoId: string, outcome: "skipped" | "finished" | "left", atSec: number) {
@@ -350,7 +367,7 @@ export async function recordWatch(videoId: string, completed: boolean) {
   await logWatch(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, completed, v.profileId);
 }
 
-/** Review queue: one decision per video. allow = override filters; hide = dismissed (stays hidden, stops asking); never = block. */
+/** Review queue: one decision per video, for one child. allow = explicit approval; hide = "Keep hidden" (a standing restriction for that child); never = block. */
 export async function decideVideo(form: FormData) {
   const fid = await requireParent();
   const videoId = String(form.get("videoId") ?? "");
@@ -360,13 +377,14 @@ export async function decideVideo(form: FormData) {
   const next = String(form.get("next") ?? "/parent/review");
   if (!decision) redirect(next);
   try {
-    await decideForChild(db, fid, profileId, videoId, decision);
+    await decideForChild(db, fid, profileId, videoId, decision, { confirmedUnreviewed: confirmed(form) });
   } catch (e) {
+    if (e instanceof NeedsUnreviewedConfirm) redirect(unreviewedConfirmUrl(e, "queue", "", profileId));
     if (e instanceof GrantError) redirect(`/parent/review?error=${encodeURIComponent(e.message)}`);
     throw e;
   }
   revalidatePath("/parent"); revalidatePath("/parent/review"); revalidatePath(`/parent/video/${videoId}`); revalidatePath("/watch");
-  redirect(next.startsWith("/") ? next : "/parent/review");
+  redirect(isLocalPath(next) ? next : "/parent/review");
 }
 
 export async function reviewChannelNow(form: FormData) {
@@ -542,7 +560,7 @@ export async function selectProfile(_prev: PickResult, form: FormData): Promise<
   const p = await db.getProfile(id);
   if (!p || p.familyId !== v.familyId) return { error: "That isn't one of this family's kids." };
   const next = String(form.get("next") ?? "/watch");
-  const go = () => redirect(next.startsWith("/") && !next.startsWith("//") ? next : "/watch");
+  const go = () => redirect(isLocalPath(next) ? next : "/watch");
   const c = await cookies();
 
   if (v.role === "parent") {
@@ -556,13 +574,19 @@ export async function selectProfile(_prev: PickResult, form: FormData): Promise<
     const fam = await db.getSettings(v.familyId, p.id);
     if (!pinIsSet(fam.pinHash)) return { error: "A grown-up needs to set a PIN first (Settings → PIN)." };
     const pin = String(form.get("pin") ?? "");
-    if (v.deviceId !== "local") {
-      const lock = await devicePinLock(v.deviceId);
-      if (lock.secondsLeft) return { error: `Too many tries. Wait ${Math.ceil(lock.secondsLeft / 60)} min.` };
+    try {
+      // Count the attempt BEFORE checking it (atomic in the database), so parallel guesses can't
+      // slip past the limit. Local dev mode has no device row and no lockout.
+      if (v.deviceId !== "local") {
+        const claim = await claimDevicePinAttempt(v.deviceId);
+        if (!claim.allowed) return { error: claim.secondsLeft ? `Too many tries. Wait ${Math.ceil(claim.secondsLeft / 60)} min.` : "This screen can't switch kids. Ask a grown-up." };
+      }
+      if (!verifyPin(pin, fam.pinHash)) return { error: "That PIN isn't right." };
+      if (v.deviceId !== "local") await devicePinSucceeded(v.deviceId);
+    } catch (e) {
+      if (e instanceof PinCheckUnavailable) return { error: e.message };
+      throw e;
     }
-    const ok = verifyPin(pin, fam.pinHash);
-    if (v.deviceId !== "local") await recordDevicePinAttempt(v.deviceId, ok);
-    if (!ok) return { error: "That PIN isn't right." };
   }
 
   if (v.deviceId === "local") c.set(PROFILE_COOKIE, p.id, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
@@ -621,17 +645,24 @@ export async function allowVideoForChild(form: FormData) {
   const undo = form.get("undo") === "1";
   try {
     if (undo) await decideForChild(db, fid, profileId, videoId, "undo");
-    else {
-      const reviewed = reviewEligibility(await db.getCard(videoId)).eligible;
-      if (!reviewed && form.get("confirm") !== "1") redirect(`/parent/video/${videoId}?confirm=${encodeURIComponent(profileId)}`);
-      await allowForChild(db, fid, profileId, videoId);
-    }
+    else await allowForChild(db, fid, profileId, videoId, { confirmedUnreviewed: confirmed(form) });
   } catch (e) {
+    if (e instanceof NeedsUnreviewedConfirm) redirect(`/parent/video/${videoId}?confirm=${encodeURIComponent(profileId)}`);
     if (e instanceof GrantError) redirect(`/parent/video/${videoId}?error=${encodeURIComponent(e.message)}`);
     throw e;
   }
   revalidatePath(`/parent/video/${videoId}`); revalidatePath("/parent"); revalidatePath("/watch");
   redirect(`/parent/video/${videoId}?allowed=${encodeURIComponent(profileId)}${undo ? "&undone=1" : ""}`);
+}
+
+/** Parent: lift a family-wide "Keep hidden" left over from before per-child permissions. */
+export async function unhideForFamily(form: FormData) {
+  const fid = await requireParent();
+  const videoId = String(form.get("videoId") ?? "");
+  try { await unhideForFamilyGrant(db, fid, videoId); }
+  catch (e) { if (e instanceof GrantError) redirect(`/parent/video/${videoId}?error=${encodeURIComponent(e.message)}`); throw e; }
+  revalidatePath(`/parent/video/${videoId}`); revalidatePath("/parent"); revalidatePath("/watch");
+  redirect(`/parent/video/${videoId}`);
 }
 
 /** Parent: re-assign or dismiss an approval from before approvals were per-child. */
@@ -640,13 +671,14 @@ export async function resolveLegacyAction(form: FormData) {
   const id = String(form.get("legacyId") ?? "");
   const allowFor = String(form.get("allowFor") ?? "");
   try {
-    await resolveLegacy(db, fid, id, allowFor ? { allowFor } : "dismiss");
+    await resolveLegacy(db, fid, id, allowFor ? { allowFor } : "dismiss", { confirmedUnreviewed: confirmed(form) });
   } catch (e) {
+    if (e instanceof NeedsUnreviewedConfirm) redirect(unreviewedConfirmUrl(e, "legacy", id, e.profileId));
     if (e instanceof GrantError) redirect(`/parent/review?error=${encodeURIComponent(e.message)}`);
     throw e;
   }
   revalidatePath("/parent/review"); revalidatePath("/watch");
-  redirect("/parent/review");
+  redirect(`/parent/review${allowFor ? `?kid=${encodeURIComponent(allowFor)}` : ""}`); // stay on the child you were deciding for
 }
 
 /**

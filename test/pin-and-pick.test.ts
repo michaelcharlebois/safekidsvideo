@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterPinAttempt, hashPin, LEGACY_DEFAULT_PIN, PIN_LOCK_MS, PIN_MAX_FAILURES, pinIsSet, pinLocked, verifyPin } from "@/lib/pin";
+import { hashPin, LEGACY_DEFAULT_PIN, newPinProblem, pinIsSet, verifyPin } from "@/lib/pin";
 import { pickKid } from "@/lib/kid-pick";
 
 describe("family PIN", () => {
@@ -15,22 +15,20 @@ describe("family PIN", () => {
     expect(verifyPin("abcd", "abcd")).toBe(false);
     expect(verifyPin("", hashPin("1111"))).toBe(false);
   });
-  it("the old default PIN doesn't count as set; a chosen one does", () => {
+  it("the old default PIN doesn't count as set — plain or hashed; a chosen one does", () => {
     expect(pinIsSet(LEGACY_DEFAULT_PIN)).toBe(false);
     expect(pinIsSet(undefined)).toBe(false);
-    expect(pinIsSet(hashPin("1234"))).toBe(true);
+    expect(pinIsSet(hashPin("1234"))).toBe(false);
+    expect(pinIsSet(hashPin("2580"))).toBe(true);
     expect(pinIsSet("9876")).toBe(true);
   });
-  it("locks after repeated failures, then unlocks", () => {
-    let s = { failures: 0, lockedUntil: null as string | null };
-    const t0 = Date.parse("2026-10-13T12:00:00Z");
-    for (let i = 0; i < PIN_MAX_FAILURES - 1; i++) s = { failures: afterPinAttempt(s, false, t0).failures, lockedUntil: null };
-    expect(pinLocked(s, t0)).toBe(0);
-    s = afterPinAttempt(s, false, t0) as typeof s;
-    expect(pinLocked(s, t0)).toBe(PIN_LOCK_MS / 1000);
-    expect(pinLocked(s, t0 + PIN_LOCK_MS + 1)).toBe(0);
-    expect(afterPinAttempt(s, true, t0)).toEqual({ failures: 0, lockedUntil: null });
+  it("a parent can't choose 1234 (or a non-4-digit PIN) as a new PIN", () => {
+    expect(newPinProblem("1234")).toMatch(/other than 1234/);
+    expect(newPinProblem("123")).toMatch(/4 digits/);
+    expect(newPinProblem("12a4")).toMatch(/4 digits/);
+    expect(newPinProblem("2580")).toBeNull();
   });
+  // Lockout is enforced in the database: see test/pin-lockout-db.test.ts.
 });
 
 describe("which child is this screen for", () => {

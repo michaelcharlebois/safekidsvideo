@@ -27,20 +27,15 @@ export function verifyPin(pin: string, stored: string | null | undefined): boole
 
 /** A PIN a kid could guess from the app's history doesn't count: shared-screen switching stays closed until a parent sets one. */
 export function pinIsSet(stored: string | null | undefined): boolean {
-  return !!stored && stored !== LEGACY_DEFAULT_PIN;
+  return !!stored && !verifyPin(LEGACY_DEFAULT_PIN, stored); // plain "1234" or a hash of it
 }
 
-export type PinLock = { failures: number; lockedUntil?: string | null };
-
-export function pinLocked(s: PinLock, now = Date.now()): number {
-  const until = s.lockedUntil ? Date.parse(s.lockedUntil) : 0;
-  return until > now ? Math.ceil((until - now) / 1000) : 0; // seconds remaining
+/** A PIN a parent may choose: 4 digits, and not the old default every family started with. */
+export function newPinProblem(pin: string): string | null {
+  if (!/^\d{4}$/.test(pin)) return "The PIN must be 4 digits.";
+  if (pin === LEGACY_DEFAULT_PIN) return "Pick a PIN other than 1234 — it was the old default, so kids may know it.";
+  return null;
 }
 
-export function afterPinAttempt(s: PinLock, ok: boolean, now = Date.now()): PinLock {
-  if (ok) return { failures: 0, lockedUntil: null };
-  const failures = s.failures + 1;
-  return failures >= PIN_MAX_FAILURES
-    ? { failures: 0, lockedUntil: new Date(now + PIN_LOCK_MS).toISOString() }
-    : { failures, lockedUntil: s.lockedUntil ?? null };
-}
+// The shared-screen lockout (PIN_MAX_FAILURES tries, then PIN_LOCK_MS) is enforced atomically in the
+// database: see supabase/migrations/0019_pin_attempts.sql and claimDevicePinAttempt() in family.ts.

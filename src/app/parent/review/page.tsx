@@ -9,7 +9,8 @@ import { listPendingRequests } from "@/lib/activity";
 import { CONCERN_LABELS } from "@/lib/types";
 import { Button, Card, ConcernPill, PacePill, Pill, Stars, TopBar } from "@/components/ui";
 import { decideVideo, resolveLegacyAction, resolveWatchRequest } from "@/app/actions";
-import { needsDecision } from "@/lib/gate";
+import { needsDecision, reviewEligibility } from "@/lib/gate";
+import { UnreviewedConfirm } from "@/app/parent/unreviewed-confirm";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,21 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
   // This child's requests, plus old requests that never recorded which child asked (the parent picks).
   const requests = allRequests.filter((r) => r.profileId === kidId || !r.profileId);
   const error = typeof sp.error === "string" ? sp.error : null;
+  const str = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
+
+  // The unreviewed-video disclosure, when an "Allow" needs the parent's explicit confirmation.
+  const confirmVideo = str("confirm") ? await db.getVideo(str("confirm")) : undefined;
+  const confirmKid = profiles.find((p) => p.id === str("for"));
+  const via = str("via");
+  const confirm = confirmVideo && confirmKid && ["request", "queue", "legacy"].includes(via)
+    ? {
+        kid: confirmKid, video: confirmVideo, reason: reviewEligibility(await db.getCard(confirmVideo.id)).reason,
+        action: via === "request" ? resolveWatchRequest : via === "legacy" ? resolveLegacyAction : decideVideo,
+        fields: (via === "request" ? { requestId: str("ref"), decision: "approve", profileId: confirmKid.id, next: `/parent/review?kid=${kidId ?? ""}` }
+          : via === "legacy" ? { legacyId: str("ref"), allowFor: confirmKid.id }
+          : { videoId: confirmVideo.id, profileId: confirmKid.id, decision: "allow", next: `/parent/review?kid=${kidId ?? ""}` }) as Record<string, string>,
+      }
+    : null;
 
   const queue = [
     ...requests.map((r) => ({ kind: "request" as const, v: byId.get(r.videoId)!, requestId: r.id, requester: r.profileId })).filter((x) => x.v),
@@ -58,25 +74,44 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
           <span className="text-muted">{remaining.length} left{done ? ` · ${done} skipped` : ""}</span>
         </div>
         {error && <Card className="p-3 border-bad/40 bg-bad/5 text-sm font-bold text-bad">{error}</Card>}
+        {confirm && (
+          <UnreviewedConfirm
+            childName={confirm.kid.name} title={confirm.video.title} reason={confirm.reason}
+            action={confirm.action} fields={confirm.fields} cancelHref={`/parent/review?kid=${kidId ?? ""}`}
+          />
+        )}
 
         {legacy.length > 0 && (
           <Card className="p-4 space-y-3">
             <div>
-              <h2 className="font-extrabold">Approvals from before per-child permissions</h2>
-              <p className="text-sm text-muted">Approvals are now made for one child at a time. We couldn&apos;t tell which child these were for, so they&apos;re paused — nothing here plays until you choose.</p>
+              <h2 className="font-extrabold">Old approvals to review</h2>
+              <p className="text-sm text-muted">
+                Approvals are now made for one child at a time. We couldn&apos;t tell which child these older records were for,
+                so they&apos;re paused — none of them lets anyone watch anything.
+              </p>
+              <ul className="mt-1 text-xs text-muted list-disc pl-4 space-y-0.5">
+                <li><b className="text-ink">Allow for a child</b> makes it an approved video for that child, in every viewing mode — the same as approving a request today.</li>
+                <li><b className="text-ink">Don&apos;t allow</b> leaves access as it is now (none). The old record is kept as history.</li>
+              </ul>
             </div>
             <ul className="divide-y divide-line">
               {legacy.map((g) => {
                 const vid = videosById.get(g.targetId);
                 const cands = profiles.filter((p) => g.candidateProfileIds.includes(p.id));
                 return (
-                  <li key={g.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
-                    <Link href={`/parent/video/${g.targetId}`} className="min-w-0 flex-1 font-bold hover:underline line-clamp-1">{vid?.title ?? g.targetId}</Link>
-                    <span className="text-xs text-muted">{g.kind === "override" ? "you approved it" : "a search check cleared it"}</span>
+                  <li key={g.id} className="flex flex-wrap items-center gap-2 py-3 text-sm">
+                    <div className="w-full min-w-0">
+                      <Link href={`/parent/video/${g.targetId}`} className="font-bold hover:underline line-clamp-1">{vid?.title ?? g.targetId}</Link>
+                      <span className="block text-xs text-muted">
+                        {g.kind === "override"
+                          ? "Old record: a parent approved this video."
+                          : "Old record: an automatic Open-mode search check cleared it. No parent approved it."}
+                      </span>
+                    </div>
                     {(cands.length ? cands : profiles).map((p) => (
                       <form key={p.id} action={resolveLegacyAction}><input type="hidden" name="legacyId" value={g.id} /><input type="hidden" name="allowFor" value={p.id} /><Button type="submit" variant="ghost" className="text-xs px-2.5 py-1">Allow for {p.name}</Button></form>
                     ))}
-                    <form action={resolveLegacyAction}><input type="hidden" name="legacyId" value={g.id} /><button type="submit" className="text-xs font-bold text-muted hover:text-ink">Dismiss</button></form>
+                    <form action={resolveLegacyAction}><input type="hidden" name="legacyId" value={g.id} /><button type="submit" className="text-xs font-bold text-muted hover:text-ink">Don&apos;t allow</button></form>
                   </li>
                 );
               })}
@@ -104,7 +139,8 @@ type Item = { kind: "request" | "hidden"; v: NonNullable<Awaited<ReturnType<type
 function QueueCard({ item, kidName, reasons, nextSkip, kidId, profiles }: { item: Item; kidName: string; reasons: string[]; nextSkip: string; kidId?: string; profiles: { id: string; name: string }[] }) {
   const { v } = item;
   const c = v.card;
-  const present = c?.concerns.filter((x) => x.present) ?? [];
+  const unreviewed = !reviewEligibility(c).eligible; // allowing it goes through the confirm step
+  const present = (Array.isArray(c?.concerns) ? c.concerns : []).filter((x) => x.present);
   const next = `/parent/review?kid=${kidId ?? ""}`;
   const skipHref = `/parent/review?kid=${kidId ?? ""}&skip=${nextSkip}`;
   return (
@@ -140,7 +176,7 @@ function QueueCard({ item, kidName, reasons, nextSkip, kidId, profiles }: { item
             <form action={resolveWatchRequest} className="flex flex-wrap items-center gap-2">
               <input type="hidden" name="requestId" value={item.requestId} /><input type="hidden" name="next" value={next} />
               {item.requester ? (
-                <Button type="submit" name="decision" value="approve">✓ Allow for {kidName}</Button>
+                <Button type="submit" name="decision" value="approve">✓ Allow for {kidName}{unreviewed ? " (unreviewed)" : ""}</Button>
               ) : (
                 <>
                   {/* An old request that didn't record which child asked: the parent chooses; never "everyone". */}
@@ -148,7 +184,7 @@ function QueueCard({ item, kidName, reasons, nextSkip, kidId, profiles }: { item
                     <option value="" disabled>Which child?</option>
                     {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
-                  <Button type="submit" name="decision" value="approve">✓ Allow</Button>
+                  <Button type="submit" name="decision" value="approve">✓ Allow{unreviewed ? " (unreviewed)" : ""}</Button>
                 </>
               )}
               <Button type="submit" name="decision" value="deny" variant="ghost">Not now</Button>
@@ -156,9 +192,10 @@ function QueueCard({ item, kidName, reasons, nextSkip, kidId, profiles }: { item
           ) : (
             <form action={decideVideo} className="flex flex-wrap gap-2">
               <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={kidId ?? ""} /><input type="hidden" name="next" value={next} />
-              <Button type="submit" name="decision" value="allow">✓ Allow for {kidName}</Button>
-              <Button type="submit" name="decision" value="hide" variant="ghost">Keep hidden</Button>
+              <Button type="submit" name="decision" value="allow">✓ Allow for {kidName}{unreviewed ? " (unreviewed)" : ""}</Button>
+              <Button type="submit" name="decision" value="hide" variant="ghost">Keep hidden for {kidName}</Button>
               <Button type="submit" name="decision" value="never" variant="danger">Never for {kidName}</Button>
+              <p className="w-full text-xs text-muted">&ldquo;Keep hidden&rdquo; holds even if the review or {kidName}&apos;s filters change later, until you change it on the video&apos;s page. &ldquo;Never&rdquo; also stops {kidName} from asking for it.</p>
             </form>
           )}
           <span className="ml-auto flex gap-3 text-xs font-bold text-muted">

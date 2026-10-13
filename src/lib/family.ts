@@ -5,7 +5,7 @@ import { DEFAULT_FAMILY_ID, STORE_KIND } from "@/lib/db";
 import { supabaseAdmin, supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
 import { PARENT_COOKIE } from "@/lib/auth";
 import { pickKid } from "@/lib/kid-pick";
-import { afterPinAttempt, pinLocked, type PinLock } from "@/lib/pin";
+import { PIN_LOCK_MS, PIN_MAX_FAILURES } from "@/lib/pin";
 
 export const DEVICE_COOKIE = "skv_device";
 
@@ -166,15 +166,32 @@ export async function setDeviceActiveProfile(familyId: string, deviceId: string,
 }
 
 /** Shared-screen PIN lockout, stored on the device row so it survives serverless restarts. */
-export async function devicePinLock(deviceId: string): Promise<PinLock & { secondsLeft: number }> {
-  const { data } = await supabaseAdmin().from("devices").select("pin_failures,pin_locked_until").eq("id", deviceId).maybeSingle();
-  const s: PinLock = { failures: data?.pin_failures ?? 0, lockedUntil: data?.pin_locked_until ?? null };
-  return { ...s, secondsLeft: pinLocked(s) };
+export class PinCheckUnavailable extends Error {}
+
+/**
+ * Claim one PIN attempt for a shared screen, atomically (0019 claim_pin_attempt): refused while locked;
+ * otherwise counted up front, and the PIN_MAX_FAILURES-th claim starts the lock. Any database error
+ * throws PinCheckUnavailable — the caller fails closed (no PIN check, no switch).
+ */
+export async function claimDevicePinAttempt(deviceId: string): Promise<{ allowed: boolean; secondsLeft: number }> {
+  const { data, error } = await supabaseAdmin().rpc("claim_pin_attempt", {
+    p_device: deviceId, p_max: PIN_MAX_FAILURES, p_lock: `${Math.round(PIN_LOCK_MS / 1000)} seconds`,
+  });
+  const row = Array.isArray(data) ? data[0] : data;
+  if (error || !row || typeof row.allowed !== "boolean") {
+    console.error("claim_pin_attempt failed", error?.message ?? "no row");
+    throw new PinCheckUnavailable("Couldn't check the PIN right now. Try again in a moment.");
+  }
+  return { allowed: row.allowed, secondsLeft: Number(row.seconds_left) || 0 };
 }
-export async function recordDevicePinAttempt(deviceId: string, ok: boolean) {
-  const cur = await devicePinLock(deviceId);
-  const next = afterPinAttempt(cur, ok);
-  await supabaseAdmin().from("devices").update({ pin_failures: next.failures, pin_locked_until: next.lockedUntil ?? null }).eq("id", deviceId);
+
+/** The PIN was right: clear this screen's counted attempts. Errors throw (the caller doesn't switch). */
+export async function devicePinSucceeded(deviceId: string) {
+  const { error } = await supabaseAdmin().rpc("pin_attempt_succeeded", { p_device: deviceId });
+  if (error) {
+    console.error("pin_attempt_succeeded failed", error.message);
+    throw new PinCheckUnavailable("Couldn't check the PIN right now. Try again in a moment.");
+  }
 }
 
 export async function revokeDevice(familyId: string, deviceId: string) {

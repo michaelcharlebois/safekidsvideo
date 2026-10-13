@@ -123,7 +123,7 @@ export default async function SettingsPage(props: PageProps<"/parent/settings">)
               <label className="flex items-center justify-between gap-2">Free peek (seconds)<input type="number" name="freePeekSec" min={0} max={120} step={5} defaultValue={settings.freePeekSec ?? 30} className="w-16 rounded-lg border border-line px-2 py-1" /></label>
             </div>
             <h2 className="font-extrabold pt-2">Family PIN</h2>
-            <p className="text-xs text-muted">Used to pick or switch kids on a shared screen{pinIsSet(settings.pinHash) ? "." : " — shared screens stay locked until you set one."}</p>
+            <p className="text-xs text-muted">Used to pick or switch kids on a shared screen{pinIsSet(settings.pinHash) ? "." : " — shared screens stay locked until you set one."} Any 4 digits except 1234.</p>
             <label className="flex items-center justify-between text-sm gap-2">
               {pinIsSet(settings.pinHash) ? "Change PIN" : "Set a PIN"}
               <input type="password" name="pin" inputMode="numeric" pattern="\d{4}" maxLength={4} placeholder="••••" className="w-20 rounded-lg border border-line px-2 py-1" />

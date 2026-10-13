@@ -6,7 +6,7 @@ import { DEFAULT_PROFILE } from "@/lib/db/store";
 import { familyForUser } from "@/lib/family";
 import { hashPin } from "@/lib/pin";
 
-export const DEMO_PIN = "1234";
+export const DEMO_PIN = "2580"; // never 1234: that old default counts as "no PIN set"
 
 /*
  * Demo access: a secret link that signs a reviewer into a separate, pre-filled demo family —
@@ -64,7 +64,7 @@ export async function ensureDemoFamily(userId: string, reset = false): Promise<s
     await sb.from("profiles").delete().eq("family_id", fid);
   }
   await db.updateFamily(fid, { onboardedAt: new Date().toISOString(), plan: "free" });
-  // Shared demo screens need a PIN to pick a kid; the demo page tells reviewers it's 1234.
+  // Shared demo screens need a PIN to pick a kid; the demo page tells reviewers the PIN.
   await sb.from("families").update({ pin_hash: hashPin(DEMO_PIN) }).eq("id", fid);
 
   const profiles = await db.listProfiles(fid);

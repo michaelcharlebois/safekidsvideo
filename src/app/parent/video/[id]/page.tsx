@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UnreviewedConfirm } from "@/app/parent/unreviewed-confirm";
 import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
@@ -7,7 +8,7 @@ import { videoForChildren } from "@/lib/queries";
 import { reviewEligibility } from "@/lib/gate";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS } from "@/lib/types";
 import { Button, Card, ConcernPill, PacePill, Pill, Stars, TopBar } from "@/components/ui";
-import { addAndReview, allowVideoForChild, runReview } from "@/app/actions";
+import { addAndReview, allowVideoForChild, decideVideo, runReview, unhideForFamily } from "@/app/actions";
 import { FeedbackForm } from "./feedback-form";
 import { VERDICT_LABELS } from "@/lib/types";
 
@@ -29,8 +30,9 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
   const confirmFor = typeof sp.confirm === "string" ? view.perChild.find((k) => k.profile.id === sp.confirm) : undefined;
   const error = typeof sp.error === "string" ? sp.error : null;
   const mine = confirmations.find((x) => x.familyId === fid);
-  const present = c?.concerns.filter((x) => x.present) ?? [];
-  const absent = c?.concerns.filter((x) => !x.present) ?? [];
+  const concerns = Array.isArray(c?.concerns) ? c.concerns : []; // a malformed card must not crash the page
+  const present = concerns.filter((x) => x.present);
+  const absent = concerns.filter((x) => !x.present);
 
   return (
     <>
@@ -57,17 +59,10 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
         {error && <Card className="p-3 border-bad/40 bg-bad/5 text-sm font-bold text-bad">{error}</Card>}
 
         {confirmFor && !reviewed && (
-          <Card className="p-4 border-warn bg-sun/30 space-y-2">
-            <p className="font-extrabold">This video hasn&apos;t been reviewed yet.</p>
-            <p className="text-sm">Allowing it means {confirmFor.profile.name} can watch it before anyone has checked what&apos;s in it — the AI review and your filters won&apos;t apply. You can undo this any time.</p>
-            <div className="flex gap-2">
-              <form action={allowVideoForChild}>
-                <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={confirmFor.profile.id} /><input type="hidden" name="confirm" value="1" />
-                <Button type="submit">Allow anyway for {confirmFor.profile.name}</Button>
-              </form>
-              <Link href={`/parent/video/${v.id}`}><Button variant="ghost">Cancel</Button></Link>
-            </div>
-          </Card>
+          <UnreviewedConfirm
+            childName={confirmFor.profile.name} reason={reviewEligibility(c).reason} action={allowVideoForChild}
+            fields={{ videoId: v.id, profileId: confirmFor.profile.id }} cancelHref={`/parent/video/${v.id}`}
+          />
         )}
 
         <Card className="p-4">
@@ -87,16 +82,34 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
                     <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} /><input type="hidden" name="undo" value="1" />
                     <Button type="submit" variant="ghost" className="text-xs px-3 py-1">Undo allow</Button>
                   </form>
-                ) : !decision.allow || kv.blockedByParent ? (
+                ) : (
+                  <>
+                  {kv.dismissed && !kv.blockedByParent && (
+                    <form action={decideVideo}>
+                      <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} /><input type="hidden" name="decision" value="undo" />
+                      <input type="hidden" name="next" value={`/parent/video/${v.id}`} />
+                      <Button type="submit" variant="ghost" className="text-xs px-3 py-1">Stop keeping hidden</Button>
+                    </form>
+                  )}
+                  {(!decision.allow || kv.blockedByParent) && (
                   <form action={allowVideoForChild}>
                     <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} />
                     <Button type="submit" variant="ghost" className="text-xs px-3 py-1">Allow for {profile.name}{!reviewed ? " (unreviewed)" : ""}</Button>
                   </form>
-                ) : null}
+                  )}
+                  </>
+                )}
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-muted">&ldquo;Allow for&rdquo; is just for that child, and overrides the review and their filters for this one video.</p>
+          {v.dismissed && (
+            <form action={unhideForFamily} className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+              <input type="hidden" name="videoId" value={v.id} />
+              <span>Kept hidden for every child (decided before per-child permissions).</span>
+              <button type="submit" className="font-bold text-ink hover:underline">Stop keeping hidden for everyone</button>
+            </form>
+          )}
+          <p className="mt-2 text-xs text-muted">&ldquo;Allow for&rdquo; is just for that child, and overrides the review and their filters for this one video. &ldquo;Keep hidden&rdquo; holds until you change it, even if the review or the filters change later.</p>
         </Card>
 
         {!c ? (
