@@ -55,6 +55,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
             {supabaseEnabled ? (
               <>
                 <Link href="/parent/devices" className="text-sm font-bold text-muted hover:text-ink">Devices</Link>
+                <Link href="/parent/reviewer" className="text-sm font-bold text-muted hover:text-ink">Reviewer</Link>
                 <form action={signOut}><Button variant="ghost" type="submit">Sign out</Button></form>
               </>
             ) : (

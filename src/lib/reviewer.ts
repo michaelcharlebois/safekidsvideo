@@ -76,11 +76,30 @@ export function fpsForDuration(seconds?: number): number | undefined {
   return 0.25;
 }
 
-export async function reviewVideo(videoId: string, opts: { model?: string; durationSeconds?: number } = {}): Promise<ContentCard> {
+export type ReviewOpts = {
+  model?: string;
+  durationSeconds?: number;
+  /** Calibration guidelines learned from parent feedback (appended to the system prompt). */
+  notes?: { version: number; notes: string } | null;
+  /** For a re-review: what parents disputed about the previous card. */
+  feedback?: string;
+  /** Previous card, when re-reviewing. */
+  previous?: ContentCard;
+};
+
+export async function reviewVideo(videoId: string, opts: ReviewOpts = {}): Promise<ContentCard> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
   const model = opts.model ?? DEFAULT_MODEL;
   const ai = new GoogleGenAI({ apiKey });
+  const notes = opts.notes === undefined ? await loadNotes() : opts.notes;
+  const system = notes?.notes.trim()
+    ? `${SYSTEM}\n\nCALIBRATION FROM PARENT FEEDBACK (v${notes.version}) — these correct known tendencies of yours; follow them unless the video clearly shows otherwise:\n${notes.notes.trim()}`
+    : SYSTEM;
+  const ask = opts.feedback
+    ? `Review this video for parents. This is a RE-REVIEW: parents disputed the previous card as follows.\n${opts.feedback}\n` +
+      `Re-watch with that in mind. Parents are often right about their own kids but not always — change a finding only when what is on screen supports the change, and keep it otherwise. Return only the JSON card.`
+    : "Review this video for parents. Return only the JSON card.";
 
   const res = await withRetry(() => ai.models.generateContent({
     model,
@@ -92,12 +111,12 @@ export async function reviewVideo(videoId: string, opts: { model?: string; durat
             fileData: { fileUri: videoUrl(videoId), mimeType: "video/*" },
             ...(fpsForDuration(opts.durationSeconds) ? { videoMetadata: { fps: fpsForDuration(opts.durationSeconds) } } : {}),
           },
-          { text: "Review this video for parents. Return only the JSON card." },
+          { text: ask },
         ],
       },
     ],
     config: {
-      systemInstruction: SYSTEM,
+      systemInstruction: system,
       responseMimeType: "application/json",
       responseJsonSchema: z.toJSONSchema(CardSchema),
       temperature: 0.2,
@@ -128,8 +147,22 @@ export async function reviewVideo(videoId: string, opts: { model?: string; durat
     rating: round1(parsed.rating),
     parentRecommendation: parsed.parentRecommendation,
     confidence: Math.round(parsed.confidence * 100) / 100,
-    reviewer: { model, version: REVIEWER_VERSION, reviewedAt: new Date().toISOString() },
+    reviewer: {
+      model, version: REVIEWER_VERSION, reviewedAt: new Date().toISOString(),
+      revisions: (opts.previous?.reviewer.revisions ?? 0) + (opts.feedback ? 1 : 0),
+      notesVersion: notes?.version,
+    },
   };
+}
+
+/** Latest calibration notes, if the store has any. Quietly none when it doesn't. */
+async function loadNotes(): Promise<{ version: number; notes: string } | null> {
+  try {
+    const { db } = await import("@/lib/db/resolve");
+    return (await db.getReviewerNotes()) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 const round1 = (n: number) => Math.round(n * 2) / 2;

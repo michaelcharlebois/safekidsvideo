@@ -6,7 +6,9 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { blockedReasons, getLibrary } from "@/lib/queries";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS } from "@/lib/types";
 import { Button, Card, ConcernPill, PacePill, Pill, Stars, TopBar } from "@/components/ui";
-import { confirmCard, runReview, toggleWhitelist } from "@/app/actions";
+import { runReview, toggleWhitelist } from "@/app/actions";
+import { FeedbackForm } from "./feedback-form";
+import { VERDICT_LABELS } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // parent-triggered reviews run in the background within this budget
@@ -126,31 +128,13 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
         <Card className="p-4">
           <h2 className="font-extrabold">Parents say</h2>
           <p className="text-sm text-muted">
-            {v.confirmations.agree} agree with the card · {v.confirmations.flag} flagged something
-            {mine && <> · <b className="text-ink">you {mine.verdict === "agree" ? "agreed" : "flagged"}</b></>}
+            {v.confirmations.agree} agree with the card · {v.confirmations.flag} disputed it
+            {mine && <> · <b className="text-ink">you: {VERDICT_LABELS[mine.verdict].toLowerCase()}</b></>}
+            {c?.reviewer.revisions ? <> · revised {c.reviewer.revisions}× after feedback</> : null}
+            {" · "}<Link href="/parent/reviewer" className="underline">how the reviewer learns</Link>
           </p>
-          <form action={confirmCard} className="mt-3 space-y-3">
-            <input type="hidden" name="videoId" value={v.id} />
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit" name="verdict" value="agree" variant="primary">👍 Card is accurate</Button>
-              <Button type="submit" name="verdict" value="flag" variant="danger">⚠ Flag something</Button>
-            </div>
-            <details className="text-sm">
-              <summary className="cursor-pointer font-bold text-muted">What should be flagged? (optional)</summary>
-              <div className="mt-2 grid grid-cols-2 gap-1">
-                {CONCERN_TAGS.map((t) => (
-                  <label key={t} className="flex items-center gap-2">
-                    <input type="checkbox" name={`tag:${t}`} defaultChecked={mine?.tags?.includes(t)} className="accent-accent" />
-                    {CONCERN_LABELS[t]}
-                  </label>
-                ))}
-              </div>
-            </details>
-            <textarea name="note" rows={2} defaultValue={mine?.note} placeholder="Two lines for other parents (optional)" className="w-full rounded-xl border border-line bg-bg px-3 py-2 text-sm outline-none focus:border-accent" />
-            <label className="flex items-center gap-2 text-sm text-muted">
-              My kid is <input type="number" name="kidAge" min={1} max={14} defaultValue={mine?.kidAge ?? settings.kidAge} className="w-14 rounded-lg border border-line px-2 py-1" />
-            </label>
-          </form>
+          {sp.thanks === "1" && <p className="mt-2 rounded-xl bg-grass p-2 text-sm font-bold">Thanks — saved. Disputed cards get a second look overnight, and the pattern feeds the reviewer&apos;s calibration notes.</p>}
+          <FeedbackForm videoId={v.id} present={present} absent={absent} ageFit={c?.ageFit} mine={mine} kidAge={settings.kidAge} />
           {confirmations.filter((x) => x.note).length > 0 && (
             <ul className="mt-4 space-y-2 border-t border-line pt-3">
               {confirmations.filter((x) => x.note).map((x) => (

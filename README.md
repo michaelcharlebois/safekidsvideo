@@ -70,6 +70,16 @@ dashboard has a "Review next 5 now" button; `npm run pipeline` does the same fro
 
 `data/discovery.json` lists well-known kids channels. `/api/cron/discover` (daily, 11:00 UTC) refreshes their newest uploads and reviews up to 25 short videos within a 4-minute budget, so every family's Search gets them as instant "Play". Run by hand with `npm run pipeline -- --discover [--max 25]`. Edit the list freely — unknown handles are skipped.
 
+## The feedback loop
+
+On every content card a parent can say the card is accurate, too strict or too lenient, vote 👍/👎 on each tag the AI raised, mark tags it missed, and vote on the age range. That feedback does three things:
+
+1. **Gating, immediately** — enough "missed" votes block the tag for families that filter it; enough "over-called" votes neutralize an AI tag.
+2. **Calibration notes, nightly** — `learnFromFeedback()` distils recent disputes into ≤15 general guidelines (versioned in `reviewer_notes`) that are appended to the reviewer's system prompt. Parents can edit them by hand at `/parent/reviewer`.
+3. **Re-review** — disputed cards get a second look with the dispute as context (max two revisions per card, so it can't ping-pong).
+
+`/parent/reviewer` shows agreement rates per tag, the current notes, and recent disputes. Run migration `0009_feedback.sql`.
+
 ## Layout
 
 ```

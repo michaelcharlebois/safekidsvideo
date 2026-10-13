@@ -107,20 +107,46 @@ export type ContentCard = {
   parentRecommendation: string;
   /** 0–1 model confidence */
   confidence: number;
-  reviewer: { model: string; reviewedAt: string; version: string };
+  reviewer: { model: string; reviewedAt: string; version: string; revisions?: number; notesVersion?: number };
 };
 
-/** A parent's one-tap confirmation or correction of a card. */
+export type TagVote = "agree" | "overcall" | "missed";
+export type ConfirmationVerdict = "agree" | "flag" | "too_strict" | "too_lenient";
+export const VERDICT_LABELS: Record<ConfirmationVerdict, string> = {
+  agree: "Card is accurate", flag: "Flagged something", too_strict: "Too strict", too_lenient: "Too lenient",
+};
+
+/** A parent's confirmation or correction of a card — the signal the reviewer learns from. */
 export type Confirmation = {
   id: string;
   videoId: string;
   familyId: string;
-  /** "agree" with the AI card, or "flag" a concern the AI missed / overstated */
-  verdict: "agree" | "flag";
-  tags?: ConcernTag[]; // tags the parent says ARE present (when flagging)
+  /** agree with the card; too_strict = AI flagged things that aren't a problem; too_lenient / flag = AI missed things */
+  verdict: ConfirmationVerdict;
+  tags?: ConcernTag[]; // legacy: tags the parent says ARE present (when flagging)
+  tagVotes?: Partial<Record<ConcernTag, TagVote>>; // per-tag: agree with the AI, it over-called, or it missed this
+  ageVote?: "younger" | "right" | "older"; // the AI's age range is too cautious / right / too permissive
   note?: string; // two-line review
   kidAge?: number;
   createdAt: string;
+};
+
+/** Versioned calibration guidelines distilled from parent feedback and fed back into the reviewer prompt. */
+export type ReviewerNotes = {
+  version: number;
+  notes: string;
+  stats?: FeedbackStats;
+  source: "learn" | "manual";
+  createdAt: string;
+};
+export type FeedbackStats = {
+  confirmations: number;
+  agree: number;
+  tooStrict: number;
+  tooLenient: number;
+  perTag: Partial<Record<ConcernTag, { agree: number; overcall: number; missed: number }>>;
+  age: { younger: number; right: number; older: number };
+  since: string;
 };
 
 export type WhitelistKind = "channel" | "video" | "override" | "auto";
@@ -167,7 +193,7 @@ export type FamilySettings = {
 export type VideoWithCard = Video & {
   channel?: Channel;
   card?: ContentCard;
-  confirmations: { agree: number; flag: number; flaggedTags: Partial<Record<ConcernTag, number>> };
+  confirmations: { agree: number; flag: number; flaggedTags: Partial<Record<ConcernTag, number>>; overcalledTags: Partial<Record<ConcernTag, number>> };
   whitelisted: boolean;
   /** parent explicitly approved this video over their filters */
   overridden: boolean;

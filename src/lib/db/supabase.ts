@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Channel, Confirmation, ContentCard, Video } from "@/lib/types";
+import type { Channel, Confirmation, ContentCard, ReviewerNotes, Video } from "@/lib/types";
 import { DEFAULT_SETTINGS, type Store } from "./store";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -27,10 +27,12 @@ const toCard = (r: any): ContentCard => ({
   videoId: r.video_id, synopsis: r.synopsis, format: r.format ?? "other", ageFit: { min: r.age_min, max: r.age_max }, concerns: r.concerns,
   pace: r.pace, educationalValue: Number(r.educational_value), rating: Number(r.rating),
   parentRecommendation: r.parent_recommendation, confidence: Number(r.confidence),
-  reviewer: { model: r.reviewer_model, version: r.reviewer_version, reviewedAt: r.reviewed_at },
+  reviewer: { model: r.reviewer_model, version: r.reviewer_version, reviewedAt: r.reviewed_at, revisions: r.revisions ?? 0, notesVersion: r.notes_version ?? undefined },
 });
+const toNotes = (r: any): ReviewerNotes => ({ version: r.version, notes: r.notes, stats: r.stats ?? undefined, source: r.source, createdAt: r.created_at });
 const toConfirmation = (r: any): Confirmation => ({
   id: r.id, videoId: r.video_id, familyId: r.family_id, verdict: r.verdict, tags: r.tags ?? undefined,
+  tagVotes: r.tag_votes ?? undefined, ageVote: r.age_vote ?? undefined,
   note: r.note ?? undefined, kidAge: r.kid_age ?? undefined, createdAt: r.created_at,
 });
 
@@ -82,7 +84,7 @@ export const supabaseStore: Store = {
       video_id: c.videoId, synopsis: c.synopsis, format: c.format, age_min: c.ageFit.min, age_max: c.ageFit.max, concerns: c.concerns,
       pace: c.pace, educational_value: c.educationalValue, rating: c.rating, parent_recommendation: c.parentRecommendation,
       confidence: c.confidence, reviewer_model: c.reviewer.model, reviewer_version: c.reviewer.version,
-      reviewed_at: c.reviewer.reviewedAt,
+      reviewed_at: c.reviewer.reviewedAt, revisions: c.reviewer.revisions ?? 0, notes_version: c.reviewer.notesVersion ?? null,
     }));
   },
 
@@ -90,11 +92,29 @@ export const supabaseStore: Store = {
     if (!videoIds.length) return [];
     return must(await client().from("confirmations").select("*").in("video_id", videoIds)).map(toConfirmation);
   },
+  async listAllConfirmations(sinceIso) {
+    let q = client().from("confirmations").select("*").order("created_at", { ascending: false }).limit(2000);
+    if (sinceIso) q = q.gte("created_at", sinceIso);
+    return must(await q).map(toConfirmation);
+  },
   async upsertConfirmation(c) {
     must(await client().from("confirmations").upsert(
-      { video_id: c.videoId, family_id: c.familyId, verdict: c.verdict, tags: c.tags, note: c.note, kid_age: c.kidAge },
+      { video_id: c.videoId, family_id: c.familyId, verdict: c.verdict, tags: c.tags, tag_votes: c.tagVotes ?? {}, age_vote: c.ageVote ?? null, note: c.note, kid_age: c.kidAge, created_at: new Date().toISOString() },
       { onConflict: "video_id,family_id" },
     ));
+  },
+  async getReviewerNotes() {
+    const d = must<any>(await client().from("reviewer_notes").select("*").order("version", { ascending: false }).limit(1).maybeSingle());
+    return d ? toNotes(d) : undefined;
+  },
+  async listReviewerNotes(limit = 10) {
+    return must(await client().from("reviewer_notes").select("*").order("version", { ascending: false }).limit(limit)).map(toNotes);
+  },
+  async saveReviewerNotes(n) {
+    const latest = await this.getReviewerNotes();
+    const version = (latest?.version ?? 0) + 1;
+    const d = must<any>(await client().from("reviewer_notes").insert({ version, notes: n.notes, stats: n.stats ?? null, source: n.source }).select("*").single());
+    return toNotes(d);
   },
 
   async getSettings(familyId) {

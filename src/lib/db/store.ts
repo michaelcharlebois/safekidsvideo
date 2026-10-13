@@ -4,6 +4,7 @@ import type {
   Confirmation,
   ContentCard,
   FamilySettings,
+  ReviewerNotes,
   Video,
   WhitelistEntry,
   WhitelistKind,
@@ -30,7 +31,13 @@ export interface Store {
   upsertCard(card: ContentCard): Promise<void>;
 
   listConfirmations(videoIds: string[]): Promise<Confirmation[]>;
+  listAllConfirmations(sinceIso?: string): Promise<Confirmation[]>;
   upsertConfirmation(c: Omit<Confirmation, "id" | "createdAt">): Promise<void>;
+
+  // reviewer calibration (public, global)
+  getReviewerNotes(): Promise<ReviewerNotes | undefined>;
+  listReviewerNotes(limit?: number): Promise<ReviewerNotes[]>;
+  saveReviewerNotes(n: Omit<ReviewerNotes, "version" | "createdAt">): Promise<ReviewerNotes>;
 
   // family data (private)
   getSettings(familyId: string): Promise<FamilySettings>;

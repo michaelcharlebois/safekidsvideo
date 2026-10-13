@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Channel, Confirmation, ContentCard, FamilySettings, Video, WhitelistEntry } from "@/lib/types";
+import type { Channel, Confirmation, ContentCard, FamilySettings, ReviewerNotes, Video, WhitelistEntry } from "@/lib/types";
 import { DEFAULT_SETTINGS, type Store } from "./store";
 
 type Db = {
@@ -9,6 +9,7 @@ type Db = {
   videos: Video[];
   cards: ContentCard[];
   confirmations: Confirmation[];
+  reviewerNotes?: ReviewerNotes[];
   whitelist: WhitelistEntry[];
   settings: FamilySettings[];
 };
@@ -95,6 +96,24 @@ export const localStore: Store = {
   async listConfirmations(videoIds) {
     const set = new Set(videoIds);
     return (await load()).confirmations.filter((c) => set.has(c.videoId));
+  },
+  async listAllConfirmations(sinceIso) {
+    return (await load()).confirmations.filter((c) => !sinceIso || c.createdAt >= sinceIso);
+  },
+  async getReviewerNotes() {
+    const all = (await load()).reviewerNotes ?? [];
+    return all.sort((a, b) => b.version - a.version)[0];
+  },
+  async listReviewerNotes(limit = 10) {
+    return ((await load()).reviewerNotes ?? []).sort((a, b) => b.version - a.version).slice(0, limit);
+  },
+  async saveReviewerNotes(n) {
+    const db = await load();
+    db.reviewerNotes ??= [];
+    const rec: ReviewerNotes = { ...n, version: (db.reviewerNotes.at(-1)?.version ?? 0) + 1, createdAt: new Date().toISOString() };
+    db.reviewerNotes.push(rec);
+    await persist(db);
+    return rec;
   },
   async upsertConfirmation(c) {
     const db = await load();

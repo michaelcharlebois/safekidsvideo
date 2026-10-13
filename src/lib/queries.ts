@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { CONCERN_LABELS, FORMAT_LABELS, type FamilySettings, type VideoWithCard } from "@/lib/types";
+import { CONCERN_LABELS, FORMAT_LABELS, type ConcernTag, type FamilySettings, type VideoWithCard } from "@/lib/types";
 
 /** Every known video, joined with channel, AI card, confirmation tallies, and whitelist status. */
 export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
@@ -16,12 +16,15 @@ export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
   const autos = new Set(whitelist.filter((w) => w.kind === "auto").map((w) => w.targetId));
 
   const tallies = new Map<string, VideoWithCard["confirmations"]>();
+  const blank = (): VideoWithCard["confirmations"] => ({ agree: 0, flag: 0, flaggedTags: {}, overcalledTags: {} });
   for (const c of confirmations) {
-    const t = tallies.get(c.videoId) ?? { agree: 0, flag: 0, flaggedTags: {} };
+    const t = tallies.get(c.videoId) ?? blank();
     if (c.verdict === "agree") t.agree++;
-    else {
-      t.flag++;
-      for (const tag of c.tags ?? []) t.flaggedTags[tag] = (t.flaggedTags[tag] ?? 0) + 1;
+    else t.flag++;
+    for (const tag of c.tags ?? []) if (!c.tagVotes?.[tag]) t.flaggedTags[tag] = (t.flaggedTags[tag] ?? 0) + 1;
+    for (const [tag, vote] of Object.entries(c.tagVotes ?? {}) as [ConcernTag, string][]) {
+      if (vote === "missed") t.flaggedTags[tag] = (t.flaggedTags[tag] ?? 0) + 1;
+      if (vote === "overcall") t.overcalledTags[tag] = (t.overcalledTags[tag] ?? 0) + 1;
     }
     tallies.set(c.videoId, t);
   }
@@ -30,7 +33,7 @@ export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
     ...v,
     channel: channelById.get(v.channelId),
     card: cardById.get(v.id),
-    confirmations: tallies.get(v.id) ?? { agree: 0, flag: 0, flaggedTags: {} },
+    confirmations: tallies.get(v.id) ?? blank(),
     whitelisted: wlVideos.has(v.id) || wlChannels.has(v.channelId) || overrides.has(v.id) || autos.has(v.id),
     overridden: overrides.has(v.id),
     autoApproved: autos.has(v.id),
@@ -39,7 +42,8 @@ export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
 
 /**
  * Does this video trip the family's blocked tags?
- * A tag counts if the AI found it at intensity >= 2, OR enough parents flagged it.
+ * A tag counts if the AI found it at intensity >= 2 (unless enough parents say it over-called),
+ * OR enough parents say the AI missed it.
  */
 export function blockedReasons(v: VideoWithCard, s: FamilySettings): string[] {
   const out: string[] = [];
@@ -48,7 +52,8 @@ export function blockedReasons(v: VideoWithCard, s: FamilySettings): string[] {
   if (v.card?.format && s.blockedFormats.includes(v.card.format)) out.push(FORMAT_LABELS[v.card.format]);
   for (const tag of s.blockedTags) {
     const ai = v.card?.concerns.find((c) => c.tag === tag);
-    const aiHit = !!ai && ai.present && ai.intensity >= 2;
+    const overcalled = (v.confirmations.overcalledTags[tag] ?? 0) >= s.flagThreshold;
+    const aiHit = !!ai && ai.present && ai.intensity >= 2 && !overcalled;
     const parentHit = (v.confirmations.flaggedTags[tag] ?? 0) >= s.flagThreshold;
     if (aiHit || parentHit) out.push(CONCERN_LABELS[tag]);
   }

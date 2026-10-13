@@ -7,7 +7,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { ingestChannel, ingestVideo } from "@/lib/ingest";
 import { parseYouTubeUrl, searchForParent, type ParentSearch } from "@/lib/youtube";
-import { CONCERN_TAGS, FORMATS, type ConcernTag, type FamilyMode, type VideoFormat } from "@/lib/types";
+import { CONCERN_TAGS, FORMATS, type ConcernTag, type ConfirmationVerdict, type FamilyMode, type TagVote, type VideoFormat } from "@/lib/types";
+import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
 import { createPairingCode, DEVICE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice } from "@/lib/family";
 import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
@@ -90,14 +91,44 @@ export async function toggleWhitelist(form: FormData) {
 export async function confirmCard(form: FormData) {
   const fid = await requireParent();
   const videoId = String(form.get("videoId"));
-  const verdict = form.get("verdict") === "flag" ? "flag" : "agree";
-  const tags = CONCERN_TAGS.filter((t) => form.get(`tag:${t}`) === "on") as ConcernTag[];
+  const v = String(form.get("verdict"));
+  const verdict: ConfirmationVerdict = v === "too_strict" || v === "too_lenient" ? v : "agree";
+  // Per-tag votes: vote:<tag> = agree | overcall | missed (only the ones a parent touched are saved).
+  const tagVotes: Partial<Record<ConcernTag, TagVote>> = {};
+  for (const t of CONCERN_TAGS) {
+    const val = form.get(`vote:${t}`);
+    if (val === "agree" || val === "overcall" || val === "missed") tagVotes[t] = val;
+  }
+  const a = form.get("ageVote");
+  const ageVote = a === "younger" || a === "older" || a === "right" ? a : undefined;
   const note = String(form.get("note") ?? "").trim() || undefined;
   const kidAgeRaw = form.get("kidAge");
   const kidAge = kidAgeRaw ? Number(kidAgeRaw) : undefined;
-  await db.upsertConfirmation({ videoId, familyId: fid, verdict, tags: verdict === "flag" ? tags : undefined, note, kidAge });
+  await db.upsertConfirmation({ videoId, familyId: fid, verdict, tagVotes, ageVote, note, kidAge });
   revalidatePath("/parent");
   revalidatePath(`/parent/video/${videoId}`);
+  revalidatePath("/parent/reviewer");
+  redirect(`/parent/video/${videoId}?thanks=1`);
+}
+
+/** Reviewer page: distil recent feedback into new calibration notes and re-review disputed cards. */
+export async function learnNow() {
+  await requireParent();
+  after(async () => {
+    try { await learnFromFeedback({ minDisagreements: 1 }); } catch (e) { console.error("learn failed", e); }
+    try { await rereviewDisputed({ max: 3 }); } catch (e) { console.error("re-review failed", e); }
+    revalidatePath("/parent/reviewer");
+  });
+  redirect("/parent/reviewer?learning=1");
+}
+
+/** Reviewer page: a parent edits the calibration notes by hand. */
+export async function saveReviewerNotes(form: FormData) {
+  await requireParent();
+  const notes = String(form.get("notes") ?? "").trim();
+  if (notes) await db.saveReviewerNotes({ notes, source: "manual" });
+  revalidatePath("/parent/reviewer");
+  redirect("/parent/reviewer?saved=1");
 }
 
 export async function saveSettings(form: FormData) {
