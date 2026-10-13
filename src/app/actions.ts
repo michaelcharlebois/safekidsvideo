@@ -11,12 +11,13 @@ import { packById } from "@/lib/packs";
 import { billingEnabled, createCheckoutUrl, createPortalUrl, familyStatus } from "@/lib/billing";
 import { saveKidDay, saveTimezone } from "@/lib/checkin";
 import { askForMoreTime, grantBonusMinutes } from "@/lib/screentime";
-import { CONCERN_TAGS, FORMATS, type ConcernTag, type ConfirmationVerdict, type FamilyMode, type TagVote, type VideoFormat } from "@/lib/types";
+import { CONCERN_TAGS, type ConcernTag, type ConfirmationVerdict, type TagVote } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
 import { assignDevice, createPairingCode, DEVICE_COOKIE, claimDevicePinAttempt, devicePinSucceeded, PinCheckUnavailable, PROFILE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice, setDeviceActiveProfile } from "@/lib/family";
 import { addVideoToLibrary, allowForChild, approveRequest, decideForChild, GrantError, NeedsUnreviewedConfirm, recordOpenClearance, removeFamilyBlock, resolveLegacy, splitFamilyBlock, unhideForFamily as unhideForFamilyGrant } from "@/lib/grants";
 import { hashPin, newPinProblem, pinIsSet, verifyPin } from "@/lib/pin";
+import { applySettingsForm, sectionsOf } from "@/lib/settings-form";
 import { nextAuthorized, reviewEligibility } from "@/lib/gate";
 import { timeState } from "@/lib/screentime";
 import { DEFAULT_PROFILE } from "@/lib/db/store";
@@ -27,7 +28,6 @@ import { BudgetExceededError, IncompleteReviewError, reviewVideo } from "@/lib/r
 import { pushToFamily, removeSubscription, saveSubscription } from "@/lib/push";
 import { runPipeline, seedChannelReviews } from "@/lib/pipeline";
 
-const clampBoost = (v: FormDataEntryValue | null) => Math.max(-2, Math.min(2, Math.round(Number(v ?? 0)) || 0));
 
 /** Resolve the signed-in parent's family, or bounce to sign-in / unlock. */
 async function requireParent(): Promise<string> {
@@ -162,47 +162,32 @@ export async function saveReviewerNotes(form: FormData) {
   redirect("/parent/reviewer?saved=1");
 }
 
+/**
+ * Save a child's settings. The Kids & settings pages post one section at a time (hidden "section" field);
+ * only those sections change (see lib/settings-form.ts). A form without "section" saves everything, as before.
+ * Family-wide settings (PIN, parent-flag threshold) are the "family" section.
+ */
 export async function saveSettings(form: FormData) {
   const fid = await requireParent();
   const profileId = String(form.get("profileId") ?? "") || undefined;
+  const sections = sectionsOf(form);
+  const nextRaw = String(form.get("next") ?? "");
+  const back = isLocalPath(nextRaw) ? nextRaw : `/parent/settings?kid=${profileId ?? ""}`;
+  const withParam = (k: string, v: string) => `${back.split("#")[0]}${back.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(v)}${back.includes("#") ? `#${back.split("#")[1]}` : ""}`;
   const current = await db.getSettings(fid, profileId);
   const pin = String(form.get("pin") ?? "").trim();
   if (pin) {
     const problem = newPinProblem(pin); // 4 digits, and never the old default 1234
-    if (problem) redirect(`/parent/settings?kid=${profileId ?? ""}&error=${encodeURIComponent(problem)}`);
+    if (problem) redirect(withParam("error", problem));
   }
-  const blockedTags = CONCERN_TAGS.filter((t) => form.get(`block:${t}`) === "on") as ConcernTag[];
-  const blockedFormats = FORMATS.filter((f) => form.get(`blockfmt:${f}`) === "on") as VideoFormat[];
   try {
-    await db.saveSettings({
-    ...current,
-    pinHash: pin ? hashPin(pin) : current.pinHash,
-    kidAge: Number(form.get("kidAge") ?? current.kidAge) || current.kidAge,
-    blockedTags,
-    blockedFormats,
-    hideUnreviewed: true, // no longer a choice: the gate never plays unreviewed videos automatically
-    mode: (["locked", "open", "open_ask"].includes(String(form.get("mode"))) ? String(form.get("mode")) : current.mode) as FamilyMode,
-    dailyCheckLimit: Number(form.get("dailyCheckLimit") ?? current.dailyCheckLimit) || current.dailyCheckLimit,
-    kidsOnlySearch: form.get("kidsOnlySearch") === "on",
-    flagThreshold: Number(form.get("flagThreshold") ?? current.flagThreshold) || current.flagThreshold,
-    dailyMinutes: Number(form.get("dailyMinutes")) > 0 ? Number(form.get("dailyMinutes")) : undefined,
-    bedtime: /^\d{2}:\d{2}$/.test(String(form.get("bedtime") ?? "")) ? String(form.get("bedtime")) : undefined,
-    skipLimit: form.get("skipsOn") === "on" ? Math.max(1, Math.min(20, Number(form.get("skipLimit")) || 3)) : undefined,
-    skipRegen: Math.max(0, Math.min(5, Number(form.get("skipRegen") ?? current.skipRegen ?? 1))),
-    skipCooldownSec: Math.max(30, Math.min(900, (Number(form.get("skipCooldownMin")) || 2) * 60)),
-    freePeekSec: Math.max(0, Math.min(120, Number(form.get("freePeekSec") ?? current.freePeekSec ?? 30))),
-    boosts: {
-      formats: Object.fromEntries(FORMATS.map((f) => [f, clampBoost(form.get(`boost:${f}`))]).filter(([, n]) => n !== 0)) as Record<VideoFormat, number>,
-      pace: clampBoost(form.get("boost:pace")),
-      learning: clampBoost(form.get("boost:learning")),
-    },
-    });
+    await db.saveSettings(applySettingsForm(current, form, sections, pin ? hashPin(pin) : undefined));
   } catch (e) {
-    redirect(`/parent/settings?kid=${profileId ?? ""}&error=${encodeURIComponent((e as Error).message)}`);
+    redirect(withParam("error", (e as Error).message));
   }
-  revalidatePath("/parent");
+  revalidatePath("/parent", "layout");
   revalidatePath("/watch");
-  redirect(`/parent/settings?kid=${profileId ?? ""}&saved=1`);
+  redirect(withParam("saved", sections.length === 1 ? sections[0] : "1"));
 }
 
 export type UnlockResult = { error: string } | null;
@@ -419,7 +404,8 @@ export async function grantMoreTime(form: FormData) {
     if (minutes > 0) await pushToFamily(fid, { title: `+${minutes} minutes for ${p.name}`, body: "Added for today.", url: `/parent/settings?kid=${profileId}`, tag: `more-time-${profileId}` });
   }
   revalidatePath("/parent"); revalidatePath("/parent/settings"); revalidatePath("/watch");
-  redirect(`/parent/settings?kid=${profileId}`);
+  const next = String(form.get("next") ?? "");
+  redirect(isLocalPath(next) ? next : `/parent/settings?kid=${profileId}`);
 }
 
 // ---- Daily check-in -------------------------------------------------------------
@@ -572,7 +558,7 @@ export async function selectProfile(_prev: PickResult, form: FormData): Promise<
 
   if (v.shared) {
     const fam = await db.getSettings(v.familyId, p.id);
-    if (!pinIsSet(fam.pinHash)) return { error: "A grown-up needs to set a PIN first (Settings → PIN)." };
+    if (!pinIsSet(fam.pinHash)) return { error: "A grown-up needs to set a family PIN first (Kids → Family settings)." };
     const pin = String(form.get("pin") ?? "");
     try {
       // Count the attempt BEFORE checking it (atomic in the database), so parallel guesses can't
@@ -606,8 +592,9 @@ export async function assignDeviceAction(form: FormData) {
     if (!p || p.familyId !== fid) redirect("/parent/devices?error=child");
   }
   await assignDevice(fid, deviceId, profileId);
-  revalidatePath("/parent/devices");
-  redirect("/parent/devices?saved=1");
+  revalidatePath("/parent/devices"); revalidatePath("/parent/settings");
+  const next = String(form.get("next") ?? "");
+  redirect(isLocalPath(next) ? next : "/parent/devices?saved=1");
 }
 
 /** Parent: "Add & review" from a video page — library source + start the review. Not authorization. */
