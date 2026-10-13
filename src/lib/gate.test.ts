@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { authorize, buildLibrary, canPlay, grantIndex, nextAuthorized, playableFor, reviewEligibility, REASON } from "@/lib/gate";
+import { authorize, buildLibrary, canPlay, cardProblems, grantIndex, needsDecision, nextAuthorized, playableFor, reviewEligibility, REASON, screen } from "@/lib/gate";
 import type { Confirmation, ContentCard, Video, WhitelistEntry } from "@/lib/types";
 import { CH_OTHER, CH_SCIENCE, CH_SONGS, FAM, LEO, MAYA, card, grant, leo, maya, video } from "../../test/fixtures";
 
@@ -172,6 +172,123 @@ describe("advancing re-derives from a fresh playable list", () => {
   it("wraps around", () => expect(nextAuthorized(items, "d", ["a", "b", "c", "d"])?.id).toBe("a"));
   it("current video itself was restricted: move on", () => expect(nextAuthorized(items.filter((x) => x.id !== "b"), "b", ["a", "b", "c", "d"])?.id).toBe("c"));
   it("nothing playable → null", () => expect(nextAuthorized([], "b", ["a", "b"])).toBeNull());
+});
+
+describe('"Keep hidden" is a standing restriction for that child', () => {
+  // Maya's settings block "scary_imagery"; the first review flagged it, so the parent chose "Keep hidden".
+  const hiddenForMaya = [...approvedChannels, grant("dismissed", "v1", MAYA)];
+  const scary = card("v1", { tags: { scary_imagery: 2 } });
+  const clean = card("v1"); // re-review: nothing flagged
+
+  it("hidden while the review flags it", () => {
+    const v = one({ videos: [video("v1", CH_SONGS)], cards: [scary], grants: hiddenForMaya, profileId: MAYA });
+    expect(authorize(v, maya())).toMatchObject({ allow: false, reasons: [REASON.keptHidden] });
+  });
+  it("REGRESSION: stays hidden after a more favorable re-review", () => {
+    const v = one({ videos: [video("v1", CH_SONGS)], cards: [clean], grants: hiddenForMaya, profileId: MAYA });
+    expect(authorize(v, maya())).toMatchObject({ allow: false, reasons: [REASON.keptHidden] });
+  });
+  it("REGRESSION: stays hidden after the parent relaxes Maya's filters", () => {
+    const v = one({ videos: [video("v1", CH_SONGS)], cards: [scary], grants: hiddenForMaya, profileId: MAYA });
+    expect(canPlay(v, maya({ blockedTags: [] }))).toBe(false);
+  });
+  it("stays hidden in every mode, and out of open-mode search results", () => {
+    const v = one({ videos: [video("v1", CH_OTHER)], cards: [clean], grants: [grant("dismissed", "v1", MAYA)], profileId: MAYA });
+    for (const mode of ["open", "open_ask", "locked"] as const) expect(canPlay(v, maya({ mode }))).toBe(false);
+    expect(screen(v, maya())).toMatchObject({ pass: false, reasons: [REASON.keptHidden] });
+  });
+  it("is only for that child: Leo still sees it", () => {
+    const v = one({ videos: [video("v1", CH_SONGS)], cards: [clean], grants: hiddenForMaya, profileId: LEO });
+    expect(canPlay(v, leo())).toBe(true);
+  });
+  it("leaves the review queue (no repeated asking)", () => {
+    const v = one({ videos: [video("v1", CH_SONGS)], cards: [scary], grants: hiddenForMaya, profileId: MAYA });
+    expect(needsDecision(v, maya())).toBe(false);
+  });
+  it("an explicit Allow for that child replaces it", () => {
+    const v = one({ videos: [video("v1", CH_SONGS)], cards: [scary], grants: [...approvedChannels, grant("override", "v1", MAYA)], profileId: MAYA });
+    expect(authorize(v, maya())).toMatchObject({ allow: true, basis: "explicit" });
+  });
+  it("a family-wide (pre-0018) Keep hidden applies to every child", () => {
+    const g = [...approvedChannels, grant("dismissed", "v1")];
+    expect(canPlay(one({ videos: [video("v1", CH_SONGS)], cards: [clean], grants: g, profileId: MAYA }), maya())).toBe(false);
+    expect(canPlay(one({ videos: [video("v1", CH_SONGS)], cards: [clean], grants: g, profileId: LEO }), leo())).toBe(false);
+  });
+  it("undoing it (row removed) returns the video to the normal rules", () => {
+    const v = one({ videos: [video("v1", CH_SONGS)], cards: [clean], grants: approvedChannels, profileId: MAYA });
+    expect(canPlay(v, maya())).toBe(true);
+  });
+});
+
+describe("malformed AI reviews fail closed through authorize()", () => {
+  // Each card is otherwise perfect, on an approved channel, for Maya in Open mode — it would play if valid.
+  const playsIfValid = (c: unknown) => authorize(one({ videos: [video("v1", CH_SONGS)], cards: [c as ContentCard], grants: approvedChannels, profileId: MAYA }), maya());
+  const good = card("v1");
+  const without = (k: string) => { const c: Record<string, unknown> = { ...good }; delete c[k]; return c; };
+  const withConcerns = (f: (cs: ContentCard["concerns"]) => unknown) => ({ ...good, concerns: f(good.concerns.map((x) => ({ ...x }))) });
+
+  it("baseline: the valid card plays", () => expect(playsIfValid(good)).toMatchObject({ allow: true }));
+
+  it.each([
+    ["no ageFit", without("ageFit")],
+    ["ageFit null", { ...good, ageFit: null }],
+    ["age min missing", { ...good, ageFit: { max: 8 } }],
+    ["age min a string", { ...good, ageFit: { min: "3", max: 8 } }],
+    ["age min NaN", { ...good, ageFit: { min: NaN, max: 8 } }],
+    ["age min negative", { ...good, ageFit: { min: -1, max: 8 } }],
+    ["age min fractional", { ...good, ageFit: { min: 2.5, max: 8 } }],
+    ["age min absurd", { ...good, ageFit: { min: 99, max: 99 } }],
+    ["age min > max", { ...good, ageFit: { min: 6, max: 4 } }],
+    ["age max missing", { ...good, ageFit: { min: 3 } }],
+    ["no confidence", without("confidence")],
+    ["confidence NaN", { ...good, confidence: NaN }],
+    ["confidence Infinity", { ...good, confidence: Infinity }],
+    ["confidence > 1", { ...good, confidence: 1.5 }],
+    ["confidence 90 (percent, not fraction)", { ...good, confidence: 90 }],
+    ["confidence negative", { ...good, confidence: -0.2 }],
+    ["confidence a string", { ...good, confidence: "0.9" }],
+    ["no format", without("format")],
+    ["unknown format", { ...good, format: "gamplay" }],
+    ["no concerns", without("concerns")],
+    ["concerns not an array", { ...good, concerns: { violence: 0 } }],
+    ["concerns empty (nothing assessed)", withConcerns(() => [])],
+    ["a tag not assessed", withConcerns((cs) => cs.filter((x) => x.tag !== "violence"))],
+    ["a duplicated tag", withConcerns((cs) => [...cs, { ...cs[0] }])],
+    ["an unknown tag", withConcerns((cs) => [...cs, { tag: "gore", present: true, intensity: 3 }])],
+    ["a null finding", withConcerns((cs) => [...cs, null])],
+    ["intensity out of range", withConcerns((cs) => cs.map((x) => (x.tag === "violence" ? { ...x, intensity: 7 } : x)))],
+    ["intensity a string", withConcerns((cs) => cs.map((x) => (x.tag === "violence" ? { ...x, intensity: "2" } : x)))],
+    ["present not a boolean", withConcerns((cs) => cs.map((x) => (x.tag === "violence" ? { ...x, present: "no" } : x)))],
+    ["reviewer missing", without("reviewer")],
+    ["reviewer model blank", { ...good, reviewer: { ...good.reviewer, model: "  " } }],
+    ["not an object at all", "card"],
+  ])("%s → denied", (_name, c) => {
+    const d = playsIfValid(c);
+    expect(d.allow).toBe(false);
+    expect([REASON.invalidReview, REASON.unreviewed]).toContain(d.reasons[0]);
+  });
+
+  it("malformed reviews are reported as incomplete (so the parent sees why)", () => {
+    expect(playsIfValid({ ...good, confidence: 2 })).toMatchObject({ reasons: [REASON.invalidReview] });
+    expect(cardProblems({ ...good, confidence: 2 })).toEqual(["confidence invalid"]);
+    expect(cardProblems(good)).toEqual([]);
+  });
+
+  it("a malformed card can't open the door in Open mode either", () => {
+    const v = one({ videos: [video("v1", CH_OTHER)], cards: [{ ...good, ageFit: { min: NaN, max: 8 } } as unknown as ContentCard], profileId: MAYA });
+    expect(canPlay(v, maya())).toBe(false);
+    expect(screen(v, maya()).pass).toBe(false);
+  });
+
+  it("an explicit Allow for the child still works (the parent's deliberate decision)", () => {
+    const v = one({ videos: [video("v1", CH_SONGS)], cards: [{ ...good, confidence: NaN } as ContentCard], grants: [...approvedChannels, grant("override", "v1", MAYA)], profileId: MAYA });
+    expect(authorize(v, maya())).toMatchObject({ allow: true, basis: "explicit" });
+  });
+
+  it("a finding with intensity ≥ 2 counts even if `present` says false", () => {
+    const c = withConcerns((cs) => cs.map((x) => (x.tag === "violence" ? { ...x, present: false, intensity: 3 } : x)));
+    expect(playsIfValid(c)).toMatchObject({ allow: false, reasons: ["Violence / fighting"] });
+  });
 });
 
 describe("family id is carried through", () => it("fixtures use one family", () => expect(FAM).toBe("fam-1")));

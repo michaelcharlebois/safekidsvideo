@@ -9,7 +9,7 @@
 // not peer feedback, not a stale open-mode clearance.
 
 import {
-  CONCERN_LABELS, FORMAT_LABELS,
+  CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS, FORMATS,
   type Channel, type ConcernTag, type Confirmation, type ContentCard, type FamilySettings,
   type Video, type VideoWithCard, type WhitelistEntry,
 } from "@/lib/types";
@@ -19,23 +19,63 @@ export const MIN_CONFIDENCE = 0.7;
 
 export const REASON = {
   blocked: "Blocked by a parent",
+  keptHidden: "A parent chose to keep it hidden",
   noChild: "Choose who's watching",
   noAge: "Add this child's age",
   unreviewed: "Not reviewed yet",
   lowConfidence: "Review wasn't confident enough",
+  invalidReview: "Review was incomplete",
   notInLibrary: "Not in this child's library",
 } as const;
 
 // ---- review eligibility ---------------------------------------------------------------------
 
-/** Is this card a genuine, usable AI review? Missing, sample, failed and low-confidence reviews are not. */
+const isInt = (n: unknown, lo: number, hi: number): n is number => typeof n === "number" && Number.isInteger(n) && n >= lo && n <= hi;
+const TAGS = new Set<string>(CONCERN_TAGS);
+const FORMAT_SET = new Set<string>(FORMATS);
+
+/**
+ * Is every field the gate relies on present and in range? Anything else is treated as "no review".
+ * Checks: age minimum/maximum (integers 0–18, min ≤ max), confidence (a finite number 0–1), format
+ * (a known one, so a blocked format can't slip through as an unknown string), and concerns (exactly one
+ * well-formed finding — known tag, boolean present, integer intensity 0–3 — for EVERY tag in the
+ * taxonomy, so an unassessed tag can't read as "absent").
+ */
+export function cardProblems(card: unknown): string[] {
+  const out: string[] = [];
+  if (!card || typeof card !== "object") return ["not an object"];
+  const c = card as Record<string, unknown>;
+  const age = c.ageFit as Record<string, unknown> | undefined;
+  if (!age || typeof age !== "object") out.push("ageFit missing");
+  else {
+    if (!isInt(age.min, 0, 18)) out.push("ageFit.min invalid");
+    if (!isInt(age.max, 0, 18)) out.push("ageFit.max invalid");
+    if (isInt(age.min, 0, 18) && isInt(age.max, 0, 18) && age.min > age.max) out.push("ageFit.min > max");
+  }
+  if (typeof c.confidence !== "number" || !Number.isFinite(c.confidence) || c.confidence < 0 || c.confidence > 1) out.push("confidence invalid");
+  if (typeof c.format !== "string" || !FORMAT_SET.has(c.format)) out.push("format invalid");
+  if (!Array.isArray(c.concerns)) out.push("concerns missing");
+  else {
+    const seen = new Set<string>();
+    for (const f of c.concerns as unknown[]) {
+      const x = f as Record<string, unknown> | null;
+      if (!x || typeof x !== "object" || typeof x.tag !== "string" || !TAGS.has(x.tag)) { out.push("concern with unknown tag"); continue; }
+      if (seen.has(x.tag)) out.push(`concern ${x.tag} duplicated`);
+      seen.add(x.tag);
+      if (typeof x.present !== "boolean") out.push(`concern ${x.tag}.present invalid`);
+      if (!isInt(x.intensity, 0, 3)) out.push(`concern ${x.tag}.intensity invalid`);
+    }
+    for (const t of CONCERN_TAGS) if (!seen.has(t)) out.push(`concern ${t} not assessed`);
+  }
+  return out;
+}
+
+/** Is this card a genuine, usable AI review? Missing, sample, malformed and low-confidence reviews are not. */
 export function reviewEligibility(card: ContentCard | undefined | null): { eligible: boolean; reason?: string } {
   if (!card) return { eligible: false, reason: REASON.unreviewed };
-  const model = card.reviewer?.model ?? "";
+  const model = typeof card.reviewer?.model === "string" ? card.reviewer.model.trim() : "";
   if (!model || model === "sample") return { eligible: false, reason: REASON.unreviewed };
-  if (!Array.isArray(card.concerns) || !card.ageFit || typeof card.confidence !== "number" || Number.isNaN(card.confidence)) {
-    return { eligible: false, reason: REASON.unreviewed }; // malformed / failed parse
-  }
+  if (cardProblems(card).length) return { eligible: false, reason: REASON.invalidReview };
   if (card.confidence < MIN_CONFIDENCE) return { eligible: false, reason: REASON.lowConfidence };
   return { eligible: true };
 }
@@ -55,7 +95,8 @@ export function ruleReasons(v: Pick<VideoWithCard, "card" | "confirmations">, s:
   if (c?.format && s.blockedFormats.includes(c.format)) out.push(FORMAT_LABELS[c.format]);
   for (const tag of s.blockedTags) {
     const ai = c?.concerns.find((f) => f.tag === tag);
-    const aiHit = !!ai && ai.present && ai.intensity >= 2;
+    // Intensity is authoritative: a moderate-or-strong finding counts even if `present` disagrees.
+    const aiHit = !!ai && ai.intensity >= 2;
     const peerHit = (v.confirmations.flaggedTags[tag] ?? 0) >= s.flagThreshold;
     if (aiHit || peerHit) out.push(CONCERN_LABELS[tag]);
   }
@@ -68,7 +109,9 @@ export type AuthBasis = "explicit" | "library" | "open";
 export type AuthDecision = { allow: boolean; basis: AuthBasis | null; reasons: string[] };
 
 /**
- * THE gate. `v` must come from buildLibrary/getLibrary scoped to the same child as `s`
+ * THE gate. Order: no child → deny; "Never" (block) → deny; "Allow for <child>" → allow;
+ * "Keep hidden" → deny; no eligible review → deny; child's rules → deny; source (library / Open mode) → allow.
+ * `v` must come from buildLibrary/getLibrary scoped to the same child as `s`
  * (v.scopedTo === s.profileId); a mismatch fails closed.
  */
 export function authorize(v: VideoWithCard, s: FamilySettings): AuthDecision {
@@ -77,6 +120,9 @@ export function authorize(v: VideoWithCard, s: FamilySettings): AuthDecision {
   if (v.scopedTo !== s.profileId) return deny(REASON.noChild); // flags computed for a different child (or family-wide)
   if (v.blockedByParent) return deny(REASON.blocked);
   if (v.overridden) return { allow: true, basis: "explicit", reasons: [] };
+  // "Keep hidden" is a standing decision for this child: it holds even if the review improves or the
+  // filters relax, until a parent allows the video (which replaces it) or undoes it.
+  if (v.dismissed) return deny(REASON.keptHidden);
 
   const review = reviewEligibility(v.card);
   if (!review.eligible) return deny(review.reason!);
@@ -99,6 +145,7 @@ export function blockedReasons(v: VideoWithCard, s: FamilySettings): string[] {
 /** Would the review alone (no source, no explicit approval) clear this for the child? Used to explain open-mode checks. */
 export function screen(v: VideoWithCard, s: FamilySettings): { pass: boolean; reasons: string[] } {
   if (v.blockedByParent) return { pass: false, reasons: [REASON.blocked] };
+  if (v.dismissed && !v.overridden) return { pass: false, reasons: [REASON.keptHidden] };
   const review = reviewEligibility(v.card);
   if (!review.eligible) return { pass: false, reasons: [review.reason!] };
   const reasons = ruleReasons(v, s);
