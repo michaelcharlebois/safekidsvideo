@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Channel, Confirmation, ContentCard, LegacyGrant, Profile, ReviewerNotes, Video } from "@/lib/types";
-import { DEFAULT_PROFILE, mergeSettings, type Store } from "./store";
+import { DEFAULT_PROFILE, mergeSettings, type ProfileSettingsPatch, type Store } from "./store";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -162,6 +162,20 @@ export const supabaseStore: Store = {
       }).eq("id", s.profileId).eq("family_id", s.familyId));
     }
   },
+  async updateProfileSettings(familyId, profileId, patch) {
+    const row = profilePatchToColumns(patch);
+    if (!Object.keys(row).length) return;
+    // .select() so a missing / other-family profile is detected (zero rows) instead of silently ignored.
+    const d = must<any[]>(await client().from("profiles").update(row).eq("id", profileId).eq("family_id", familyId).select("id"));
+    if (!d.length) throw new Error("That child isn't in this family");
+  },
+  async updateFamilySettings(familyId, patch) {
+    const row: Record<string, unknown> = {};
+    if (patch.pinHash) row.pin_hash = patch.pinHash;
+    if (patch.flagThreshold) row.flag_threshold = patch.flagThreshold;
+    if (!Object.keys(row).length) return;
+    must(await client().from("families").update(row).eq("id", familyId));
+  },
   async getFamily(familyId) {
     const d = must<any>(await client().from("families").select("id,onboarded_at,plan,trial_ends_at,stripe_customer_id,stripe_subscription_id,timezone").eq("id", familyId).maybeSingle());
     return {
@@ -218,3 +232,17 @@ export const supabaseStore: Store = {
     return d ? toLegacy(d) : undefined;
   },
 };
+
+/** Profile settings patch → profiles columns. Only keys present in the patch; undefined clears (null). */
+export function profilePatchToColumns(patch: ProfileSettingsPatch): Record<string, unknown> {
+  const cols: Record<keyof ProfileSettingsPatch, string> = {
+    mode: "mode", kidsOnlySearch: "kids_only_search", dailyCheckLimit: "daily_check_limit", blockedTags: "blocked_tags",
+    blockedFormats: "blocked_formats", age: "age", dailyMinutes: "daily_minutes", bedtime: "bedtime", skipLimit: "skip_limit",
+    skipRegen: "skip_regen", skipCooldownSec: "skip_cooldown_sec", freePeekSec: "free_peek_sec", boosts: "boosts",
+  };
+  const row: Record<string, unknown> = {};
+  for (const k of Object.keys(patch) as (keyof ProfileSettingsPatch)[]) {
+    if (k in cols) row[cols[k]] = patch[k] ?? null;
+  }
+  return row;
+}

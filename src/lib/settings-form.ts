@@ -4,6 +4,7 @@
 // an absent number as "no limit"), so ONLY the named sections are applied; everything else is kept.
 // Pure, so it's tested directly.
 import { CONCERN_TAGS, FORMATS, type ConcernTag, type FamilyMode, type FamilySettings, type VideoFormat } from "@/lib/types";
+import type { FamilySettingsPatch, ProfileSettingsPatch } from "@/lib/db/store";
 
 export const SETTINGS_SECTIONS = ["access", "content", "time", "skips", "arrange", "family"] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
@@ -69,3 +70,41 @@ export function applySettingsForm(current: FamilySettings, form: FormLike, secti
   }
   return next;
 }
+
+/** The fields each section owns, as profile fields (child sections) or family fields ("family"). */
+const SECTION_FIELDS: Record<Exclude<SettingsSection, "family">, (keyof ProfileSettingsPatch)[]> = {
+  access: ["mode", "kidsOnlySearch", "dailyCheckLimit"],
+  content: ["blockedTags", "blockedFormats"],
+  time: ["dailyMinutes", "bedtime"],
+  skips: ["skipLimit", "skipRegen", "skipCooldownSec", "freePeekSec"],
+  arrange: ["boosts"],
+};
+
+/**
+ * What a save may write, and nothing else: the child-profile fields of the named child sections, and the
+ * family fields only if "family" is named. Built on applySettingsForm, then narrowed to the section's
+ * own fields, so an unrelated field can never be rewritten from a stale read.
+ */
+export function settingsPatch(current: FamilySettings, form: FormLike, sections: SettingsSection[], pinHash?: string): { child: ProfileSettingsPatch; family: FamilySettingsPatch } {
+  const next = applySettingsForm(current, form, sections, pinHash);
+  const asProfile: ProfileSettingsPatch = {
+    mode: next.mode, kidsOnlySearch: next.kidsOnlySearch, dailyCheckLimit: next.dailyCheckLimit, blockedTags: next.blockedTags,
+    blockedFormats: next.blockedFormats, dailyMinutes: next.dailyMinutes, bedtime: next.bedtime, skipLimit: next.skipLimit,
+    skipRegen: next.skipRegen, skipCooldownSec: next.skipCooldownSec, freePeekSec: next.freePeekSec, boosts: next.boosts,
+  };
+  const child: ProfileSettingsPatch = {};
+  for (const sec of sections) {
+    if (sec === "family") continue;
+    for (const k of SECTION_FIELDS[sec]) (child as Record<string, unknown>)[k] = asProfile[k];
+  }
+  // Age is edited on the profile form; a settings form may carry it only alongside "content" (legacy form).
+  if (sections.includes("content") && form.get("kidAge") != null && next.kidAge !== current.kidAge) child.age = next.kidAge;
+  const family: FamilySettingsPatch = {};
+  if (sections.includes("family")) {
+    if (pinHash) family.pinHash = pinHash;
+    if (next.flagThreshold !== current.flagThreshold) family.flagThreshold = next.flagThreshold;
+  }
+  return { child, family };
+}
+
+export const childSectionsOf = (sections: SettingsSection[]) => sections.filter((s) => s !== "family");

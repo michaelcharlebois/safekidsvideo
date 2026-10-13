@@ -187,6 +187,21 @@ export const localStore: Store = {
       skipLimit: s.skipLimit, skipRegen: s.skipRegen ?? 1, skipCooldownSec: s.skipCooldownSec ?? 120, freePeekSec: s.freePeekSec ?? 30, boosts: s.boosts ?? p.boosts ?? {} });
     await persist(db);
   },
+  async updateProfileSettings(familyId, profileId, patch) {
+    const db = await load();
+    const p = (db.profiles ?? []).find((x) => x.id === profileId && x.familyId === familyId);
+    if (!p) throw new Error("That child isn't in this family");
+    Object.assign(p, patch); // only the keys in the patch
+    await persist(db);
+  },
+  async updateFamilySettings(familyId, patch) {
+    const db = await load();
+    const fam = { ...DEFAULT_SETTINGS(familyId), ...db.settings.find((x) => x.familyId === familyId) };
+    if ("pinHash" in patch && patch.pinHash) fam.pinHash = patch.pinHash;
+    if ("flagThreshold" in patch && patch.flagThreshold) fam.flagThreshold = patch.flagThreshold;
+    upsertBy(db.settings, fam, (x) => x.familyId);
+    await persist(db);
+  },
   async getFamily(familyId) {
     const db = await load();
     const f = (db.families ?? []).find((x) => x.id === familyId);

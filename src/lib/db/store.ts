@@ -46,8 +46,15 @@ export interface Store {
   // family data (private)
   /** Effective settings for a kid. No profileId → the family's first profile (created if none). */
   getSettings(familyId: string, profileId?: string): Promise<FamilySettings>;
-  /** Writes family-level fields (PIN, threshold) to the family and the rest to s.profileId's profile. */
+  /** Writes family-level fields (PIN, threshold) to the family and the rest to s.profileId's profile. (Scripts/tests; pages save sections with the two methods below.) */
   saveSettings(s: FamilySettings): Promise<void>;
+  /**
+   * Writes ONLY the given fields of one child's profile. The profile must exist and belong to the family —
+   * otherwise it throws and writes nothing. A key present with value undefined clears that field.
+   */
+  updateProfileSettings(familyId: string, profileId: string, patch: ProfileSettingsPatch): Promise<void>;
+  /** Writes ONLY the given family-wide fields (PIN, report threshold). Never touches a profile. */
+  updateFamilySettings(familyId: string, patch: FamilySettingsPatch): Promise<void>;
   getFamily(familyId: string): Promise<Family>;
   updateFamily(familyId: string, patch: Partial<Omit<Family, "id">>): Promise<void>;
   listProfiles(familyId: string): Promise<Profile[]>;
@@ -69,6 +76,12 @@ export const DEFAULT_PROFILE = (familyId: string, name = "My kid", age?: number)
   blockedTags: ["violence", "scary_imagery", "monsters"] as ConcernTag[], blockedFormats: ["gameplay_commentary"],
   hideUnreviewed: true, dailyCheckLimit: 20, kidsOnlySearch: false, skipRegen: 1, skipCooldownSec: 120, freePeekSec: 30, channelOrder: [], boosts: {}, sort: 0,
 });
+
+/** The per-child settings fields a section can change (profile column names in Supabase are snake_case). */
+export type ProfileSettingsPatch = Partial<Pick<Profile,
+  "mode" | "kidsOnlySearch" | "dailyCheckLimit" | "blockedTags" | "blockedFormats" | "age" |
+  "dailyMinutes" | "bedtime" | "skipLimit" | "skipRegen" | "skipCooldownSec" | "freePeekSec" | "boosts">>;
+export type FamilySettingsPatch = Partial<Pick<FamilySettings, "pinHash" | "flagThreshold">>;
 
 /** Merge a family's shared fields with one profile into the effective settings the gate uses. */
 export const mergeSettings = (family: { familyId: string; pinHash: string; flagThreshold: number }, p: Profile): FamilySettings => ({
