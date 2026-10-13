@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { CONCERN_LABELS, FORMAT_LABELS, type ConcernFinding, type ContentCard, type VideoWithCard } from "@/lib/types";
 
@@ -11,7 +10,7 @@ export function Button({
 }: { children: ReactNode; variant?: "primary" | "ghost" | "danger"; className?: string } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const base = "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 font-bold text-sm transition active:scale-[0.98] disabled:opacity-50";
   const v = {
-    primary: "bg-accent text-accent-ink hover:brightness-95",
+    primary: "bg-ink text-bg hover:bg-ink/90",
     ghost: "bg-transparent border border-line text-ink hover:bg-bg",
     danger: "bg-bad/10 text-bad border border-bad/30 hover:bg-bad/20",
   }[variant];
@@ -79,15 +78,12 @@ export function CardSummary({ v, blocked }: { v: VideoWithCard; blocked: string[
   );
 }
 
+/** Page title row for parent sub-pages. The app nav lives in the parent layout; this just names the page. */
 export function TopBar({ title, right }: { title: string; right?: ReactNode }) {
   return (
-    <header className="sticky top-0 z-10 bg-bg/90 backdrop-blur border-b border-line">
-      <div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between gap-3">
-        <Link href="/" className="font-extrabold text-lg tracking-tight">
-          <span className="text-accent">●</span> Sift <span className="text-muted font-semibold">/ {title}</span>
-        </Link>
-        <div className="flex items-center gap-2">{right}</div>
-      </div>
-    </header>
+    <div className="mx-auto w-full max-w-5xl px-4 pt-5 flex items-center justify-between gap-3">
+      <h1 className="text-2xl font-extrabold tracking-tight">{title}</h1>
+      <div className="flex items-center gap-2 text-sm">{right}</div>
+    </div>
   );
 }

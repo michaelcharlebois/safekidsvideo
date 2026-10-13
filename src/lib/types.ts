@@ -254,6 +254,7 @@ export type WatchRequest = {
   id: string;
   familyId: string;
   deviceId?: string;
+  profileId?: string;
   videoId: string;
   status: "pending" | "approved" | "denied";
   createdAt: string;

@@ -8,9 +8,9 @@ import type { WatchRequest } from "@/lib/types";
 
 const on = () => supabaseEnabled && !!(process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-type Row = { id: string; family_id: string; device_id: string | null; video_id: string; status: WatchRequest["status"]; created_at: string };
+type Row = { id: string; family_id: string; device_id: string | null; profile_id?: string | null; video_id: string; status: WatchRequest["status"]; created_at: string };
 const toReq = (r: Row): WatchRequest => ({
-  id: r.id, familyId: r.family_id, deviceId: r.device_id ?? undefined, videoId: r.video_id, status: r.status, createdAt: r.created_at,
+  id: r.id, familyId: r.family_id, deviceId: r.device_id ?? undefined, profileId: r.profile_id ?? undefined, videoId: r.video_id, status: r.status, createdAt: r.created_at,
 });
 
 export async function createRequest(

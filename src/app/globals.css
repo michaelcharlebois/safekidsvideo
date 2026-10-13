@@ -1,19 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #fbf7f0;
+  /* Daytime sibling of the kid screen's night theme: navy ink + sunshine on milk. */
+  --bg: #f5f3ec;
   --surface: #ffffff;
-  --ink: #1f1b16;
-  --muted: #6b645b;
-  --line: #e8e0d3;
-  --accent: #ff7a59;
+  --ink: #141a3a;
+  --muted: #5f6478;
+  --line: #e3e1d8;
+  --accent: #2b3a8f;
   --accent-ink: #ffffff;
   --ok: #2f9e6b;
-  --warn: #d98c1f;
-  --bad: #d64545;
-  --sky: #cfe8ff;
-  --sun: #ffe08a;
-  --grass: #c9f0c0;
+  --warn: #c98a12;
+  --bad: #d94848;
+  --sky: #dbe7ff;
+  --sun: #ffcf3f;
+  --grass: #d4f0cf;
 }
 
 @theme inline {
@@ -30,7 +31,7 @@
   --color-sky: var(--sky);
   --color-sun: var(--sun);
   --color-grass: var(--grass);
-  --font-sans: "Nunito", ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif;
+  --font-sans: ui-rounded, "SF Pro Rounded", "Nunito", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   --radius-xl: 1.25rem;
 }
 
