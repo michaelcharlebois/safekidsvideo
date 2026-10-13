@@ -224,7 +224,9 @@ export function normalizeReview(
   const byTag = new Map(card.concerns.map((c) => [c.tag, c]));
   const concerns = CONCERN_TAGS.map((tag) => {
     const c = byTag.get(tag)!; // present exactly once — checked above
-    return { ...c, intensity: c.intensity as 0 | 1 | 2 | 3, present: c.present && c.intensity > 0 };
+    // Intensity is authoritative (see isFound in lib/gate.ts): `present` is derived from it, so a contradictory
+    // answer (present:false with intensity 2, or present:true with 0) can't hide or invent a finding.
+    return { ...c, intensity: c.intensity as 0 | 1 | 2 | 3, present: c.intensity > 0 };
   });
   const parsedCard = card;
 

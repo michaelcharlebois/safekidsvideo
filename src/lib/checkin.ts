@@ -3,6 +3,7 @@ import { supabaseAdmin, supabaseEnabled } from "@/lib/supabase/server";
 import { db } from "@/lib/db";
 import { pushToFamily } from "@/lib/push";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS, type ConcernTag, type ContentCard, type Video, type VideoFormat } from "@/lib/types";
+import { isFound } from "@/lib/gate";
 
 /* Daily mood check-in + the "what did the day look like" correlation. Supabase-only. */
 
@@ -63,7 +64,7 @@ export function shapeDay(events: WatchEvent[], videoById: Map<string, Video>, ca
     shape.videos.push({ video, card, minutes });
     if (card) {
       shape.formats.add(card.format);
-      for (const c of card.concerns) if (c.present && c.intensity >= 1) shape.tags.add(c.tag);
+      for (const c of card.concerns) if (isFound(c)) shape.tags.add(c.tag);
       if (card.pace === "frenetic") shape.frenetic += minutes;
     }
   }

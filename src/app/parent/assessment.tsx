@@ -1,4 +1,4 @@
-import { reviewEligibility, REASON } from "@/lib/gate";
+import { foundConcerns, isFound, reviewEligibility, REASON } from "@/lib/gate";
 import { CONCERN_LABELS, FORMAT_LABELS, type ContentCard, type VideoWithCard } from "@/lib/types";
 import { Notice, Tag } from "@/components/ui";
 
@@ -22,8 +22,8 @@ export function eligibilityNote(card: ContentCard | undefined): string | null {
 export function Assessment({ v, compact = false }: { v: VideoWithCard; compact?: boolean }) {
   const c = v.card;
   const note = eligibilityNote(c);
-  const findings = Array.isArray(c?.concerns) ? c.concerns.filter((f) => f.present).sort((a, b) => b.intensity - a.intensity) : [];
-  const absent = Array.isArray(c?.concerns) ? c.concerns.filter((f) => !f.present) : [];
+  const findings = foundConcerns(c).sort((a, b) => b.intensity - a.intensity);
+  const absent = Array.isArray(c?.concerns) ? c.concerns.filter((f) => !isFound(f)) : [];
   if (!c) return <Notice tone="warn">{note}</Notice>;
   const usable = !note;
   return (

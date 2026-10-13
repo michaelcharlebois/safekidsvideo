@@ -10,8 +10,8 @@
 
 import {
   CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS, FORMATS,
-  type Channel, type ConcernTag, type Confirmation, type ContentCard, type FamilySettings,
-  type Video, type VideoWithCard, type WhitelistEntry,
+  type Channel, type ConcernFinding, type ConcernTag, type Confirmation, type ContentCard, type FamilySettings,
+  type Video, type VideoFormat, type VideoWithCard, type WhitelistEntry,
 } from "@/lib/types";
 
 /** Below this the reviewer isn't sure enough for a video to play without a parent. */
@@ -80,7 +80,44 @@ export function reviewEligibility(card: ContentCard | undefined | null): { eligi
   return { eligible: true };
 }
 
+// ---- what counts as a finding -----------------------------------------------------------------
+
+/**
+ * A concern is FOUND when its intensity is 1–3, and it can hold a video back when intensity ≥ 2.
+ * Intensity is authoritative: a contradictory `present` flag is ignored by review normalization, by the
+ * gate and by every display, so a restriction can never be invisible (or shown when it isn't one).
+ */
+export const BLOCKING_INTENSITY = 2;
+export const isFound = (f: { intensity: number }) => f.intensity >= 1;
+export function foundConcerns<F extends { intensity: number }>(card: { concerns?: F[] } | undefined | null): F[] {
+  return Array.isArray(card?.concerns) ? card.concerns.filter(isFound) : [];
+}
+
 // ---- child rules -----------------------------------------------------------------------------
+
+/** Why a child's rules hold a reviewed video back, as data (ruleReasons() is the string form). */
+export type RuleHit =
+  | { kind: "noAge" }
+  | { kind: "age"; min: number; kidAge: number }
+  | { kind: "format"; format: VideoFormat }
+  /** `ai` = the AI's finding when it reached BLOCKING_INTENSITY; `parents` = parent "missed it" flags when they reached the threshold. */
+  | { kind: "concern"; tag: ConcernTag; ai?: ConcernFinding; parents?: number };
+
+export function ruleHits(v: Pick<VideoWithCard, "card" | "confirmations">, s: FamilySettings): RuleHit[] {
+  const out: RuleHit[] = [];
+  const c = v.card;
+  if (s.kidAge == null) out.push({ kind: "noAge" });
+  else if (c && c.ageFit.min > s.kidAge) out.push({ kind: "age", min: c.ageFit.min, kidAge: s.kidAge });
+  if (c?.format && s.blockedFormats.includes(c.format)) out.push({ kind: "format", format: c.format });
+  for (const tag of s.blockedTags) {
+    const f = c?.concerns.find((x) => x.tag === tag);
+    const ai = f && f.intensity >= BLOCKING_INTENSITY ? f : undefined;
+    const flags = v.confirmations.flaggedTags[tag] ?? 0;
+    const parents = flags >= s.flagThreshold ? flags : undefined;
+    if (ai || parents) out.push({ kind: "concern", tag, ai, parents });
+  }
+  return out;
+}
 
 /**
  * Restrictions from this child's rules, given an eligible review. Peer feedback can only ADD
@@ -88,19 +125,11 @@ export function reviewEligibility(card: ContentCard | undefined | null): { eligi
  * Age: the lower bound gates; the upper bound is informational.
  */
 export function ruleReasons(v: Pick<VideoWithCard, "card" | "confirmations">, s: FamilySettings): string[] {
-  const out: string[] = [];
-  const c = v.card;
-  if (s.kidAge == null) out.push(REASON.noAge);
-  else if (c && c.ageFit.min > s.kidAge) out.push(`Rated for ages ${c.ageFit.min}+`);
-  if (c?.format && s.blockedFormats.includes(c.format)) out.push(FORMAT_LABELS[c.format]);
-  for (const tag of s.blockedTags) {
-    const ai = c?.concerns.find((f) => f.tag === tag);
-    // Intensity is authoritative: a moderate-or-strong finding counts even if `present` disagrees.
-    const aiHit = !!ai && ai.intensity >= 2;
-    const peerHit = (v.confirmations.flaggedTags[tag] ?? 0) >= s.flagThreshold;
-    if (aiHit || peerHit) out.push(CONCERN_LABELS[tag]);
-  }
-  return out;
+  return ruleHits(v, s).map((h) =>
+    h.kind === "noAge" ? REASON.noAge
+    : h.kind === "age" ? `Rated for ages ${h.min}+`
+    : h.kind === "format" ? FORMAT_LABELS[h.format]
+    : CONCERN_LABELS[h.tag]);
 }
 
 // ---- the decision ----------------------------------------------------------------------------

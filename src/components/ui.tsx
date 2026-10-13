@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { CONCERN_LABELS, FORMAT_LABELS, type ConcernFinding, type ContentCard, type VideoWithCard } from "@/lib/types";
 import { STATUS_LABEL, type PlayStatus } from "@/lib/status";
 import { IconAlert, IconBan, IconChannels, IconClock, IconEyeOff, IconPlayCircle, IconShield } from "@/components/icons";
+import { foundConcerns } from "@/lib/gate";
 
 /*
  * Brightframe primitives. Colours, radii and elevation come from the tokens in globals.css; pages compose
@@ -137,7 +138,7 @@ export function ConcernPill({ f, flaggedBy = 0 }: { f: ConcernFinding; flaggedBy
 export function CardSummary({ v, blocked }: { v: VideoWithCard; blocked: string[] }) {
   const c = v.card;
   if (!c) return <p className="text-sm text-muted">Not reviewed yet — run the reviewer to generate a content card.</p>;
-  const present = c.concerns.filter((x) => x.present);
+  const present = foundConcerns(c);
   return (
     <div className="space-y-1.5">
       <div className="flex flex-wrap items-center gap-2 text-sm">

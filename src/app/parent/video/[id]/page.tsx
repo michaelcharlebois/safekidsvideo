@@ -5,8 +5,9 @@ import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { videoForChildren } from "@/lib/queries";
-import { reviewEligibility } from "@/lib/gate";
+import { isFound, reviewEligibility } from "@/lib/gate";
 import { playStatus } from "@/lib/status";
+import { holdExplanation } from "@/lib/explain";
 import { VERDICT_LABELS } from "@/lib/types";
 import type { AuthDecision } from "@/lib/gate";
 import { Button, buttonClass, Card, Notice, StatusBadge } from "@/components/ui";
@@ -48,15 +49,15 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
   const mine = confirmations.find((x) => x.familyId === fid);
   const others = confirmations.filter((x) => x.familyId !== fid);
   const concerns = Array.isArray(c?.concerns) ? c.concerns : []; // a malformed card must not crash the page
-  const present = concerns.filter((x) => x.present);
-  const absent = concerns.filter((x) => !x.present);
+  const present = concerns.filter(isFound);
+  const absent = concerns.filter((x) => !isFound(x));
   const othersAgree = others.filter((x) => x.verdict === "agree").length;
 
   const who = (
     <Card as="section" raised className="overflow-hidden" >
       <div className="border-b border-sand px-5 py-4">
         <h2 className="flex items-center gap-2 text-lg"><IconKids size={20} />Who can watch this</h2>
-        <p className="mt-0.5 text-sm text-muted">Each child separately. A video plays when its AI review passes that child&apos;s settings, or when you allow it for them.</p>
+        <p className="mt-0.5 text-sm text-muted">Each child is decided separately.</p>
       </div>
 
       {view.familyBlocked && (
@@ -97,7 +98,7 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
                 <span className="font-bold text-forest">{profile.name}</span>
                 <span className="ml-auto"><StatusBadge status={st} /></span>
               </div>
-              <p className="text-sm text-ink">{explain(profile.name, decision, view.familyBlocked, childBlocked, kv.dismissed)}</p>
+              <p className="text-sm text-ink">{explain(profile.name, decision, view.familyBlocked, childBlocked, kv.dismissed, holdExplanation(kv, s)?.summary)}</p>
               {!view.familyBlocked && (
                 <div className="flex flex-wrap gap-2">
                   {kv.overridden ? (
@@ -135,9 +136,10 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
           <button type="submit" className="font-bold text-forest underline">Stop keeping hidden for everyone</button>
         </form>
       )}
-      <div className="border-t border-sand bg-sand-soft/60 px-5 py-3 text-xs text-muted">
-        <p><b className="text-forest">Passes the AI review</b> means the review exists, is confident, and nothing in it conflicts with that child&apos;s settings. <b className="text-forest">Allowed by you</b> is your decision for one child, and plays even if the review or settings would hold it back.</p>
-      </div>
+      <details className="border-t border-sand px-5 py-2.5 text-xs text-muted">
+        <summary className="cursor-pointer font-bold text-forest">What&apos;s the difference?</summary>
+        <p className="mt-1.5"><b className="text-forest">Passes the AI review</b> means the review exists, is confident, and nothing in it conflicts with that child&apos;s settings. <b className="text-forest">Allowed by you</b> is your decision for one child, and plays even if the review or settings would hold it back.</p>
+      </details>
     </Card>
   );
 
@@ -243,7 +245,7 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
 }
 
 /** One sentence per child: what's deciding it, in the words the parent uses (no "safe"). */
-function explain(name: string, d: AuthDecision, familyBlocked: boolean, childBlocked: boolean, keptHidden: boolean): ReactNode {
+function explain(name: string, d: AuthDecision, familyBlocked: boolean, childBlocked: boolean, keptHidden: boolean, hold?: string): ReactNode {
   if (familyBlocked) return "Blocked for every child.";
   if (d.allow) {
     if (d.basis === "explicit") return <>You allowed it for {name}. <span className="text-muted">This overrides the AI review and {name}&apos;s settings for this one video.</span></>;
@@ -252,6 +254,7 @@ function explain(name: string, d: AuthDecision, familyBlocked: boolean, childBlo
   }
   if (childBlocked) return `You chose Never for ${name}.`;
   if (keptHidden) return `You chose to keep it hidden from ${name}. That holds even if the review or settings change.`;
+  if (hold) return <>Doesn&apos;t play for {name}. <span className="text-muted">{hold}</span></>;
   return <>Doesn&apos;t play for {name}: <span className="text-muted">{d.reasons.join(", ")}.</span></>;
 }
 

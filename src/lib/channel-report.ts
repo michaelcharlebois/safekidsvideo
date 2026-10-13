@@ -2,6 +2,7 @@
 // parent page and the public /c/ page.
 import { db } from "@/lib/db/resolve";
 import { CONCERN_TAGS, type Channel, type ConcernTag, type ContentCard, type Video, type VideoFormat } from "@/lib/types";
+import { isFound } from "@/lib/gate";
 
 export type ChannelReport = {
   channel: Channel;
@@ -38,7 +39,7 @@ export async function channelReport(channelId: string): Promise<ChannelReport | 
     r.pace[c.pace]++;
     r.formats[c.format] = (r.formats[c.format] ?? 0) + 1;
     for (const f of c.concerns) {
-      if (!f.present) continue;
+      if (!isFound(f)) continue;
       const t = (r.tags[f.tag] ??= { any: 0, strong: 0 });
       t.any++;
       if (f.intensity >= 2) t.strong++;
@@ -46,10 +47,10 @@ export async function channelReport(channelId: string): Promise<ChannelReport | 
   }
   const byId = new Map(videos.map((v) => [v.id, v]));
   r.bestPicks = [...cardList].sort((a, b) => b.rating - a.rating || b.confidence - a.confidence).slice(0, 3).map((c) => byId.get(c.videoId)!).filter(Boolean);
-  const worst = [...cardList].map((c) => ({ c, worst: Math.max(0, ...c.concerns.map((f) => (f.present ? f.intensity : 0))) }))
+  const worst = [...cardList].map((c) => ({ c, worst: Math.max(0, ...c.concerns.map((f) => (isFound(f) ? f.intensity : 0))) }))
     .sort((a, b) => b.worst - a.worst || a.c.rating - b.c.rating)[0];
   if (worst && worst.worst >= 2) {
-    const f = worst.c.concerns.find((x) => x.present && x.intensity === worst.worst)!;
+    const f = worst.c.concerns.find((x) => isFound(x) && x.intensity === worst.worst)!;
     r.watchOut = { video: byId.get(worst.c.videoId)!, why: `${CONCERN_TAGS.includes(f.tag) ? f.tag.replace(/_/g, " ") : f.tag} at ${f.timestamp ?? "—"}${f.evidence ? ` — ${f.evidence}` : ""}` };
   }
   const durs = videos.map((v) => v.durationSeconds).filter((d): d is number => !!d);

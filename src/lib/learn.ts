@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import { db } from "@/lib/db/resolve";
 import { BudgetExceededError, reviewVideo, DEFAULT_MODEL } from "@/lib/reviewer";
 import { CONCERN_LABELS, CONCERN_TAGS, type ConcernTag, type Confirmation, type ContentCard, type FeedbackStats, type ReviewerNotes } from "@/lib/types";
+import { isFound } from "@/lib/gate";
 
 export const isDisagreement = (c: Confirmation) =>
   c.verdict !== "agree" || Object.values(c.tagVotes ?? {}).some((v) => v !== "agree") || (c.ageVote && c.ageVote !== "right");
@@ -33,7 +34,7 @@ export async function feedbackStats(days = 90): Promise<FeedbackStats> {
 
 function describeCard(card: ContentCard | undefined) {
   if (!card) return "(no card)";
-  const present = card.concerns.filter((c) => c.present).map((c) => `${c.tag}:${c.intensity}${c.evidence ? ` (${c.evidence})` : ""}`);
+  const present = card.concerns.filter(isFound).map((c) => `${c.tag}:${c.intensity}${c.evidence ? ` (${c.evidence})` : ""}`);
   return `ages ${card.ageFit.min}–${card.ageFit.max}, pace ${card.pace}, format ${card.format}, rating ${card.rating}; concerns: ${present.join("; ") || "none"}`;
 }
 

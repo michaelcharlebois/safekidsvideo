@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { DEFAULT_PROFILE } from "@/lib/db/store";
 import { familyForUser } from "@/lib/family";
 import { hashPin } from "@/lib/pin";
+import { BLOCKING_INTENSITY } from "@/lib/gate";
 
 export const DEMO_PIN = "2580"; // never 1234: that old default counts as "no PIN set"
 
@@ -83,7 +84,7 @@ export async function ensureDemoFamily(userId: string, reset = false): Promise<s
     const good = new Map<string, number>();
     for (const c of cards) {
       if (c.reviewer.model === "sample") continue;
-      if (c.concerns.some((f) => f.present && f.intensity >= 2)) continue;
+      if (c.concerns.some((f) => f.intensity >= BLOCKING_INTENSITY)) continue;
       const v = videos.find((x) => x.id === c.videoId);
       if (v) good.set(v.channelId, (good.get(v.channelId) ?? 0) + 1);
     }

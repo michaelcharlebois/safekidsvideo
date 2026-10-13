@@ -15,6 +15,7 @@ import { IconAlert, IconCheck, IconClock, IconHand, IconReview } from "@/compone
 import { decideVideo, resolveLegacyAction, resolveWatchRequest } from "@/app/actions";
 import { UnreviewedConfirm } from "@/app/parent/unreviewed-confirm";
 import { Assessment, eligibilityNote } from "@/app/parent/assessment";
+import { holdExplanation, type Evidence } from "@/lib/explain";
 
 export const dynamic = "force-dynamic";
 
@@ -140,8 +141,34 @@ const Count = ({ n }: { n: number }) => <span className="opacity-70">{n}</span>;
 /** Where a decision came from. */
 function Origin({ item }: { item: InboxItem }) {
   if (item.kind === "request") return <span className="inline-flex items-center gap-1 rounded-full bg-apricot-soft px-2.5 py-1 text-xs font-bold text-apricot-ink"><IconHand size={14} />Child&apos;s request</span>;
-  if (item.kind === "held") return <span className="inline-flex items-center gap-1 rounded-full bg-warn-soft px-2.5 py-1 text-xs font-bold text-warn"><IconAlert size={14} />Held back after AI review</span>;
+  if (item.kind === "held") return <span className="inline-flex items-center gap-1 rounded-full bg-warn-soft px-2.5 py-1 text-xs font-bold text-warn"><IconAlert size={14} />Held back by settings</span>;
   return <span className="inline-flex items-center gap-1 rounded-full bg-sand-soft px-2.5 py-1 text-xs font-bold text-muted"><IconClock size={14} />Old approval record</span>;
+}
+
+const toSeconds = (ts: string) => { const p = ts.split(":").map(Number); return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : (p[0] ?? 0) * 60 + (p[1] ?? 0); };
+
+/** Compact evidence: what, how strong, when, and who said so. */
+function EvidenceList({ items, videoId }: { items: Evidence[]; videoId: string }) {
+  return (
+    <ul className="space-y-1.5" aria-label="Why it's held back">
+      {items.slice(0, 3).map((e) => (
+        <li key={e.label} className="rounded-xl border border-sand bg-surface px-3 py-2 text-sm">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="font-bold text-forest">{e.label}</span>
+            {e.severity && <span className={`rounded-full px-2 text-xs font-bold ${e.severity === "Strong" ? "bg-bad-soft text-bad" : "bg-warn-soft text-warn"}`}>{e.severity}</span>}
+            {e.timestamp && (
+              <a href={`https://www.youtube.com/watch?v=${videoId}&t=${toSeconds(e.timestamp)}s`} target="_blank" rel="noreferrer" className="text-xs font-bold text-forest underline decoration-sand underline-offset-2">at {e.timestamp}</a>
+            )}
+            <span className="ml-auto text-xs text-muted">
+              {e.source === "ai" ? (e.parents ? `AI review, and ${e.parents} parents` : "AI review") : e.source === "parents" ? `Flagged by ${e.parents} other parent${e.parents === 1 ? "" : "s"}` : "Your settings"}
+            </span>
+          </div>
+          {e.evidence && <p className="mt-0.5 text-muted line-clamp-2">{e.evidence}</p>}
+        </li>
+      ))}
+      {items.length > 3 && <li className="text-xs text-muted">{items.length - 3} more on the video&apos;s page</li>}
+    </ul>
+  );
 }
 
 function ChildChip({ p }: { p?: Pick<Profile, "name" | "avatar"> }) {
@@ -153,15 +180,18 @@ function ChildChip({ p }: { p?: Pick<Profile, "name" | "avatar"> }) {
 function InboxCard({ item, v, child, settings, profiles, next }: {
   item: InboxItem; v?: VideoWithCard; child?: Profile; settings?: FamilySettings; profiles: Profile[]; next: string;
 }) {
-  const all = v && settings ? blockedReasons(v, settings) : [];
-  const reasons = all.filter((r) => r !== REASON.notInLibrary && r !== REASON.unreviewed && r !== REASON.lowConfidence && r !== REASON.invalidReview);
-  const outside = all.includes(REASON.notInLibrary);
+  const outside = v && settings ? blockedReasons(v, settings).includes(REASON.notInLibrary) : false;
   const unreviewed = !reviewEligibility(v?.card).eligible;
   const note = eligibilityNote(v?.card);
+  // What holds it back for this child, attributed to its real source (AI review, other parents, settings).
+  const hold = v && settings && !unreviewed ? holdExplanation(v, settings) : null;
+  const evidence = hold?.evidence ?? [];
 
   const why =
-    item.kind === "request" ? (child ? `${child.name} asked to watch this.` : "A child asked to watch this, but the request didn't record which one.")
-    : item.kind === "held" ? `The AI review found things ${child?.name ?? "this child"}'s settings hold back.`
+    item.kind === "request"
+      ? [child ? `${child.name} asked to watch this.` : "A child asked to watch this, but the request didn't record which one.",
+         hold?.summary ?? (outside && !unreviewed ? `It isn't in ${child?.name}'s library, so it needs your OK.` : "")].filter(Boolean).join(" ")
+    : item.kind === "held" ? (hold?.summary ?? "")
     : item.legacyKind === "override" ? "Before permissions were per child, a parent approved this video. It's paused until you choose a child."
     : "Before permissions were per child, an automatic Open-mode check cleared this. No parent approved it. It's paused until you choose.";
 
@@ -186,9 +216,9 @@ function InboxCard({ item, v, child, settings, profiles, next }: {
               <p className="text-sm text-muted">{v?.channel?.title ?? v?.channelId ?? item.videoId}</p>
             </div>
           </div>
-          <p className="text-sm text-ink">{why}</p>
-          {reasons.length > 0 && <p className="text-sm"><span className="font-bold text-warn">Held back for {child?.name}: </span>{reasons.join(", ")}</p>}
-          {item.kind === "request" && outside && reasons.length === 0 && !unreviewed && <p className="text-sm text-muted">It isn&apos;t in {child?.name}&apos;s library, so it needs your OK.</p>}
+          {why && <p className="text-sm text-ink">{why}</p>}
+          {/* The evidence behind the hold, before the actions (also on phones, without expanding anything). */}
+          {evidence.length > 0 && <EvidenceList items={evidence} videoId={item.videoId} />}
           {unreviewed && (
             <p className="flex items-start gap-1.5 rounded-xl bg-warn-soft px-3 py-2 text-sm text-ink">
               <IconAlert size={16} className="mt-0.5 shrink-0 text-warn" />
