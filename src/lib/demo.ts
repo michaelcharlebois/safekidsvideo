@@ -62,10 +62,11 @@ export async function ensureDemoFamily(userId: string, reset = false): Promise<s
   }
   await db.updateFamily(fid, { onboardedAt: new Date().toISOString(), plan: "free" });
 
-  const profiles = await db.listProfiles(fid); // creates a default "My kid" if none
+  const profiles = await db.listProfiles(fid);
   if (profiles.length < 2) {
-    const [first] = profiles;
-    await db.upsertProfile({ ...first, name: "Maya", age: 6, avatar: "🦄", interests: ["animals", "drawing", "space"], mode: "open_ask", dailyMinutes: 45, skipLimit: 3 });
+    // Fresh (or reset) demo family: make Maya from whatever single profile exists, or from scratch, then add Leo.
+    const base = profiles[0] ?? { ...DEFAULT_PROFILE(fid, "Maya", 6), id: "" };
+    await db.upsertProfile({ ...base, familyId: fid, name: "Maya", age: 6, avatar: "🦄", interests: ["animals", "drawing", "space"], mode: "open_ask", dailyMinutes: 45, skipLimit: 3, sort: 0 });
     await db.upsertProfile({ ...DEFAULT_PROFILE(fid, "Leo", 4), id: "", avatar: "🦖", interests: ["dinosaurs", "trucks", "songs"], mode: "locked", sort: 1 });
   }
 
