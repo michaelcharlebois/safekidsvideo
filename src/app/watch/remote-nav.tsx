@@ -82,12 +82,8 @@ const describe = (el: Element | null) =>
 export function RemoteNav({ home = "/watch" }: { home?: string }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [debug, setDebug] = useState(false);
+  const [debug, setDebug] = useState(() => typeof location !== "undefined" && new URLSearchParams(location.search).has("debug"));
   const [hud, setHud] = useState("");
-
-  useEffect(() => {
-    if (new URLSearchParams(location.search).has("debug")) setDebug(true);
-  }, []);
 
   useEffect(() => {
     const onPlayer = PLAYER_PATH.test(pathname);
