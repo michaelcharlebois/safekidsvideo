@@ -60,6 +60,9 @@ body {
   color: var(--kink);
   min-height: 100dvh;
 }
+/* The kid screen scrolls inside its own pane — TV engines don't reliably scroll the document. */
+.kid-pane { height: 100dvh; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+.kid-pane::-webkit-scrollbar { display: none; }
 .kid-mode .shelf {
   display: flex;
   gap: 1rem;

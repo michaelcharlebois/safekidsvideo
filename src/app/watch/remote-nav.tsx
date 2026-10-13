@@ -39,6 +39,28 @@ export function navigables(root: ParentNode = document) {
   return Array.from(root.querySelectorAll<HTMLElement>(SELECTOR)).filter(visible);
 }
 
+/**
+ * Bring a focused element into view by scrolling its containers directly. TV engines are
+ * flaky about scrollIntoView on the document, so: the shelf scrolls horizontally, and the
+ * nearest vertical scroller (the kid-mode pane, else the window) centres the element.
+ */
+export function reveal(el: HTMLElement) {
+  const shelf = el.closest<HTMLElement>(".shelf");
+  if (shelf) {
+    const r = el.getBoundingClientRect(), s = shelf.getBoundingClientRect();
+    shelf.scrollLeft += r.left + r.width / 2 - (s.left + s.width / 2);
+  }
+  const pane = el.closest<HTMLElement>("[data-scroll-pane]");
+  const r = el.getBoundingClientRect();
+  if (pane) {
+    const p = pane.getBoundingClientRect();
+    // Header items: go to the very top so the first shelf title is visible too.
+    pane.scrollTop = el.closest("header") ? 0 : pane.scrollTop + (r.top + r.height / 2) - (p.top + p.height / 2);
+  } else {
+    window.scrollTo(0, el.closest("header") ? 0 : window.scrollY + r.top + r.height / 2 - innerHeight / 2);
+  }
+}
+
 /** Move focus from the active element to the nearest navigable element in `dir`. Returns true if it moved. */
 export function moveFocus(dir: Dir, root: ParentNode = document): boolean {
   const items = navigables(root);
@@ -49,7 +71,7 @@ export function moveFocus(dir: Dir, root: ParentNode = document): boolean {
     // Nothing focused yet: start on the first thing that isn't the header, if there is one.
     const first = items.find((el) => !el.closest("header")) ?? items[0];
     first.focus({ preventScroll: true });
-    first.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+    reveal(first);
     return true;
   }
   // Rows: the header is one, each shelf is one. Left/right never leave the row; up/down change rows.
@@ -74,7 +96,7 @@ export function moveFocus(dir: Dir, root: ParentNode = document): boolean {
   }
   if (!best) return false;
   best.focus({ preventScroll: true });
-  best.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  reveal(best);
   return true;
 }
 
