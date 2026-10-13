@@ -11,7 +11,9 @@ export function FullscreenButton() {
   const [on, setOn] = useState(false);
   useEffect(() => {
     const d = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
-    const ok = !!(d.requestFullscreen || d.webkitRequestFullscreen);
+    // Pointless inside a TV app or an installed PWA — those are already full screen.
+    const tvApp = /Tizen|SMART-TV|Web0S|AFT/i.test(navigator.userAgent) || matchMedia("(display-mode: standalone)").matches;
+    const ok = !tvApp && !!(d.requestFullscreen || d.webkitRequestFullscreen);
     const sync = () => setOn(!!document.fullscreenElement);
     document.addEventListener("fullscreenchange", sync);
     Promise.resolve().then(() => { setSupported(ok); sync(); });

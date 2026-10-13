@@ -52,17 +52,24 @@ export function moveFocus(dir: Dir, root: ParentNode = document): boolean {
     first.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
     return true;
   }
+  // Rows: the header is one, each shelf is one. Left/right never leave the row; up/down change rows.
+  const rowOf = (el: HTMLElement) => el.closest("header, .shelf, form");
+  const curRow = rowOf(cur!);
+  const horizontal = dir === "left" || dir === "right";
   const cx = from.left + from.width / 2, cy = from.top + from.height / 2;
   let best: HTMLElement | null = null, bestScore = Infinity;
   for (const el of items) {
     if (el === cur) continue;
+    const sameRow = rowOf(el) === curRow;
+    if (horizontal ? !sameRow : sameRow) continue;
     const r = el.getBoundingClientRect();
     const x = r.left + r.width / 2, y = r.top + r.height / 2;
     const dx = x - cx, dy = y - cy;
     const forward = dir === "left" ? -dx : dir === "right" ? dx : dir === "up" ? -dy : dy;
     if (forward < 8) continue; // must be in that direction
     const sideways = dir === "left" || dir === "right" ? Math.abs(dy) : Math.abs(dx);
-    const score = forward + sideways * 2.5; // prefer staying in the same row/column
+    const offscreen = r.right < 0 || r.left > innerWidth || r.bottom < 0 || r.top > innerHeight;
+    const score = forward + sideways * 2.5 + (offscreen ? 10000 : 0); // same column first, on-screen first
     if (score < bestScore) { bestScore = score; best = el; }
   }
   if (!best) return false;
