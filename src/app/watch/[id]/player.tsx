@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { recordWatch, recordWatchEnd } from "@/app/actions";
+import { nextVideo, recordWatch, recordWatchEnd } from "@/app/actions";
 import { arrowDir, isBack, isEnter } from "../remote-nav";
 import { clearLedger, isLocked, leavingCounts, loadLedger, saveLedger, type Ledger, type SkipConfig } from "./skip-ledger";
 
@@ -31,13 +31,17 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
   const playerRef = useRef<any>(null);
   const started = useRef<Set<string>>(new Set());
   const onFinishedRef = useRef<() => void>(() => {});
-  const [i, setI] = useState(index);
+  // The current video. Advancing asks the server (nextVideo) — the playlist below is only for display
+  // and to preserve shelf order; it is never trusted for authorization.
+  const [current, setCurrent] = useState<Item>(playlist[index]);
+  const order = playlist.map((p) => p.id);
+  const advanceRef = useRef<() => void>(() => {});
   const [paused, setPaused] = useState(false);
   const [needsTap, setNeedsTap] = useState(false); // autoplay was blocked
   const [flash, setFlash] = useState<"play" | "pause" | "fwd" | "back" | null>(null);
   const [progress, setProgress] = useState(0);
-  const current = playlist[i];
-  const next = playlist[(i + 1) % playlist.length];
+  const idx = playlist.findIndex((p) => p.id === current.id);
+  const next = playlist[(idx + 1) % playlist.length] ?? playlist[0];
 
   useEffect(() => {
     const init = () => {
@@ -65,7 +69,7 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
             if (e.data === S.ENDED) {
               if (id) { void recordWatch(id, true); void recordWatchEnd(id, "finished", e.target?.getDuration?.() ?? 0); }
               onFinishedRef.current();
-              setI((x) => (x + 1) % playlist.length);
+              advanceRef.current();
             }
           },
         },
@@ -210,6 +214,18 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
     };
   });
 
+  /** Ask the server what's next for this child, right now. Nothing allowed (or time's up) → home. */
+  const advance = async () => {
+    try {
+      const n = await nextVideo(current.id, order);
+      if (!n) { router.push("/watch"); return; }
+      setCurrent(n);
+    } catch {
+      router.push("/watch");
+    }
+  };
+  useEffect(() => { advanceRef.current = () => { void advance(); }; });
+
   const goNext = () => {
     if (skip) {
       const l = loadLedger(skip);
@@ -231,7 +247,7 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
       }
       commit(l);
     }
-    setI((x) => (x + 1) % playlist.length);
+    advance();
   };
   const goHome = () => {
     const w = watched();

@@ -2,7 +2,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { resolveViewer } from "@/lib/family";
-import { db } from "@/lib/db";
 import { unstable_cache } from "next/cache";
 import { searchKidsVideos } from "@/lib/youtube";
 
@@ -12,9 +11,10 @@ const cachedSearch = unstable_cache(
   ["kid-search"],
   { revalidate: 600 },
 );
-import { aiPasses, canPlay, getLibrary } from "@/lib/queries";
+import { canPlay, childSettings, getLibrary, playableFor, screen } from "@/lib/queries";
 import { pendingCheckIds, pendingVideoIds, recentlyApprovedIds } from "@/lib/activity";
 import { CheckButton, type Suggestion } from "../check-button";
+import { reviewEligibility } from "@/lib/gate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // background reviews of long videos run inside this request's budget
@@ -22,20 +22,21 @@ export const maxDuration = 300; // background reviews of long videos run inside 
 export default async function SearchPage(props: PageProps<"/watch/search">) {
   const viewer = await resolveViewer();
   if (!viewer.familyId) redirect("/pair");
-  const settings = await db.getSettings(viewer.familyId, viewer.profileId);
+  const settings = await childSettings(viewer.familyId, viewer.profileId);
+  if (!viewer.profileId || !settings) redirect("/watch/who");
   if (settings.mode === "locked") redirect("/watch");
 
   const sp = await props.searchParams;
   const q = typeof sp.q === "string" ? sp.q.slice(0, 80) : "";
   const [hits, lib, pending, checking, approved] = await Promise.all([
     q ? cachedSearch(q.toLowerCase().trim(), settings.kidsOnlySearch) : Promise.resolve([]),
-    getLibrary(viewer.familyId),
-    pendingVideoIds(viewer.familyId),
-    pendingCheckIds(viewer.familyId),
-    recentlyApprovedIds(viewer.familyId),
+    getLibrary(viewer.familyId, viewer.profileId),
+    pendingVideoIds(viewer.familyId, viewer.profileId),
+    pendingCheckIds(viewer.familyId, viewer.profileId),
+    recentlyApprovedIds(viewer.familyId, viewer.profileId),
   ]);
   const byId = new Map(lib.map((v) => [v.id, v]));
-  const ready = lib.filter((v) => canPlay(v, settings));
+  const ready = playableFor(lib, settings);
   const thumbOf = (v: { id: string; thumbnailUrl?: string }) => v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`;
   /** Already-cleared videos to offer while a check runs: same channel first, then anything. */
   const suggestionsFor = (channelId: string): Suggestion[] => {
@@ -67,8 +68,8 @@ export default async function SearchPage(props: PageProps<"/watch/search">) {
           const row = byId.get(h.id);
           const playable = row ? canPlay(row, settings) : false;
           const asked = pending.has(h.id);
-          const hasCard = !!row?.card && row.card.reviewer.model !== "sample";
-          const verdict = row && hasCard ? aiPasses(row, settings) : null;
+          const hasCard = !!row && reviewEligibility(row.card).eligible;
+          const verdict = row && hasCard ? screen(row, settings) : null;
           const saidYes = approved.has(h.id);
           return (
             <li key={h.id} className="tile !w-auto">

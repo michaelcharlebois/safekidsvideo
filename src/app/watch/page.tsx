@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import { resolveViewer } from "@/lib/family";
-import { blockedReasons, getLibrary } from "@/lib/queries";
+import { canPlay, childSettings, getLibrary } from "@/lib/queries";
+import { reviewEligibility } from "@/lib/gate";
 import { recentlyApprovedIds, recentWatchIds } from "@/lib/activity";
 import { watchEventsSince } from "@/lib/checkin";
 import { forKid, orderShelves, tasteFrom } from "@/lib/arrange";
-import { db } from "@/lib/db";
 import { AutoRefresh } from "./auto-refresh";
 import { ChannelAvatar, PlayTile, Shelf } from "./kid-ui";
 import type { VideoWithCard } from "@/lib/types";
@@ -15,15 +15,19 @@ export const maxDuration = 300; // kid-triggered reviews run in the background w
 export default async function WatchPage() {
   const viewer = await resolveViewer();
   if (!viewer.familyId) redirect("/pair");
+  if (!viewer.profileId) redirect("/watch/who"); // fail closed: no child, no shelves
   const fid = viewer.familyId;
   const [lib, settings, approved, recent, events] = await Promise.all([
-    getLibrary(fid), db.getSettings(fid, viewer.profileId), recentlyApprovedIds(fid), recentWatchIds(fid, 8, viewer.profileId),
+    getLibrary(fid, viewer.profileId), childSettings(fid, viewer.profileId), recentlyApprovedIds(fid, viewer.profileId), recentWatchIds(fid, 8, viewer.profileId),
     watchEventsSince(fid, new Date(Date.now() - 30 * 86_400_000).toISOString()), // eslint-disable-line react-hooks/purity -- server component
   ]);
 
+  if (!settings) redirect("/watch/who");
   const byId = new Map(lib.map((v) => [v.id, v]));
-  const mine = lib.filter((v) => v.whitelisted);
-  const ok = (v: VideoWithCard) => blockedReasons(v, settings).length === 0;
+  // Home shows this child's library: sources (channels / added videos), explicit approvals, and — only while in
+  // Open mode — videos their own checks cleared. Every tile goes through the one gate.
+  const mine = lib.filter((v) => v.inLibrary || v.overridden || (v.autoApproved && settings.mode === "open"));
+  const ok = (v: VideoWithCard) => canPlay(v, settings);
   const playable = mine.filter(ok);
   const justApproved = playable.filter((v) => approved.has(v.id));
   const keepWatching = recent.map((id) => byId.get(id)).filter((v): v is VideoWithCard => !!v && ok(v));
@@ -38,7 +42,7 @@ export default async function WatchPage() {
   const shelves = [...byChannel.entries()]
     .map(([channelId, vids]) => {
       const videos = vids.filter(ok).sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
-      const unreviewed = vids.filter((v) => !v.card || v.card.reviewer.model === "sample").length;
+      const unreviewed = vids.filter((v) => !reviewEligibility(v.card).eligible).length;
       const added = vids[0].channel?.createdAt ? Date.parse(vids[0].channel.createdAt) : 0;
       return {
         channelId,

@@ -4,21 +4,33 @@ import { createHash, randomBytes, randomInt } from "node:crypto";
 import { DEFAULT_FAMILY_ID, STORE_KIND } from "@/lib/db";
 import { supabaseAdmin, supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
 import { PARENT_COOKIE } from "@/lib/auth";
+import { pickKid } from "@/lib/kid-pick";
+import { afterPinAttempt, pinLocked, type PinLock } from "@/lib/pin";
 
 export const DEVICE_COOKIE = "skv_device";
 
 export type Viewer =
   | { role: "parent"; familyId: string; email?: string; admin: boolean; profileId?: string }
-  | { role: "device"; familyId: string; deviceId: string; deviceName: string; profileId?: string }
+  | {
+      role: "device"; familyId: string; deviceId: string; deviceName: string;
+      /** the child this screen is for, decided server-side (see pickKid); undefined = nobody yet → fail closed */
+      profileId?: string;
+      /** personal device: locked to this child */
+      assignedProfileId?: string;
+      /** more than one child and not assigned: switching needs the parent PIN */
+      shared: boolean;
+    }
   | { role: "none"; familyId: null };
 
-/** Which kid is watching (or which kid the parent is looking at). A cookie, validated against the family. */
+/**
+ * Which kid a PARENT is looking at (dashboard, kid-screen preview). A convenience cookie, validated
+ * against the family. Devices never use it: a device's child is stored server-side on the device row.
+ * (Local single-family dev mode also uses it for its one pretend device — see resolveViewer.)
+ */
 export const PROFILE_COOKIE = "sift_profile";
-async function profileFor(familyId: string, cookieValue?: string): Promise<string | undefined> {
-  if (!cookieValue) return undefined;
+async function familyProfiles(familyId: string) {
   const { db } = await import("@/lib/db");
-  const p = await db.getProfile(cookieValue);
-  return p && p.familyId === familyId ? p.id : undefined;
+  return db.listProfiles(familyId);
 }
 
 /** Global knobs (reviewer notes, learn-now) are limited to ADMIN_EMAILS — comma-separated. Unset = nobody. */
@@ -40,11 +52,13 @@ const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 export async function resolveViewer(): Promise<Viewer> {
   const c = await cookies();
   if (!supabaseEnabled || STORE_KIND === "local") {
+    // Dev-only single-family mode. The pretend device keeps its active child in a cookie (no device table);
+    // it's still only ever set by the PIN-checked selectProfile action.
     const isParent = c.get(PARENT_COOKIE)?.value === "1";
-    const profileId = await profileFor(DEFAULT_FAMILY_ID, c.get(PROFILE_COOKIE)?.value);
-    return isParent
-      ? { role: "parent", familyId: DEFAULT_FAMILY_ID, admin: true, profileId } // single-family local mode: you're the admin
-      : { role: "device", familyId: DEFAULT_FAMILY_ID, deviceId: "local", deviceName: "This device", profileId };
+    const profiles = await familyProfiles(DEFAULT_FAMILY_ID);
+    const cookieKid = c.get(PROFILE_COOKIE)?.value;
+    if (isParent) return { role: "parent", familyId: DEFAULT_FAMILY_ID, admin: true, profileId: profiles.some((p) => p.id === cookieKid) ? cookieKid : undefined };
+    return { role: "device", familyId: DEFAULT_FAMILY_ID, deviceId: "local", deviceName: "This device", profileId: pickKid(profiles, null, cookieKid), shared: profiles.length > 1 };
   }
 
   // Parent?
@@ -52,7 +66,9 @@ export async function resolveViewer(): Promise<Viewer> {
   const { data: { user } } = await sb.auth.getUser();
   if (user) {
     const familyId = await familyForUser(user.id);
-    return { role: "parent", familyId, email: user.email, admin: isAdminEmail(user.email), profileId: await profileFor(familyId, c.get(PROFILE_COOKIE)?.value) };
+    const cookieKid = c.get(PROFILE_COOKIE)?.value;
+    const profiles = await familyProfiles(familyId);
+    return { role: "parent", familyId, email: user.email, admin: isAdminEmail(user.email), profileId: profiles.some((p) => p.id === cookieKid) ? cookieKid : undefined };
   }
 
   // Paired device?
@@ -60,12 +76,19 @@ export async function resolveViewer(): Promise<Viewer> {
   if (token) {
     const { data } = await supabaseAdmin()
       .from("devices")
-      .select("id,family_id,name,revoked_at")
+      .select("id,family_id,name,revoked_at,assigned_profile_id,active_profile_id")
       .eq("token_hash", sha(token))
       .maybeSingle();
     if (data && !data.revoked_at) {
       void supabaseAdmin().from("devices").update({ last_seen_at: new Date().toISOString() }).eq("id", data.id);
-      return { role: "device", familyId: data.family_id, deviceId: data.id, deviceName: data.name, profileId: await profileFor(data.family_id, c.get(PROFILE_COOKIE)?.value) };
+      const profiles = await familyProfiles(data.family_id);
+      const assigned = profiles.some((p) => p.id === data.assigned_profile_id) ? data.assigned_profile_id : undefined;
+      return {
+        role: "device", familyId: data.family_id, deviceId: data.id, deviceName: data.name,
+        profileId: pickKid(profiles, data.assigned_profile_id, data.active_profile_id),
+        assignedProfileId: assigned ?? undefined,
+        shared: !assigned && profiles.length > 1,
+      };
     }
   }
   return { role: "none", familyId: null };
@@ -123,10 +146,35 @@ export async function redeemPairingCode(code: string, deviceName: string): Promi
 export async function listDevices(familyId: string) {
   const { data } = await supabaseAdmin()
     .from("devices")
-    .select("id,name,paired_at,last_seen_at,revoked_at")
+    .select("id,name,paired_at,last_seen_at,revoked_at,assigned_profile_id,active_profile_id")
     .eq("family_id", familyId)
     .order("paired_at", { ascending: false });
-  return (data ?? []) as { id: string; name: string; paired_at: string; last_seen_at: string | null; revoked_at: string | null }[];
+  return (data ?? []) as { id: string; name: string; paired_at: string; last_seen_at: string | null; revoked_at: string | null; assigned_profile_id: string | null; active_profile_id: string | null }[];
+}
+
+/** Personal device (a child) or shared (null). The composite FK rejects a child from another family. */
+export async function assignDevice(familyId: string, deviceId: string, profileId: string | null) {
+  const { error } = await supabaseAdmin().from("devices")
+    .update({ assigned_profile_id: profileId, active_profile_id: null })
+    .match({ id: deviceId, family_id: familyId });
+  if (error) throw new Error(error.message);
+}
+
+export async function setDeviceActiveProfile(familyId: string, deviceId: string, profileId: string | null) {
+  const { error } = await supabaseAdmin().from("devices").update({ active_profile_id: profileId }).match({ id: deviceId, family_id: familyId });
+  if (error) throw new Error(error.message);
+}
+
+/** Shared-screen PIN lockout, stored on the device row so it survives serverless restarts. */
+export async function devicePinLock(deviceId: string): Promise<PinLock & { secondsLeft: number }> {
+  const { data } = await supabaseAdmin().from("devices").select("pin_failures,pin_locked_until").eq("id", deviceId).maybeSingle();
+  const s: PinLock = { failures: data?.pin_failures ?? 0, lockedUntil: data?.pin_locked_until ?? null };
+  return { ...s, secondsLeft: pinLocked(s) };
+}
+export async function recordDevicePinAttempt(deviceId: string, ok: boolean) {
+  const cur = await devicePinLock(deviceId);
+  const next = afterPinAttempt(cur, ok);
+  await supabaseAdmin().from("devices").update({ pin_failures: next.failures, pin_locked_until: next.lockedUntil ?? null }).eq("id", deviceId);
 }
 
 export async function revokeDevice(familyId: string, deviceId: string) {
