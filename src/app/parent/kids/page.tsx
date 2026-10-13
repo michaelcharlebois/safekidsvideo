@@ -58,10 +58,10 @@ export default async function KidsPage(props: PageProps<"/parent/kids">) {
                     <h2 className="text-xl leading-tight">{f.profile.name}</h2>
                     <p className="text-sm text-muted">{f.profile.age ? `${f.profile.age} years old` : "Age not set"}, {MODE_UI[f.settings.mode].title} mode</p>
                   </div>
-                  <Link href={`/parent/settings?kid=${f.profile.id}`} className={buttonClass("primary")}>Manage {f.profile.name}<IconChevron size={16} /></Link>
+                  <Link href={`/parent/settings?kid=${f.profile.id}`} className={buttonClass("primary", "md", "basis-full sm:basis-auto")}>Manage {f.profile.name}<IconChevron size={16} /></Link>
                 </div>
                 <div className="border-t border-sand">
-                  <ChildSummary f={f} link={(sec) => `/parent/settings?kid=${f.profile.id}#${sec}`} />
+                  <ChildSummary flush f={f} link={(sec) => `/parent/settings?kid=${f.profile.id}#${sec}`} />
                 </div>
               </Card>
             </li>

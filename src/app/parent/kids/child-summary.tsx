@@ -20,7 +20,7 @@ export type ChildFacts = {
  * something else — answered from the child's real settings. Used on the Kids overview and the child page.
  * `link(section)` makes each answer a door into the section that changes it.
  */
-export function ChildSummary({ f, link }: { f: ChildFacts; link?: (section: string) => string }) {
+export function ChildSummary({ f, link, flush = false }: { f: ChildFacts; link?: (section: string) => string; flush?: boolean }) {
   const { profile: p, settings: s } = f;
   const mode = MODE_UI[s.mode];
   const held = [
@@ -28,7 +28,7 @@ export function ChildSummary({ f, link }: { f: ChildFacts; link?: (section: stri
     ...s.blockedFormats.map((x) => FORMAT_LABELS[x].replace(/ \(.*\)$/, "")),
   ];
   return (
-    <dl className="grid gap-px overflow-hidden rounded-[var(--radius-card)] border border-sand bg-sand sm:grid-cols-2 xl:grid-cols-4">
+    <dl className={`grid gap-px overflow-hidden bg-sand sm:grid-cols-2 xl:grid-cols-4 ${flush ? "" : "rounded-[var(--radius-card)] border border-sand"}`}>
       <Answer icon={<IconPlayCircle size={18} />} q={`What can ${p.name} watch?`} href={link?.("viewing")}>
         <p className="font-bold text-forest">{mode.title} <span className="font-semibold text-muted">({mode.tagline})</span></p>
         <p>{f.ready} video{f.ready === 1 ? "" : "s"} ready in your library.</p>
