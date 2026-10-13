@@ -43,7 +43,7 @@ export default async function DevicesPage(props: PageProps<"/parent/devices">) {
         <Card className="p-4">
           <h2 className="font-extrabold">Connected devices</h2>
           {multi && <p className="text-sm text-muted">A <b>personal</b> device always shows one child&apos;s screen. A <b>shared</b> screen (like the living-room TV) needs your PIN to choose or switch kids.</p>}
-          {multi && !pinReady && <p className="mt-2 rounded-xl bg-sun/40 p-2 text-sm font-bold">Shared screens are locked until you set a PIN in <Link href="/parent/settings" className="underline">Settings</Link>.</p>}
+          {multi && !pinReady && <p className="mt-2 rounded-xl bg-sun/40 p-2 text-sm font-bold">Shared screens are locked until you set a family PIN on <Link href="/parent/kids#family" className="underline">Kids</Link>.</p>}
           {sp.saved === "1" && <p className="mt-2 text-sm font-bold text-ok">Saved.</p>}
           {active.length === 0 && <p className="text-sm text-muted mt-1">None yet.</p>}
           <ul className="mt-2 divide-y divide-line">

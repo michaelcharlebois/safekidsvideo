@@ -31,25 +31,34 @@ const settled = async (page) => { await page.waitForSelector('[aria-busy="true"]
   await kid.goto(`${BASE}/watch/who?pick=${MAYA}`); await kid.waitForLoadState("networkidle"); await kid.waitForTimeout(500);
   for (const d of "1234") await kid.keyboard.press(d);
   await kid.click("text=OK");
-  await kid.waitForSelector("text=set a PIN first", { timeout: 5000 }).catch(() => {});
-  check("old default PIN 1234 is refused on the shared screen (no PIN set)", (await kid.innerText("body")).includes("set a PIN first"));
+  await kid.waitForSelector("text=set a family PIN first", { timeout: 5000 }).catch(() => {});
+  check("old default PIN 1234 is refused on the shared screen (no PIN set)", (await kid.innerText("body")).includes("set a family PIN first"));
 
   // 3. Parent unlocks (local dev unlock), tries 1234 as the new PIN, then sets 2580
   await parent.goto(`${BASE}/unlock?next=/parent/settings`);
   await parent.fill('input[name="pin"]', "1234");
   await parent.keyboard.press("Enter");
   await parent.waitForURL((u) => u.pathname.startsWith("/parent"));
-  await parent.goto(`${BASE}/parent/settings?kid=${MAYA}`); await settled(parent);
-  await parent.fill('input[name="pin"]', "1234");
-  await parent.click('button:has-text("Save")');
+  // The family PIN is a family-wide setting, on Kids.
+  await parent.goto(`${BASE}/parent/kids`); await settled(parent);
+  await parent.fill('#family ~ form input[name="pin"], form:has(input[value="family"]) input[name="pin"]', "1234");
+  await parent.click('button:has-text("Save family settings")');
   await parent.waitForURL(/error=/, { timeout: 15000 }).catch(() => {}); await settled(parent);
   check("parent can't choose 1234 as the new PIN", (await parent.innerText("body")).includes("other than 1234"));
   await parent.screenshot({ path: `${OUT}/02-pin-1234-refused.png`, fullPage: false });
+  await parent.goto(`${BASE}/parent/kids`); await settled(parent);
+  await parent.fill('form:has(input[value="family"]) input[name="pin"]', "2580");
+  await parent.click('button:has-text("Save family settings")');
+  await parent.waitForURL(/saved=family/);
+  check("parent sets PIN 2580", parent.url().includes("saved=family"));
+
+  // 3b. Settings save one section at a time: saving screen time doesn't touch content settings, and vice versa.
   await parent.goto(`${BASE}/parent/settings?kid=${MAYA}`); await settled(parent);
-  await parent.fill('input[name="pin"]', "2580");
-  await parent.click('button:has-text("Save")');
-  await parent.waitForURL(/saved=1/);
-  check("parent sets PIN 2580", parent.url().includes("saved=1"));
+  await parent.fill('form:has(input[value="time"]) input[name="dailyMinutes"]', "50");
+  await parent.click('button:has-text("Save screen time")');
+  await parent.waitForURL(/saved=time/); await settled(parent);
+  const violenceStillOn = await parent.locator('input[name="block:violence"]').isChecked();
+  check("saving screen time leaves Maya's content settings unchanged", violenceStillOn);
 
   // 4. TV: pick Maya with the remote only (arrows + OK, number keys), wrong PIN first
   await kid.goto(`${BASE}/watch/who`); await kid.waitForLoadState("networkidle"); await kid.waitForTimeout(500);
@@ -99,8 +108,9 @@ const settled = async (page) => { await page.waitForSelector('[aria-busy="true"]
   await parent.goto(`${BASE}/parent/settings?kid=${MAYA}`); await settled(parent);
   const box = parent.locator('input[name="block:violence"]');
   if (await box.isChecked()) await box.uncheck();
-  await parent.click('button:has-text("Save")');
-  await parent.waitForURL(/saved=1/);
+  await parent.click('button:has-text("Save content settings")');
+  await parent.waitForURL(/saved=content/); await settled(parent);
+  check("saving content settings leaves Maya's screen time unchanged", (await parent.inputValue('form:has(input[value="time"]) input[name="dailyMinutes"]')) === "50");
   await kid.goto(`${BASE}/watch`); await kid.waitForLoadState("networkidle");
   home = await ids(kid);
   check("Keep hidden holds after Maya's filters are relaxed", !home.includes("e_04ZrNroTo"), home.join(","));
