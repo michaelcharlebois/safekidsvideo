@@ -19,7 +19,7 @@ export default async function WatchLayout({ children }: LayoutProps<"/watch">) {
           <span className="text-2xl leading-none">🏠</span><span className="hidden sm:inline">Home</span>
         </Link>
         {canSearch && (
-          <Link href="/watch/search" className="bigbtn flex items-center gap-2 rounded-full bg-[var(--kfocus)] px-5 py-2 text-xl font-extrabold text-[#0b1020] active:scale-95">
+          <Link href="/watch/search" className="bigbtn flex items-center gap-2 rounded-full bg-white/10 px-5 py-2 text-xl font-extrabold active:scale-95">
             🔍 <span>Search</span>
           </Link>
         )}

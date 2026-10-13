@@ -61,7 +61,7 @@ body {
   min-height: 100dvh;
 }
 /* The kid screen scrolls inside its own pane — TV engines don't reliably scroll the document. */
-.kid-pane { height: 100dvh; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+.kid-pane { height: 100vh; height: 100dvh; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 .kid-pane::-webkit-scrollbar { display: none; }
 .kid-mode .shelf {
   display: flex;
@@ -75,6 +75,16 @@ body {
 .kid-mode .tile {
   flex: 0 0 auto;
   width: clamp(200px, 30vw, 340px);
+}
+/* 10-foot UI: on TV-sized viewports everything in kid mode scales up. */
+@media (min-width: 1600px) {
+  .kid-mode { font-size: 1.5rem; }
+  .kid-mode .tile { width: clamp(340px, 22vw, 520px); }
+  .kid-mode .tile p, .kid-mode h2 { font-size: 1.5em; }
+  .kid-mode .bigbtn { font-size: 1.25em; padding: 0.75em 1.5em; }
+  .kid-mode .shelf { gap: 1.5rem; }
+}
+.kid-mode .tile {
   scroll-snap-align: start;
   border-radius: 1.25rem;
   overflow: hidden;

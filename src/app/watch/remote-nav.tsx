@@ -52,13 +52,21 @@ export function reveal(el: HTMLElement) {
   }
   const pane = el.closest<HTMLElement>("[data-scroll-pane]");
   const r = el.getBoundingClientRect();
-  if (pane) {
+  const top = !!el.closest("header"); // header items: go to the very top so the first shelf title shows too
+  if (pane && pane.scrollHeight > pane.clientHeight + 1) {
     const p = pane.getBoundingClientRect();
-    // Header items: go to the very top so the first shelf title is visible too.
-    pane.scrollTop = el.closest("header") ? 0 : pane.scrollTop + (r.top + r.height / 2) - (p.top + p.height / 2);
+    pane.scrollTop = top ? 0 : pane.scrollTop + (r.top + r.height / 2) - (p.top + p.height / 2);
   } else {
-    window.scrollTo(0, el.closest("header") ? 0 : window.scrollY + r.top + r.height / 2 - innerHeight / 2);
+    const se = document.scrollingElement ?? document.documentElement;
+    const y = top ? 0 : se.scrollTop + r.top + r.height / 2 - innerHeight / 2;
+    se.scrollTop = y;
+    window.scrollTo(0, y);
   }
+}
+export function scrollDebug() {
+  const pane = document.querySelector<HTMLElement>("[data-scroll-pane]");
+  const se = document.scrollingElement ?? document.documentElement;
+  return `pane=${pane ? `${Math.round(pane.scrollTop)}/${pane.scrollHeight}/${pane.clientHeight}` : "none"} doc=${Math.round(se.scrollTop)}/${se.scrollHeight}/${se.clientHeight}`;
 }
 
 /** Move focus from the active element to the nearest navigable element in `dir`. Returns true if it moved. */
@@ -127,7 +135,7 @@ export function RemoteNav({ home = "/watch" }: { home?: string }) {
       }
       const items = navigables();
       const report = (what: string) =>
-        setHud(`${what} | key=${e.key} code=${e.keyCode} | focus=${describe(document.activeElement)} | nav=${items.length} tiles=${items.filter((x) => x.closest(".tile")).length}`);
+        setHud(`${what} | key=${e.key} code=${e.keyCode} | focus=${describe(document.activeElement)} | nav=${items.length} tiles=${items.filter((x) => x.closest(".tile")).length} | ${scrollDebug()}`);
 
       if (onPlayer) { report("player"); return; } // the player handles its own keys
       const target = e.target as HTMLElement | null;
