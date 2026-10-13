@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { db, STORE_KIND } from "@/lib/db";
+import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { blockedReasons, getLibrary } from "@/lib/queries";
@@ -264,10 +264,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
             </Card>
           )}
 
-          <p className="text-xs text-muted px-1">
-            Storage: <Pill className="bg-line">{STORE_KIND}</Pill>{" "}
-            {STORE_KIND === "local" ? "— data/db.json. Set Supabase env vars to go multi-family." : viewer.email ? `— signed in as ${viewer.email}` : ""}
-          </p>
+          {viewer.email && <p className="text-xs text-muted px-1">Signed in as {viewer.email}</p>}
         </aside>
       </main>
     </>
