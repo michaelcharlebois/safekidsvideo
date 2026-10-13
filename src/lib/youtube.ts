@@ -133,6 +133,9 @@ async function dataApiVideos(ids: string[], key: string): Promise<VideoMeta[]> {
     for (const item of j.items ?? []) {
       if (item.status?.embeddable === false) continue;
       const sn = item.snippet;
+      // Live and upcoming streams: no fixed duration, not reviewable, and not what a kid should land on.
+      if (sn.liveBroadcastContent && sn.liveBroadcastContent !== "none") continue;
+      if (!item.contentDetails?.duration || item.contentDetails.duration === "P0D") continue;
       out.push({
         id: item.id,
         title: sn.title,

@@ -1,11 +1,29 @@
 {
   "_comment": "Channels the nightly discovery job keeps reviewed for everyone. Handles are looked up via the YouTube API; unknown ones are skipped. Edit freely.",
   "channels": [
-    "@SuperSimpleSongs", "@Cocomelon", "@Pinkfong", "@LittleBabyBum", "@msrachel",
-    "@Numberblocks", "@Alphablocks", "@BlippiOfficial", "@SesameStreet", "@PBSKIDS",
-    "@PeppaPigOfficial", "@BlueyOfficialChannel", "@StoryBots", "@NatGeoKids", "@SciShowKids",
-    "@KidsLearningTube", "@HomeschoolPop", "@TheWigglesTV", "@JackHartmann", "@BrainPOP",
-    "@CaitiesClassroom", "@DanielTigersNeighborhood", "@WildKratts", "@OctonautsOfficial", "@PawPatrolOfficial",
-    "@Hey_Bear_Sensory", "@MarkRober", "@CrashCourseKids", "@ArtforKidsHub", "@NetflixJr"
+    "@SuperSimpleSongs",
+    "@Cocomelon",
+    "@Pinkfong",
+    "@LittleBabyBum",
+    "@msrachel",
+    "@Numberblocks",
+    "@BlippiOfficial",
+    "@SesameStreet",
+    "@PBSKIDS",
+    "@PeppaPigOfficial",
+    "@BlueyOfficialChannel",
+    "@NatGeoKids",
+    "@SciShowKids",
+    "@HomeschoolPop",
+    "@TheWigglesTV",
+    "@JackHartmann",
+    "@BrainPOP",
+    "@WildKratts",
+    "@OctonautsOfficial",
+    "@PawPatrolOfficial",
+    "@MarkRober",
+    "@CrashCourseKids",
+    "@ArtforKidsHub",
+    "@NetflixJr"
   ]
 }

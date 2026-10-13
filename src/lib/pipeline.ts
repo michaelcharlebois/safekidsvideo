@@ -63,7 +63,7 @@ export async function runPipeline(opts: { familyId?: string; maxReviews?: number
     if (!channelSet.has(v.channelId)) continue;
     const card = await db.getCard(v.id);
     if (card && card.reviewer.model !== "sample") continue;
-    if ((v.durationSeconds ?? 0) > MAX_PIPELINE_SECONDS) { result.skippedLong++; continue; }
+    if (!v.durationSeconds || v.durationSeconds > MAX_PIPELINE_SECONDS) { result.skippedLong++; continue; }
     candidates.push(v);
   }
   candidates.sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
@@ -91,7 +91,7 @@ export async function seedChannelReviews(videos: Video[], opts: { max?: number; 
   const max = opts.max ?? 8, concurrency = opts.concurrency ?? 2;
   const queue: Video[] = [];
   for (const v of videos) {
-    if ((v.durationSeconds ?? 0) > MAX_PIPELINE_SECONDS) continue;
+    if (!v.durationSeconds || v.durationSeconds > MAX_PIPELINE_SECONDS) continue;
     const card = await db.getCard(v.id);
     if (card && card.reviewer.model !== "sample") continue;
     queue.push(v);
@@ -126,7 +126,7 @@ export type DiscoveryResult = { channels: number; newVideos: number; reviewed: n
  */
 export async function runDiscovery(opts: { max?: number; budgetMs?: number; concurrency?: number; log?: (s: string) => void } = {}): Promise<DiscoveryResult> {
   const log = opts.log ?? (() => {});
-  const max = opts.max ?? 25, budgetMs = opts.budgetMs ?? 240_000, concurrency = opts.concurrency ?? 3;
+  const max = opts.max ?? 25, budgetMs = opts.budgetMs ?? 240_000, concurrency = opts.concurrency ?? 2;
   const started = Date.now();
   const result: DiscoveryResult = { channels: 0, newVideos: 0, reviewed: 0, failed: 0, seconds: 0 };
   const handles: string[] = (discovery as { channels: string[] }).channels;
@@ -151,7 +151,7 @@ export async function runDiscovery(opts: { max?: number; budgetMs?: number; conc
   const queue: Video[] = [];
   for (const v of await db.listVideos()) {
     if (!set.has(v.channelId)) continue;
-    if ((v.durationSeconds ?? 0) > MAX_PIPELINE_SECONDS) continue;
+    if (!v.durationSeconds || v.durationSeconds > MAX_PIPELINE_SECONDS) continue; // live streams have none
     const card = await db.getCard(v.id);
     if (card && card.reviewer.model !== "sample") continue;
     queue.push(v);
