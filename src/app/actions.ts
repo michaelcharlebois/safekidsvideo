@@ -16,8 +16,9 @@ import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
 import { assignDevice, createPairingCode, DEVICE_COOKIE, claimDevicePinAttempt, devicePinSucceeded, PinCheckUnavailable, PROFILE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice, setDeviceActiveProfile } from "@/lib/family";
 import { addVideoToLibrary, allowForChild, approveRequest, decideForChild, GrantError, NeedsUnreviewedConfirm, recordOpenClearance, removeFamilyBlock, resolveLegacy, splitFamilyBlock, unhideForFamily as unhideForFamilyGrant } from "@/lib/grants";
-import { hashPin, newPinProblem, pinIsSet, verifyPin } from "@/lib/pin";
-import { applySettingsForm, sectionsOf } from "@/lib/settings-form";
+import { pinIsSet, verifyPin } from "@/lib/pin";
+import { saveSettingsForm, SettingsError } from "@/lib/settings-save";
+import { isLocalPath, withParam } from "@/lib/paths";
 import { nextAuthorized, reviewEligibility } from "@/lib/gate";
 import { timeState } from "@/lib/screentime";
 import { DEFAULT_PROFILE } from "@/lib/db/store";
@@ -169,25 +170,21 @@ export async function saveReviewerNotes(form: FormData) {
  */
 export async function saveSettings(form: FormData) {
   const fid = await requireParent();
-  const profileId = String(form.get("profileId") ?? "") || undefined;
-  const sections = sectionsOf(form);
   const nextRaw = String(form.get("next") ?? "");
-  const back = isLocalPath(nextRaw) ? nextRaw : `/parent/settings?kid=${profileId ?? ""}`;
-  const withParam = (k: string, v: string) => `${back.split("#")[0]}${back.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(v)}${back.includes("#") ? `#${back.split("#")[1]}` : ""}`;
-  const current = await db.getSettings(fid, profileId);
-  const pin = String(form.get("pin") ?? "").trim();
-  if (pin) {
-    const problem = newPinProblem(pin); // 4 digits, and never the old default 1234
-    if (problem) redirect(withParam("error", problem));
-  }
+  const profileId = String(form.get("profileId") ?? "");
+  const back = isLocalPath(nextRaw) ? nextRaw : profileId ? `/parent/settings?kid=${encodeURIComponent(profileId)}` : "/parent/kids";
+  let sections: string[] = [];
   try {
-    await db.saveSettings(applySettingsForm(current, form, sections, pin ? hashPin(pin) : undefined));
+    sections = (await saveSettingsForm(db, fid, form)).sections;
   } catch (e) {
-    redirect(withParam("error", (e as Error).message));
+    // `failed` names the section, so the page can show the problem where the parent pressed Save.
+    const failed = withParam(back, "error", e instanceof SettingsError ? e.message : "Couldn't save. Try again.");
+    const section = String(form.get("section") ?? "");
+    redirect(section ? withParam(failed, "failed", section) : failed);
   }
   revalidatePath("/parent", "layout");
   revalidatePath("/watch");
-  redirect(withParam("saved", sections.length === 1 ? sections[0] : "1"));
+  redirect(withParam(back, "saved", sections.length === 1 ? sections[0] : "1"));
 }
 
 export type UnlockResult = { error: string } | null;
@@ -312,8 +309,6 @@ function unreviewedConfirmUrl(e: NeedsUnreviewedConfirm, via: "request" | "queue
   const q = new URLSearchParams({ kid, confirm: e.videoId, for: e.profileId, via, ref, why: e.reason });
   return `/parent/review?${q}`;
 }
-/** Same-site path only ("/x", not "//host" or "/\\host"), so `next` can't redirect off-site. */
-const isLocalPath = (p: string) => p.startsWith("/") && !p.startsWith("//") && !p.startsWith("/\\");
 const confirmed = (form: FormData) => form.get("confirm") === "1";
 
 export async function resolveWatchRequest(form: FormData) {
@@ -587,14 +582,20 @@ export async function assignDeviceAction(form: FormData) {
   const fid = await requireParent();
   const deviceId = String(form.get("deviceId") ?? "");
   const profileId = String(form.get("profileId") ?? "") || null;
+  const nextRaw = String(form.get("next") ?? "");
+  // Come back to the page that asked (the child page's Screens section), else Devices.
+  const back = isLocalPath(nextRaw) ? nextRaw : "/parent/devices";
   if (profileId) {
     const p = await db.getProfile(profileId);
-    if (!p || p.familyId !== fid) redirect("/parent/devices?error=child");
+    if (!p || p.familyId !== fid) redirect(withParam(withParam(back, "error", "That child isn't in this family."), "failed", "screens"));
   }
-  await assignDevice(fid, deviceId, profileId);
-  revalidatePath("/parent/devices"); revalidatePath("/parent/settings");
-  const next = String(form.get("next") ?? "");
-  redirect(isLocalPath(next) ? next : "/parent/devices?saved=1");
+  try {
+    await assignDevice(fid, deviceId, profileId);
+  } catch {
+    redirect(withParam(withParam(back, "error", "Couldn't change that screen. Reload and try again."), "failed", "screens"));
+  }
+  revalidatePath("/parent/devices"); revalidatePath("/parent/settings"); revalidatePath("/parent/kids");
+  redirect(withParam(withParam(back, "saved", "screens"), "screen", deviceId));
 }
 
 /** Parent: "Add & review" from a video page — library source + start the review. Not authorization. */

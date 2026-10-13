@@ -38,8 +38,7 @@ export default async function KidsPage(props: PageProps<"/parent/kids">) {
       </header>
 
       <div className="mt-5 space-y-3">
-        {str("error") && <Notice tone="bad">{str("error")}</Notice>}
-        {str("saved") === "family" && <Notice tone="ok">Family settings saved.</Notice>}
+        {str("error") && str("failed") !== "family" && <Notice tone="bad">{str("error")}</Notice>}
         {shared && !pinSet && (
           <Notice tone="warn"><b>Set a family PIN.</b> Shared screens can&apos;t pick or switch children until you do. <a href="#family" className="font-bold text-forest underline">Set it below</a></Notice>
         )}
@@ -79,6 +78,8 @@ export default async function KidsPage(props: PageProps<"/parent/kids">) {
         <Card as="section" className="p-5">
           <div id="family" className="scroll-mt-20" />
           <SectionHeader icon={<IconShield />} title="Family settings" sub="These apply to every child." />
+          {str("error") && str("failed") === "family" && <Notice tone="bad" className="mt-4"><b>Not saved:</b> {str("error")}</Notice>}
+          {str("saved") === "family" && <Notice tone="ok" className="mt-4">Family settings saved.</Notice>}
           <form action={saveSettings} className="mt-4 space-y-4">
             <input type="hidden" name="section" value="family" />
             <input type="hidden" name="next" value="/parent/kids#family" />

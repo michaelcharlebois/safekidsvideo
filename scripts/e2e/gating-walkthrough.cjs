@@ -111,6 +111,12 @@ const settled = async (page) => { await page.waitForSelector('[aria-busy="true"]
   await parent.click('button:has-text("Save content settings")');
   await parent.waitForURL(/saved=content/); await settled(parent);
   check("saving content settings leaves Maya's screen time unchanged", (await parent.inputValue('form:has(input[value="time"]) input[name="dailyMinutes"]')) === "50");
+  // A save naming a child that no longer exists is refused in place; nobody's settings change.
+  await parent.evaluate(() => { const f = [...document.forms].find((x) => x.querySelector('input[name="section"][value="time"]')); f.querySelector('input[name="profileId"]').value = "00000000-0000-4000-8000-000000000000"; f.querySelector('input[name="dailyMinutes"]').value = "5"; });
+  await parent.click('button:has-text("Save screen time")');
+  await parent.waitForURL(/failed=time/, { timeout: 15000 }).catch(() => {}); await settled(parent);
+  const timeCard = await parent.innerText('[id="sec-time"]');
+  check("stale child id: refused inside Screen time, nothing changed", timeCard.includes("Not saved") && (await parent.inputValue('form:has(input[value="time"]) input[name="dailyMinutes"]')) === "50");
   await kid.goto(`${BASE}/watch`); await kid.waitForLoadState("networkidle");
   home = await ids(kid);
   check("Keep hidden holds after Maya's filters are relaxed", !home.includes("e_04ZrNroTo"), home.join(","));
