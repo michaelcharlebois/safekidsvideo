@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Wordmark } from "@/components/logo";
 
 const TABS = [
   { href: "/parent", label: "Home", icon: "⌂", match: (p: string) => p === "/parent" || p.startsWith("/parent/video") || p.startsWith("/parent/channel") },
@@ -33,7 +34,7 @@ export function ParentNav({ badge = 0, kidAvatar }: { badge?: number; kidAvatar?
     <>
       <header className="sticky top-0 z-20 bg-bg/90 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
-          <Link href="/parent" className="text-xl font-extrabold tracking-tight">Sift</Link>
+          <Wordmark href="/parent" />
           <nav className="hidden items-center gap-1 md:flex">{items.map((t) => <Tab key={t.href} t={t} />)}</nav>
           <Link href="/watch" className="text-sm font-bold text-muted hover:text-ink">Kid screen →</Link>
         </div>

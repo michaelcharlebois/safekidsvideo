@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { channelBySlug, channelReport } from "@/lib/channel-report";
 import { ChannelReportView } from "@/components/channel-report-view";
 import { Button } from "@/components/ui";
+import { Wordmark } from "@/components/logo";
 
 export const revalidate = 3600; // public, cacheable for an hour
 
@@ -29,7 +30,7 @@ export default async function PublicChannelPage(props: PageProps<"/c/[slug]">) {
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8 space-y-5">
       <header className="flex items-center justify-between gap-3">
-        <Link href="/" className="font-extrabold text-lg">Sift</Link>
+        <Wordmark />
         <Link href="/login"><Button className="text-sm">Try it free</Button></Link>
       </header>
       <div className="flex items-start gap-3">

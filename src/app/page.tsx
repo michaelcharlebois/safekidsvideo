@@ -1,9 +1,10 @@
+import { Wordmark } from "@/components/logo";
 import Link from "next/link";
 
 export default function Home() {
   return (
     <main className="flex-1 flex flex-col items-center justify-center px-6 py-16 text-center">
-      <p className="text-accent font-extrabold text-sm tracking-widest uppercase">Sift</p>
+      <Wordmark size={36} />
       <h1 className="mt-3 text-4xl sm:text-5xl font-extrabold tracking-tight max-w-2xl">
         Know exactly what&apos;s in it before your kid watches it.
       </h1>

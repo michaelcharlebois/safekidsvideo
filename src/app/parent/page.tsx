@@ -79,7 +79,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
         {/* ---- who ---- */}
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-extrabold tracking-tight">{kid ? `${kid.name}'s Sift` : "Sift"}</h1>
+            <h1 className="text-3xl">{kid ? `${kid.name}'s Sift` : "Sift"}</h1>
             {kid && <p className="text-sm text-muted">{MODE_LABELS[settings.mode].title}{settings.dailyMinutes ? `, ${settings.dailyMinutes} min a day` : ""}{settings.bedtime ? `, done at ${settings.bedtime}` : ""} — <Link href={`/parent/settings?kid=${kidId}`} className="underline">change</Link></p>}
           </div>
           {profiles.length > 1 && (
@@ -105,7 +105,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
 
         {needsYou > 0 ? (
           <section className="space-y-3">
-            <h2 className="flex items-center gap-2 font-extrabold"><span className="inline-block h-2.5 w-2.5 rounded-full bg-sun" />Needs you</h2>
+            <h2 className="flex items-center gap-2 text-lg"><span className="inline-block h-2.5 w-2.5 rounded-full bg-sun" />Needs you</h2>
             {moreAsk && (
               <Card className="p-4">
                 <p className="font-extrabold">{moreAsk.avatar} {moreAsk.name} is asking for more time today</p>
@@ -158,13 +158,13 @@ export default async function ParentPage(props: PageProps<"/parent">) {
             )}
           </section>
         ) : (
-          <p className="text-sm text-muted">Nothing needs you right now.</p>
+          <p className="inline-flex items-center gap-2 rounded-full bg-grass/70 px-3 py-1.5 text-sm font-bold text-ink"><span className="h-2 w-2 rounded-full bg-ok" />All clear — nothing needs you</p>
         )}
 
         {/* ---- the TV ---- */}
         <section>
-          <h2 className="font-extrabold">What {kid?.name ?? "your kid"} sees right now</h2>
-          <div className="mt-2 rounded-[1.5rem] bg-[#0b1020] p-3 text-white shadow-[0_20px_50px_-20px_rgba(20,26,58,0.5)] sm:p-4">
+          <h2 className="text-lg">What {kid?.name ?? "your kid"} sees right now</h2>
+          <div className="mt-2 rounded-[1.5rem] bg-[#0b1020] p-3 text-white shadow-[0_24px_60px_-24px_rgba(20,26,58,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] ring-1 ring-white/10 sm:p-4" style={{ backgroundImage: "radial-gradient(120% 80% at 50% -10%, #223064 0%, #0b1020 55%)" }}>
             {tvShelves.length === 0 ? (
               <div className="py-10 text-center">
                 <p className="text-3xl">📺</p>
@@ -178,9 +178,9 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                     <p className="mb-1.5 text-xs font-extrabold text-white/80">{s.title}</p>
                     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                       {s.videos.slice(0, 4).map((v, i) => (
-                        <Link key={v.id} href={`/parent/video/${v.id}`} className={`overflow-hidden rounded-lg bg-white/5 ${i === 3 ? "hidden sm:block" : ""}`}>
+                        <Link key={v.id} href={`/parent/video/${v.id}`} className={`overflow-hidden rounded-xl bg-[#141b33] ring-1 ring-white/5 transition hover:ring-[#ffcf3f] ${i === 3 ? "hidden sm:block" : ""}`}>
                           <Image src={thumb(v)} alt="" width={160} height={90} unoptimized className="aspect-video w-full object-cover" />
-                          <p className="truncate px-1.5 py-1 text-[10px] font-bold text-white/70">{v.title}</p>
+                          <p className="truncate px-2 py-1.5 text-[11px] font-bold text-white/75">{v.title}</p>
                         </Link>
                       ))}
                     </div>
@@ -198,7 +198,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
         {/* ---- library ---- */}
         <section>
           <div className="flex items-end justify-between gap-3">
-            <h2 className="font-extrabold">Channels</h2>
+            <h2 className="text-lg">Channels</h2>
             <form action="/parent" className="flex-1 max-w-xs">
               <input type="hidden" name="kid" value={kidId ?? ""} />
               <input name="q" defaultValue={q} type="search" placeholder="Find a video" className="w-full rounded-full border border-line bg-surface px-4 py-1.5 text-sm outline-none focus:border-ink" />
@@ -228,12 +228,17 @@ export default async function ParentPage(props: PageProps<"/parent">) {
               {groups.map((g) => (
                 <li key={g.id}>
                   <Link href={`/parent/channel/${g.id}`} className="flex items-center gap-3 px-3 py-2.5 hover:bg-bg/60">
-                    <ChannelAvatar channel={g.channel} name={g.title} size={36} />
+                    <ChannelAvatar channel={g.channel} name={g.title} size={40} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-extrabold">{g.title}</span>
                       <span className="block text-xs text-muted">
                         {g.visible ? `${g.visible} ready` : "nothing ready yet"}{g.hidden ? `, ${g.hidden} hidden` : ""}{g.unreviewed ? `, ${g.unreviewed} being reviewed` : ""}
                       </span>
+                    </span>
+                    <span className="hidden sm:flex -space-x-3">
+                      {g.vids.filter((v) => status(v) === "visible").slice(0, 3).map((v) => (
+                        <Image key={v.id} src={thumb(v)} alt="" width={64} height={36} unoptimized className="h-9 w-16 rounded-md object-cover ring-2 ring-surface" />
+                      ))}
                     </span>
                     <span className="text-muted">›</span>
                   </Link>
@@ -242,10 +247,11 @@ export default async function ParentPage(props: PageProps<"/parent">) {
             </ul>
           )}
           {!view && !q && (
-            <p className="mt-2 flex flex-wrap gap-x-3 text-xs text-muted">
-              <Link href={`/parent?kid=${kidId ?? ""}&view=visible`} className="underline">All {visible.length} ready</Link>
-              <Link href={`/parent?kid=${kidId ?? ""}&view=hidden`} className="underline">Hidden</Link>
-              <Link href={`/parent?kid=${kidId ?? ""}&view=unreviewed`} className="underline">Being reviewed</Link>
+            <p className="mt-2 text-xs text-muted">
+              Browse every video:{" "}
+              <Link href={`/parent?kid=${kidId ?? ""}&view=visible`} className="font-bold underline">ready</Link>,{" "}
+              <Link href={`/parent?kid=${kidId ?? ""}&view=hidden`} className="font-bold underline">hidden</Link>,{" "}
+              <Link href={`/parent?kid=${kidId ?? ""}&view=unreviewed`} className="font-bold underline">being reviewed</Link>
             </p>
           )}
         </section>
