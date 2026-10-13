@@ -19,5 +19,8 @@ export default async function PlayPage(props: PageProps<"/watch/[id]">) {
   const family = await db.getFamily(viewer.familyId);
   const time = await timeState(viewer.familyId, settings, family.timezone);
   if (!time.allowed) redirect("/watch");
-  return <Player playlist={playlist} index={i} remainingMinutes={time.remainingMinutes} />;
+  const skip = settings.skipLimit
+    ? { limit: settings.skipLimit, regen: settings.skipRegen ?? 1, cooldownSec: settings.skipCooldownSec ?? 120, freePeekSec: settings.freePeekSec ?? 30 }
+    : undefined;
+  return <Player playlist={playlist} index={i} remainingMinutes={time.remainingMinutes} skip={skip} />;
 }

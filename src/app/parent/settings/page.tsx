@@ -102,6 +102,18 @@ export default async function SettingsPage(props: PageProps<"/parent/settings">)
               Done for the day at <span className="text-muted text-xs ml-auto mr-2">TV&apos;s local time</span>
               <input type="time" name="bedtime" defaultValue={settings.bedtime ?? ""} className="rounded-lg border border-line px-2 py-1" />
             </label>
+            <h2 className="font-extrabold pt-2">Skipping</h2>
+            <p className="text-xs text-muted">Like Pandora: a few skips per sitting, earned back by finishing videos. When they&apos;re out, the current video keeps playing and Next becomes a short countdown. Leaving in the first half-minute is always free.</p>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="skipsOn" defaultChecked={!!settings.skipLimit} className="accent-accent" />
+              Limit skipping for {kid?.name ?? "this kid"}
+            </label>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <label className="flex items-center justify-between gap-2">Skips per sitting<input type="number" name="skipLimit" min={1} max={20} defaultValue={settings.skipLimit ?? 3} className="w-16 rounded-lg border border-line px-2 py-1" /></label>
+              <label className="flex items-center justify-between gap-2">Earned per finish<input type="number" name="skipRegen" min={0} max={5} defaultValue={settings.skipRegen ?? 1} className="w-16 rounded-lg border border-line px-2 py-1" /></label>
+              <label className="flex items-center justify-between gap-2">Wait (minutes)<input type="number" name="skipCooldownMin" min={1} max={15} defaultValue={Math.round((settings.skipCooldownSec ?? 120) / 60)} className="w-16 rounded-lg border border-line px-2 py-1" /></label>
+              <label className="flex items-center justify-between gap-2">Free peek (seconds)<input type="number" name="freePeekSec" min={0} max={120} step={5} defaultValue={settings.freePeekSec ?? 30} className="w-16 rounded-lg border border-line px-2 py-1" /></label>
+            </div>
             <label className="flex items-center justify-between text-sm gap-2">
               New PIN
               <input type="password" name="pin" inputMode="numeric" pattern="\d{4}" maxLength={4} placeholder="••••" className="w-20 rounded-lg border border-line px-2 py-1" />

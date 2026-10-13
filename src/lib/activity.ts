@@ -67,6 +67,12 @@ export async function logWatch(familyId: string, videoId: string, deviceId: stri
   });
 }
 
+/** How a play ended: skipped (left early for another video), finished, or just left (home / closed). */
+export async function logWatchEnd(familyId: string, videoId: string, profileId: string | undefined, outcome: "skipped" | "finished" | "left", atSec: number) {
+  if (!on()) return;
+  await supabaseAdmin().from("watch_events").insert({ family_id: familyId, video_id: videoId, profile_id: profileId ?? null, completed: outcome === "finished", outcome, ended_at_sec: Math.max(0, Math.round(atSec)) });
+}
+
 // ---- kid-triggered AI checks ------------------------------------------------
 
 export type CheckOutcome = "pending" | "passed" | "blocked" | "needs_parent" | "failed";

@@ -100,6 +100,10 @@ New families land on `/start` (five steps: how it works → kids → trusted cha
 
 30-day free trial from first sign-in, then a subscription via Stripe Checkout. Env-gated: with `STRIPE_SECRET_KEY` + `STRIPE_PRICE_ID` unset nobody is locked out. Point a Stripe webhook at `/api/stripe/webhook` (`checkout.session.completed`, `customer.subscription.*`) with `STRIPE_WEBHOOK_SECRET`. When a trial lapses the kid screen keeps playing already-approved videos; searching, checking and new approvals pause until the parent subscribes at `/parent/billing`. Remaining trial days carry into the subscription so nobody is charged early.
 
+## Skip budget
+
+Per kid (Settings → Skipping), off by default. A sitting starts with N skips (default 3); leaving a video early costs one, finishing earns `regen` back (default 1), leaving in the first `freePeekSec` (30) is free, and leaving past 70% counts as finished. Out of skips: the current video keeps playing and Next becomes a countdown (`skipCooldownSec`, default 2 min); when it ends you get one skip back. Home → a different video is still a skip; if you're out, the player sends you back to the one you left. State lives in sessionStorage (resets when the TV app relaunches). Each play's ending is logged to `watch_events.outcome` (migration `0016_skips.sql`), and Stats shows started / finished / skipped.
+
 ## Viewing stats
 
 `/parent/stats?kid=&range=7|30`: minutes (estimated from watch events), trend vs. the previous window, by day, by channel, by kind of video, pace mix, time of day, and the most-repeated videos. Per family only. A cross-family "what kids this age watch" view is a later rollup: it needs an optional gender field, a minimum cohort size, and a privacy write-up first.

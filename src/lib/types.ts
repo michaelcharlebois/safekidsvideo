@@ -203,6 +203,11 @@ export type Profile = {
   bedtime?: string; // "HH:MM"
   bonusMinutes?: number; // extra minutes granted for bonusDay
   bonusDay?: string; // YYYY-MM-DD
+  /** Skip budget: skips per session (undefined = off), earned back per finished video, cooldown when out, free-peek window */
+  skipLimit?: number;
+  skipRegen: number;
+  skipCooldownSec: number;
+  freePeekSec: number;
   sort: number;
   createdAt: string;
 };
@@ -218,6 +223,10 @@ export type FamilySettings = {
   bedtime?: string;
   bonusMinutes?: number;
   bonusDay?: string;
+  skipLimit?: number;
+  skipRegen?: number;
+  skipCooldownSec?: number;
+  freePeekSec?: number;
   /** 4-digit PIN to exit kid mode; stored hashed in Supabase, plain in local dev */
   pinHash: string;
   kidAge?: number;

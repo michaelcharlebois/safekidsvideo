@@ -61,7 +61,7 @@ export interface Store {
 export const DEFAULT_PROFILE = (familyId: string, name = "My kid", age?: number): Omit<Profile, "id" | "createdAt"> => ({
   familyId, name, age, avatar: "🦊", interests: [], mode: "locked",
   blockedTags: ["violence", "scary_imagery", "monsters"] as ConcernTag[], blockedFormats: ["gameplay_commentary"],
-  hideUnreviewed: true, dailyCheckLimit: 20, kidsOnlySearch: false, sort: 0,
+  hideUnreviewed: true, dailyCheckLimit: 20, kidsOnlySearch: false, skipRegen: 1, skipCooldownSec: 120, freePeekSec: 30, sort: 0,
 });
 
 /** Merge a family's shared fields with one profile into the effective settings the gate uses. */
@@ -71,6 +71,7 @@ export const mergeSettings = (family: { familyId: string; pinHash: string; flagT
   blockedTags: p.blockedTags, blockedFormats: p.blockedFormats, hideUnreviewed: p.hideUnreviewed, mode: p.mode,
   dailyCheckLimit: p.dailyCheckLimit, kidsOnlySearch: p.kidsOnlySearch, dailyMinutes: p.dailyMinutes, bedtime: p.bedtime,
   bonusMinutes: p.bonusMinutes, bonusDay: p.bonusDay,
+  skipLimit: p.skipLimit, skipRegen: p.skipRegen, skipCooldownSec: p.skipCooldownSec, freePeekSec: p.freePeekSec,
 });
 
 export const DEFAULT_SETTINGS = (familyId: string): FamilySettings => ({

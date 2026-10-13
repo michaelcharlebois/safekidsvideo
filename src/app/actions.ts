@@ -17,7 +17,7 @@ import { PARENT_COOKIE } from "@/lib/auth";
 import { createPairingCode, DEVICE_COOKIE, PROFILE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice } from "@/lib/family";
 import { DEFAULT_PROFILE } from "@/lib/db/store";
 import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
-import { checksToday, createRequest, finishCheck, logCheck, logWatch, resolveRequest } from "@/lib/activity";
+import { checksToday, createRequest, finishCheck, logCheck, logWatch, logWatchEnd, resolveRequest } from "@/lib/activity";
 import { aiPasses, canPlay, getKidScreen, getLibrary } from "@/lib/queries";
 import { reviewVideo } from "@/lib/reviewer";
 import { pushToFamily, removeSubscription, saveSubscription } from "@/lib/push";
@@ -165,6 +165,10 @@ export async function saveSettings(form: FormData) {
     flagThreshold: Number(form.get("flagThreshold") ?? current.flagThreshold) || current.flagThreshold,
     dailyMinutes: Number(form.get("dailyMinutes")) > 0 ? Number(form.get("dailyMinutes")) : undefined,
     bedtime: /^\d{2}:\d{2}$/.test(String(form.get("bedtime") ?? "")) ? String(form.get("bedtime")) : undefined,
+    skipLimit: form.get("skipsOn") === "on" ? Math.max(1, Math.min(20, Number(form.get("skipLimit")) || 3)) : undefined,
+    skipRegen: Math.max(0, Math.min(5, Number(form.get("skipRegen") ?? current.skipRegen ?? 1))),
+    skipCooldownSec: Math.max(30, Math.min(900, (Number(form.get("skipCooldownMin")) || 2) * 60)),
+    freePeekSec: Math.max(0, Math.min(120, Number(form.get("freePeekSec") ?? current.freePeekSec ?? 30))),
     });
   } catch (e) {
     redirect(`/parent/settings?kid=${profileId ?? ""}&error=${encodeURIComponent((e as Error).message)}`);
@@ -299,6 +303,12 @@ export async function resolveWatchRequest(form: FormData) {
   revalidatePath("/watch");
   const next = String(form.get("next") ?? "");
   if (next.startsWith("/")) redirect(next);
+}
+
+export async function recordWatchEnd(videoId: string, outcome: "skipped" | "finished" | "left", atSec: number) {
+  const v = await resolveViewer();
+  if (!v.familyId) return;
+  await logWatchEnd(v.familyId, videoId, v.profileId, outcome, atSec);
 }
 
 export async function recordWatch(videoId: string, completed: boolean) {

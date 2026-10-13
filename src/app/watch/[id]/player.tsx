@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { recordWatch } from "@/app/actions";
+import { recordWatch, recordWatchEnd } from "@/app/actions";
 import { arrowDir, isBack, isEnter } from "../remote-nav";
+import { clearLedger, isLocked, leavingCounts, loadLedger, saveLedger, type Ledger, type SkipConfig } from "./skip-ledger";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare global {
@@ -22,13 +23,14 @@ type Item = { id: string; title: string };
  *   The stage is the kid's control surface: OK/tap = play-pause, ◀ ▶ = skip 10s,
  *   ▼ = Home/Next buttons, Return = home.
  */
-export function Player({ playlist, index, remainingMinutes }: { playlist: Item[]; index: number; remainingMinutes?: number }) {
+export function Player({ playlist, index, remainingMinutes, skip }: { playlist: Item[]; index: number; remainingMinutes?: number; skip?: SkipConfig }) {
   const router = useRouter();
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLButtonElement>(null);
   const homeRef = useRef<HTMLButtonElement>(null);
   const playerRef = useRef<any>(null);
   const started = useRef<Set<string>>(new Set());
+  const onFinishedRef = useRef<() => void>(() => {});
   const [i, setI] = useState(index);
   const [paused, setPaused] = useState(false);
   const [needsTap, setNeedsTap] = useState(false); // autoplay was blocked
@@ -61,7 +63,8 @@ export function Player({ playlist, index, remainingMinutes }: { playlist: Item[]
             }
             if (e.data === S.PAUSED) setPaused(true);
             if (e.data === S.ENDED) {
-              if (id) void recordWatch(id, true);
+              if (id) { void recordWatch(id, true); void recordWatchEnd(id, "finished", e.target?.getDuration?.() ?? 0); }
+              onFinishedRef.current();
               setI((x) => (x + 1) % playlist.length);
             }
           },
@@ -141,8 +144,100 @@ export function Player({ playlist, index, remainingMinutes }: { playlist: Item[]
     flashIcon(delta > 0 ? "fwd" : "back");
     poke();
   };
-  const goNext = () => setI((x) => (x + 1) % playlist.length);
-  const goHome = () => router.push("/watch");
+  // ---- skip budget ----
+  const [ledger, setLedger] = useState<Ledger | null>(null);
+  const [lockMsg, setLockMsg] = useState<string | null>(null);
+  const [cooldownLeft, setCooldownLeft] = useState(0);
+  const watched = () => ({ sec: playerRef.current?.getCurrentTime?.() ?? 0, dur: playerRef.current?.getDuration?.() ?? 0 });
+  const commit = (l: Ledger) => { saveLedger(l); setLedger({ ...l }); };
+  const commitDeferred = (l: Ledger) => { saveLedger(l); queueMicrotask(() => setLedger({ ...l })); };
+
+  // On arrival: settle the previous video (Home → different video is still a skip) and start tracking this one.
+  useEffect(() => {
+    if (!skip) { clearLedger(); return; }
+    const l = loadLedger(skip);
+    if (l.last && l.last.id !== current.id) {
+      const verdict = leavingCounts(l.last, skip);
+      if (verdict === "finished") l.skipsLeft = Math.min(skip.limit, l.skipsLeft + skip.regen);
+      else if (verdict === "skip") {
+        void recordWatchEnd(l.last.id, "skipped", l.last.watchedSec);
+        if (l.skipsLeft > 0) l.skipsLeft--;
+        else if (!isLocked(l)) l.lockedUntil = Date.now() + skip.cooldownSec * 1000;
+        if (l.skipsLeft === 0 && isLocked(l)) {
+          // Out of skips: back to the one they left.
+          const back = l.last.id, title = l.last.title;
+          commitDeferred(l);
+          queueMicrotask(() => setLockMsg(`Let's finish "${title}" first`));
+          setTimeout(() => router.replace(`/watch/${back}`), 2500);
+          return;
+        }
+      }
+    }
+    l.last = { id: current.id, title: current.title, watchedSec: 0, durationSec: 0, finished: false };
+    commitDeferred(l);
+    const t = setInterval(() => {
+      const w = watched();
+      const cur = loadLedger(skip);
+      if (cur.last?.id === current.id && !cur.last.finished) { cur.last.watchedSec = Math.max(cur.last.watchedSec, w.sec); cur.last.durationSec = w.dur || cur.last.durationSec; saveLedger(cur); }
+    }, 2000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current.id, !!skip]);
+
+  // Cooldown ticker.
+  useEffect(() => {
+    if (!skip || !ledger || !isLocked(ledger)) { queueMicrotask(() => setCooldownLeft(0)); return; }
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((ledger.lockedUntil - Date.now()) / 1000));
+      setCooldownLeft(left);
+      if (left === 0) { const l = loadLedger(skip); commit(l); setLockMsg(null); }
+    };
+    const t0 = setTimeout(tick, 0);
+    const t = setInterval(tick, 1000);
+    return () => { clearTimeout(t0); clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ledger?.lockedUntil, !!skip]);
+
+  useEffect(() => {
+    onFinishedRef.current = () => {
+      if (!skip) return;
+      const l = loadLedger(skip);
+      if (l.last) l.last.finished = true;
+      l.skipsLeft = Math.min(skip.limit, l.skipsLeft + skip.regen);
+      l.lockedUntil = 0;
+      setLockMsg(null);
+      commit(l);
+    };
+  });
+
+  const goNext = () => {
+    if (skip) {
+      const l = loadLedger(skip);
+      const w = watched();
+      if (l.last?.id === current.id) { l.last.watchedSec = Math.max(l.last.watchedSec, w.sec); l.last.durationSec = w.dur || l.last.durationSec; }
+      const verdict = leavingCounts(l.last, skip);
+      if (verdict === "finished") { l.skipsLeft = Math.min(skip.limit, l.skipsLeft + skip.regen); if (l.last) l.last.finished = true; }
+      else if (verdict === "skip") {
+        if (isLocked(l) || l.skipsLeft === 0) {
+          if (!isLocked(l)) l.lockedUntil = Date.now() + skip.cooldownSec * 1000;
+          commit(l);
+          setLockMsg("Let's finish this one first");
+          poke();
+          return; // stay put; the video keeps playing
+        }
+        l.skipsLeft--;
+        void recordWatchEnd(current.id, "skipped", w.sec);
+        if (l.last) l.last.finished = true; // settled; don't double-charge on arrival
+      }
+      commit(l);
+    }
+    setI((x) => (x + 1) % playlist.length);
+  };
+  const goHome = () => {
+    const w = watched();
+    if (w.sec > 5) void recordWatchEnd(current.id, "left", w.sec);
+    router.push("/watch");
+  };
 
   // Keep focus on the stage; the whole remote works from there.
   useEffect(() => {
@@ -228,6 +323,7 @@ export function Player({ playlist, index, remainingMinutes }: { playlist: Item[]
 
       <div className={`absolute inset-x-0 bottom-0 flex flex-col items-center gap-3 bg-gradient-to-t from-black/90 to-transparent px-4 pb-6 pt-16 transition-opacity duration-300 ${uiVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
         <p className="text-lg font-extrabold text-center line-clamp-1 text-white/80">{current.title}</p>
+        {lockMsg && <p className="rounded-full bg-white/10 px-4 py-1.5 text-base font-extrabold text-white">{lockMsg}{cooldownLeft > 0 ? ` — next skip in ${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, "0")}` : ""}</p>}
         <div className="h-1.5 w-full max-w-3xl overflow-hidden rounded-full bg-white/20">
           <div className="h-full bg-[var(--kfocus)] transition-[width] duration-500" style={{ width: `${Math.round(progress * 100)}%` }} />
         </div>
@@ -236,8 +332,13 @@ export function Player({ playlist, index, remainingMinutes }: { playlist: Item[]
             🏠 Home
           </button>
           {playlist.length > 1 && (
-            <button data-player-btn onClick={goNext} className="bigbtn rounded-full bg-[var(--kfocus)] px-7 py-4 text-xl font-extrabold text-[#0b1020] active:scale-95">
-              Next ▶ <span className="hidden sm:inline font-bold opacity-70">{next.title.slice(0, 22)}</span>
+            <button data-player-btn onClick={goNext} className={`bigbtn rounded-full px-7 py-4 text-xl font-extrabold active:scale-95 ${cooldownLeft > 0 ? "bg-white/10 text-white/60" : "bg-[var(--kfocus)] text-[#0b1020]"}`}>
+              {cooldownLeft > 0 ? `Next in ${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, "0")}` : <>Next ▶ <span className="hidden sm:inline font-bold opacity-70">{next.title.slice(0, 22)}</span></>}
+              {skip && ledger && cooldownLeft === 0 && (
+                <span className="ml-2 inline-flex gap-1 align-middle" aria-label={`${ledger.skipsLeft} skips left`}>
+                  {Array.from({ length: skip.limit }).map((_, k) => <span key={k} className={`inline-block h-2 w-2 rounded-full ${k < ledger.skipsLeft ? "bg-[#0b1020]" : "bg-[#0b1020]/25"}`} />)}
+                </span>
+              )}
             </button>
           )}
         </div>

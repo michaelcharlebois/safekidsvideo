@@ -15,7 +15,7 @@ export const MOODS = [
   { value: 4, emoji: "😄", label: "Great" },
 ] as const;
 
-export type WatchEvent = { videoId: string; profileId?: string; startedAt: string; completed: boolean };
+export type WatchEvent = { videoId: string; profileId?: string; startedAt: string; completed: boolean; outcome?: "skipped" | "finished" | "left"; endedAtSec?: number };
 export type KidDay = { profileId: string; day: string; mood: number; note?: string };
 
 /** Local calendar day for a timezone (defaults to America/Los_Angeles until we've learned the family's). */
@@ -26,8 +26,9 @@ export function localDay(tz: string | undefined, d = new Date()): string {
 
 export async function watchEventsSince(familyId: string, sinceIso: string): Promise<WatchEvent[]> {
   if (!on()) return [];
-  const { data } = await supabaseAdmin().from("watch_events").select("video_id,profile_id,started_at,completed").eq("family_id", familyId).gte("started_at", sinceIso).order("started_at");
-  return (data ?? []).map((r: { video_id: string; profile_id: string | null; started_at: string; completed: boolean }) => ({ videoId: r.video_id, profileId: r.profile_id ?? undefined, startedAt: r.started_at, completed: r.completed }));
+  const { data } = await supabaseAdmin().from("watch_events").select("video_id,profile_id,started_at,completed,outcome,ended_at_sec").eq("family_id", familyId).gte("started_at", sinceIso).order("started_at");
+  return (data ?? []).map((r: { video_id: string; profile_id: string | null; started_at: string; completed: boolean; outcome: WatchEvent["outcome"] | null; ended_at_sec: number | null }) =>
+    ({ videoId: r.video_id, profileId: r.profile_id ?? undefined, startedAt: r.started_at, completed: r.completed, outcome: r.outcome ?? undefined, endedAtSec: r.ended_at_sec ?? undefined }));
 }
 
 export async function listKidDays(familyId: string, sinceDay: string): Promise<KidDay[]> {
@@ -52,6 +53,7 @@ export type DayShape = { minutes: number; videos: { video: Video; card?: Content
 export function shapeDay(events: WatchEvent[], videoById: Map<string, Video>, cardById: Map<string, ContentCard>): DayShape {
   const shape: DayShape = { minutes: 0, videos: [], formats: new Set(), tags: new Set(), frenetic: 0 };
   for (const e of events) {
+    if (e.outcome) continue; // end markers (skipped/finished/left) aren't plays
     const video = videoById.get(e.videoId);
     if (!video) continue;
     const card = cardById.get(e.videoId);

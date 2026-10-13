@@ -55,6 +55,12 @@ export default async function StatsPage(props: PageProps<"/parent/stats">) {
                 <p className="text-sm text-muted">over {s.activeDays} of {days} days{perDay ? `, about ${perDay} min on days with video` : ""}</p>
               </div>
               {trend !== null && <p className={`mt-1 text-sm font-bold ${trend > 15 ? "text-warn" : trend < -15 ? "text-ok" : "text-muted"}`}>{trend > 0 ? "+" : ""}{trend}% vs the {days} days before</p>}
+              {s.starts > 0 && (s.skips > 0 || s.finishes > 0) && (
+                <p className="mt-1 text-sm text-muted">
+                  {s.starts} video{s.starts === 1 ? "" : "s"} started, {s.finishes} finished, <b className={s.skips > s.finishes ? "text-warn" : "text-ink"}>{s.skips} skipped</b>
+                  {s.starts >= 5 ? ` — finishes ${Math.round((100 * s.finishes) / s.starts)}% of what ${kid?.name ?? "they"} start${kid ? "s" : ""}` : ""}
+                </p>
+              )}
               <div className="mt-4 flex items-end gap-1" style={{ height: 72 }}>
                 {s.byDay.map((d) => (
                   <div key={d.day} className="flex flex-1 flex-col items-center justify-end gap-1" title={`${d.day}: ${d.minutes} min`}>

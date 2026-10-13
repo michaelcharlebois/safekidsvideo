@@ -18,6 +18,9 @@ export type KidStats = {
   pace: { calm: number; moderate: number; frenetic: number }; // minutes
   topVideos: { video: Video; plays: number; minutes: number }[];
   reviewedShare: number; // 0–1 of minutes on videos with a card
+  skips: number;
+  finishes: number;
+  starts: number;
 };
 
 const minutesOf = (e: WatchEvent, v?: Video) => {
@@ -35,8 +38,10 @@ export async function kidStats(familyId: string, profileId: string | undefined, 
   const since = new Date(now - days * 86_400_000);
   const prevSince = new Date(now - 2 * days * 86_400_000);
   const all = (await watchEventsSince(familyId, prevSince.toISOString())).filter((e) => !profileId || e.profileId === profileId || !e.profileId);
-  const cur = all.filter((e) => Date.parse(e.startedAt) >= since.getTime());
-  const prev = all.filter((e) => Date.parse(e.startedAt) < since.getTime());
+  const inWindow = all.filter((e) => Date.parse(e.startedAt) >= since.getTime());
+  const cur = inWindow.filter((e) => !e.outcome); // plays
+  const ends = inWindow.filter((e) => e.outcome);  // how plays ended
+  const prev = all.filter((e) => Date.parse(e.startedAt) < since.getTime() && !e.outcome);
 
   const ids = [...new Set(all.map((e) => e.videoId))];
   const [videos, cards, channels] = await Promise.all([Promise.all(ids.map((id) => db.getVideo(id))), db.listCards(ids), db.listChannels()]);
@@ -47,6 +52,7 @@ export async function kidStats(familyId: string, profileId: string | undefined, 
   const s: KidStats = {
     days, minutes: 0, plays: cur.length, activeDays: 0, prevMinutes: prev.reduce((a, e) => a + minutesOf(e, videoById.get(e.videoId)), 0),
     byDay: [], byChannel: [], byFormat: [], byHour: Array(24).fill(0), pace: { calm: 0, moderate: 0, frenetic: 0 }, topVideos: [], reviewedShare: 0,
+    skips: ends.filter((e) => e.outcome === "skipped").length, finishes: ends.filter((e) => e.outcome === "finished").length, starts: cur.length,
   };
   const dayMap = new Map<string, number>();
   for (let i = days - 1; i >= 0; i--) dayMap.set(localDay(tz, new Date(now - i * 86_400_000)), 0);
