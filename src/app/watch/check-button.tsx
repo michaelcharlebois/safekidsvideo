@@ -40,7 +40,7 @@ export function CheckButton({
   return (
     <form action={action}>
       <input type="hidden" name="videoId" value={videoId} />
-      <button type="submit" className="bigbtn w-full rounded-full bg-[var(--kfocus)] py-2 font-extrabold text-sm text-[#0b1020] active:scale-95">{label}</button>
+      <button type="submit" className="bigbtn w-full rounded-full bg-white/15 py-2 font-extrabold text-sm text-white active:scale-95">{label}</button>
     </form>
   );
 }

@@ -83,7 +83,7 @@ export function moveFocus(dir: Dir, root: ParentNode = document): boolean {
     return true;
   }
   // Rows: the header is one, each shelf is one. Left/right never leave the row; up/down change rows.
-  const rowOf = (el: HTMLElement) => el.closest("header, .shelf, form");
+  const rowOf = (el: HTMLElement) => el.closest(".shelf") ?? el.closest("header") ?? el.closest("form");
   const curRow = rowOf(cur!);
   const horizontal = dir === "left" || dir === "right";
   const cx = from.left + from.width / 2, cy = from.top + from.height / 2;

@@ -78,11 +78,10 @@ body {
 }
 /* 10-foot UI: on TV-sized viewports everything in kid mode scales up. */
 @media (min-width: 1600px) {
-  .kid-mode { font-size: 1.5rem; }
-  .kid-mode .tile { width: clamp(340px, 22vw, 520px); }
-  .kid-mode .tile p, .kid-mode h2 { font-size: 1.5em; }
-  .kid-mode .bigbtn { font-size: 1.25em; padding: 0.75em 1.5em; }
-  .kid-mode .shelf { gap: 1.5rem; }
+  .kid-mode .tile { width: clamp(300px, 17vw, 380px); }
+  .kid-mode .tile p { font-size: 1.05rem; }
+  .kid-mode h2 { font-size: 1.75rem; }
+  .kid-mode .shelf { gap: 1.25rem; }
 }
 .kid-mode .tile {
   scroll-snap-align: start;
