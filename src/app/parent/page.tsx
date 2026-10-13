@@ -7,7 +7,7 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { blockedReasons, getLibrary } from "@/lib/queries";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMATS, FORMAT_LABELS, MODE_LABELS, type FamilyMode } from "@/lib/types";
 import { Button, Card, CardSummary, Pill, TopBar } from "@/components/ui";
-import { approvePack, lock, resolveWatchRequest, saveSettings, signOut, toggleWhitelist } from "@/app/actions";
+import { approvePack, grantMoreTime, lock, resolveWatchRequest, saveSettings, signOut, toggleWhitelist } from "@/app/actions";
 import { listPendingRequests } from "@/lib/activity";
 import { countSubscriptions, pushEnabled } from "@/lib/push";
 import { NotifyButton } from "./notify-button";
@@ -16,6 +16,8 @@ import { AddForm } from "./add-form";
 import { SearchAdd } from "./search-add";
 import { PACKS } from "@/lib/packs";
 import { billingStatus } from "@/lib/billing";
+import { minutesUsedToday } from "@/lib/screentime";
+import { localDay } from "@/lib/checkin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // background batch reviews run within this budget
@@ -36,6 +38,9 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const kidId = kidParam ?? viewer.profileId ?? profiles[0]?.id;
   const [lib, settings, channels, requests, subs] = await Promise.all([getLibrary(fid), db.getSettings(fid, kidId), db.listChannels(), listPendingRequests(fid), countSubscriptions(fid)]);
   const kid = profiles.find((p) => p.id === kidId);
+  const moreAsk = typeof sp.more === "string" ? profiles.find((p) => p.id === sp.more) : undefined;
+  const usedToday = kid ? await minutesUsedToday(fid, kid.id, family.timezone) : 0;
+  const bonusToday = kid && settings.bonusDay === localDay(family.timezone) ? settings.bonusMinutes ?? 0 : 0;
   const pushTest = typeof sp.push === "string" ? Number(sp.push) : null;
   const batchStarted = sp.batch === "1";
   const approvedChannelIds = new Set((await db.listWhitelist(fid)).filter((w) => w.kind === "channel").map((w) => w.targetId));
@@ -78,6 +83,17 @@ export default async function ParentPage(props: PageProps<"/parent">) {
       />
       <main className="mx-auto w-full max-w-5xl px-4 py-6 grid gap-6 lg:grid-cols-[1fr_320px]">
         <section className="space-y-4">
+          {moreAsk && (
+            <Card className="p-3 border-sun/60 bg-sun/20 text-sm">
+              <b>{moreAsk.avatar} {moreAsk.name} is asking for more time.</b>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {[15, 30, 60].map((m) => (
+                  <form key={m} action={grantMoreTime}><input type="hidden" name="profileId" value={moreAsk.id} /><input type="hidden" name="minutes" value={m} /><Button type="submit" className="text-xs px-3 py-1.5">+{m} min</Button></form>
+                ))}
+                <Link href={`/parent?kid=${moreAsk.id}`} className="self-center text-xs font-bold text-muted hover:text-ink">Not today</Link>
+              </div>
+            </Card>
+          )}
           {!billing.ok && (
             <Card className="p-3 border-bad/40 bg-bad/5 text-sm">
               <b className="text-bad">{billing.state === "past_due" ? "There's a payment problem." : "Your free trial has ended."}</b> The kid screen keeps playing what&apos;s already approved; new approvals and searches are paused. <Link href="/parent/billing" className="font-bold underline">Subscribe →</Link>
@@ -302,6 +318,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                 <input type="number" name="kidAge" min={1} max={17} defaultValue={settings.kidAge} className="w-16 rounded-lg border border-line px-2 py-1" />
               </label>
               <h2 className="font-extrabold pt-2">Screen time</h2>
+              <p className="text-xs text-muted">Today: ~{usedToday} min{settings.dailyMinutes ? ` of ${settings.dailyMinutes + bonusToday}` : ""}{bonusToday ? ` (incl. +${bonusToday} bonus)` : ""}.</p>
               <label className="flex items-center justify-between text-sm gap-2">
                 Minutes per day <span className="text-muted text-xs ml-auto mr-2">blank = no limit</span>
                 <input type="number" name="dailyMinutes" min={5} max={600} step={5} defaultValue={settings.dailyMinutes ?? ""} className="w-20 rounded-lg border border-line px-2 py-1" />
@@ -318,6 +335,15 @@ export default async function ParentPage(props: PageProps<"/parent">) {
               {saved && <p className="text-center text-sm font-bold text-ok">✓ Settings saved</p>}
               {error && <p className="text-sm font-bold text-bad">Couldn&apos;t save: {error}</p>}
             </form>
+            {kid && settings.dailyMinutes ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-xs">
+                <span className="font-bold text-muted">Give {kid.name} extra today:</span>
+                {[15, 30].map((m) => (
+                  <form key={m} action={grantMoreTime}><input type="hidden" name="profileId" value={kid.id} /><input type="hidden" name="minutes" value={m} /><Button type="submit" variant="ghost" className="text-xs px-3 py-1">+{m} min</Button></form>
+                ))}
+                {bonusToday > 0 && <form action={grantMoreTime}><input type="hidden" name="profileId" value={kid.id} /><input type="hidden" name="minutes" value={-1000} /><button type="submit" className="font-bold text-muted hover:text-ink">clear bonus</button></form>}
+              </div>
+            ) : null}
           </Card>
 
           <p className="text-xs text-muted px-1">

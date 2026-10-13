@@ -10,6 +10,7 @@ import { fetchChannelMeta, parseYouTubeUrl, searchForParent, type ParentSearch }
 import { packById } from "@/lib/packs";
 import { billingEnabled, createCheckoutUrl, createPortalUrl, familyStatus } from "@/lib/billing";
 import { saveKidDay, saveTimezone } from "@/lib/checkin";
+import { askForMoreTime, grantBonusMinutes } from "@/lib/screentime";
 import { CONCERN_TAGS, FORMATS, type ConcernTag, type ConfirmationVerdict, type FamilyMode, type TagVote, type VideoFormat } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
@@ -301,6 +302,29 @@ export async function recordWatch(videoId: string, completed: boolean) {
   const v = await resolveViewer();
   if (!v.familyId) return;
   await logWatch(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, completed, v.profileId);
+}
+
+// ---- Screen time ----------------------------------------------------------------
+
+export async function askMoreTime() {
+  const v = await resolveViewer();
+  if (!v.familyId) redirect("/pair");
+  await askForMoreTime(v.familyId, v.profileId);
+  redirect("/watch?asked=time");
+}
+
+export async function grantMoreTime(form: FormData) {
+  const fid = await requireParent();
+  const profileId = String(form.get("profileId") ?? "");
+  const minutes = Number(form.get("minutes"));
+  const p = await db.getProfile(profileId);
+  if (p && p.familyId === fid && [15, 30, 60, -1000].includes(minutes)) {
+    const tz = (await db.getFamily(fid)).timezone;
+    await grantBonusMinutes(profileId, minutes, tz);
+    if (minutes > 0) await pushToFamily(fid, { title: `+${minutes} minutes for ${p.name}`, body: "Added for today.", url: `/parent?kid=${profileId}`, tag: `more-time-${profileId}` });
+  }
+  revalidatePath("/parent"); revalidatePath("/watch");
+  redirect(`/parent?kid=${profileId}`);
 }
 
 // ---- Daily check-in -------------------------------------------------------------

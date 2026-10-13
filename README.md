@@ -100,6 +100,10 @@ New families land on `/start` (five steps: how it works → kids → trusted cha
 
 Evening cron `/api/cron/evening` (02:30 UTC ≈ 7:30pm Pacific; per-timezone scheduling needs an hourly cron on Pro) pushes "How was Ollie today?" to families whose kids watched. `/parent/checkin` is one tap per kid (😤 😐 🙂 😄 + note) and shows what they watched; rows live in `kid_days` (migration `0013_checkins.sql`, which also adds `families.timezone`, learned from the parent's browser). `/parent/insights` compares average mood on days with vs. without each format, concern tag, >60 minutes, >20 frenetic minutes and no-video days, reporting only patterns with ≥3 days on each side and a ≥0.4 difference.
 
+## Screen time
+
+Per kid: minutes per day and a "done for the day" time (dashboard → kid tab → Screen time). Usage is estimated from watch events (completed → full length, else ~60%). When time's up the viewer shows a gentle "That's all for today" wall with one button — *Ask a grown-up for more* — which pushes to the parent's phone; the dashboard offers +15 / +30 / +60 for today (migration `0014_time_limits.sql`). The player shows a countdown chip in the last five minutes and returns home at zero.
+
 ## Layout
 
 ```

@@ -70,6 +70,7 @@ export const mergeSettings = (family: { familyId: string; pinHash: string; flagT
   profileId: p.id, profileName: p.name, profileAvatar: p.avatar, kidAge: p.age,
   blockedTags: p.blockedTags, blockedFormats: p.blockedFormats, hideUnreviewed: p.hideUnreviewed, mode: p.mode,
   dailyCheckLimit: p.dailyCheckLimit, kidsOnlySearch: p.kidsOnlySearch, dailyMinutes: p.dailyMinutes, bedtime: p.bedtime,
+  bonusMinutes: p.bonusMinutes, bonusDay: p.bonusDay,
 });
 
 export const DEFAULT_SETTINGS = (familyId: string): FamilySettings => ({

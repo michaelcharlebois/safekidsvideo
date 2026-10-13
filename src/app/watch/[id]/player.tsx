@@ -22,7 +22,7 @@ type Item = { id: string; title: string };
  *   The stage is the kid's control surface: OK/tap = play-pause, ◀ ▶ = skip 10s,
  *   ▼ = Home/Next buttons, Return = home.
  */
-export function Player({ playlist, index }: { playlist: Item[]; index: number }) {
+export function Player({ playlist, index, remainingMinutes }: { playlist: Item[]; index: number; remainingMinutes?: number }) {
   const router = useRouter();
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLButtonElement>(null);
@@ -182,6 +182,18 @@ export function Player({ playlist, index }: { playlist: Item[]; index: number })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [poke, playlist.length]);
 
+  // Screen-time countdown: counts down wall-clock minutes from what the server said was left; at zero, home (which shows "all done").
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(remainingMinutes != null ? remainingMinutes * 60 : null);
+  useEffect(() => {
+    if (secondsLeft == null) return;
+    const t = setInterval(() => setSecondsLeft((s) => (s == null ? s : s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [secondsLeft == null]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (secondsLeft != null && secondsLeft <= 0) router.push("/watch");
+  }, [secondsLeft, router]);
+  const minutesLeft = secondsLeft != null ? Math.ceil(secondsLeft / 60) : null;
+
   const uiVisible = showUi || paused || needsTap;
 
   return (
@@ -197,6 +209,12 @@ export function Player({ playlist, index }: { playlist: Item[]; index: number })
         className="absolute inset-0 h-full w-full cursor-default bg-transparent outline-none"
         style={{ WebkitTapHighlightColor: "transparent" }}
       />
+
+      {minutesLeft != null && minutesLeft <= 5 && (
+        <div className="pointer-events-none absolute right-4 top-4 rounded-full bg-[var(--kfocus)] px-4 py-2 text-lg font-extrabold text-[#0b1020] shadow-lg">
+          ⏰ {minutesLeft} minute{minutesLeft === 1 ? "" : "s"} left
+        </div>
+      )}
 
       {/* Big centre feedback: autoplay hint, paused badge, or a brief flash after a key. */}
       {(needsTap || paused || flash) && (

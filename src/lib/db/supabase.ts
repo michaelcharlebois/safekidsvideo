@@ -34,12 +34,13 @@ const toProfile = (r: any): Profile => ({
   id: r.id, familyId: r.family_id, name: r.name, age: r.age ?? undefined, avatar: r.avatar ?? "🦊", interests: r.interests ?? [],
   mode: r.mode ?? "locked", blockedTags: r.blocked_tags ?? [], blockedFormats: r.blocked_formats ?? [], hideUnreviewed: r.hide_unreviewed ?? true,
   dailyCheckLimit: r.daily_check_limit ?? 20, kidsOnlySearch: r.kids_only_search ?? false, dailyMinutes: r.daily_minutes ?? undefined,
-  bedtime: r.bedtime ?? undefined, sort: r.sort ?? 0, createdAt: r.created_at,
+  bedtime: r.bedtime ?? undefined, bonusMinutes: r.bonus_minutes ?? 0, bonusDay: r.bonus_day ?? undefined, sort: r.sort ?? 0, createdAt: r.created_at,
 });
 const fromProfile = (p: Omit<Profile, "createdAt"> & { createdAt?: string }) => ({
   ...(p.id ? { id: p.id } : {}), family_id: p.familyId, name: p.name, age: p.age ?? null, avatar: p.avatar, interests: p.interests,
   mode: p.mode, blocked_tags: p.blockedTags, blocked_formats: p.blockedFormats, hide_unreviewed: p.hideUnreviewed,
-  daily_check_limit: p.dailyCheckLimit, kids_only_search: p.kidsOnlySearch, daily_minutes: p.dailyMinutes ?? null, bedtime: p.bedtime ?? null, sort: p.sort,
+  daily_check_limit: p.dailyCheckLimit, kids_only_search: p.kidsOnlySearch, daily_minutes: p.dailyMinutes ?? null, bedtime: p.bedtime ?? null,
+  bonus_minutes: p.bonusMinutes ?? 0, bonus_day: p.bonusDay ?? null, sort: p.sort,
 });
 const toNotes = (r: any): ReviewerNotes => ({ version: r.version, notes: r.notes, stats: r.stats ?? undefined, source: r.source, createdAt: r.created_at });
 const toConfirmation = (r: any): Confirmation => ({
@@ -151,10 +152,10 @@ export const supabaseStore: Store = {
     }
   },
   async getFamily(familyId) {
-    const d = must<any>(await client().from("families").select("id,onboarded_at,plan,trial_ends_at,stripe_customer_id,stripe_subscription_id").eq("id", familyId).maybeSingle());
+    const d = must<any>(await client().from("families").select("id,onboarded_at,plan,trial_ends_at,stripe_customer_id,stripe_subscription_id,timezone").eq("id", familyId).maybeSingle());
     return {
       id: familyId, onboardedAt: d?.onboarded_at ?? undefined, plan: d?.plan ?? "trial", trialEndsAt: d?.trial_ends_at ?? undefined,
-      stripeCustomerId: d?.stripe_customer_id ?? undefined, stripeSubscriptionId: d?.stripe_subscription_id ?? undefined,
+      stripeCustomerId: d?.stripe_customer_id ?? undefined, stripeSubscriptionId: d?.stripe_subscription_id ?? undefined, timezone: d?.timezone ?? undefined,
     };
   },
   async updateFamily(familyId, patch) {

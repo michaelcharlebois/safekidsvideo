@@ -182,6 +182,7 @@ export type Family = {
   trialEndsAt?: string;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  timezone?: string; // IANA, learned from the parent's browser
 };
 
 /** A kid. Each has their own viewing mode, filters and limits; the family shares PIN + crowd threshold. */
@@ -200,6 +201,8 @@ export type Profile = {
   kidsOnlySearch: boolean;
   dailyMinutes?: number; // screen-time limit
   bedtime?: string; // "HH:MM"
+  bonusMinutes?: number; // extra minutes granted for bonusDay
+  bonusDay?: string; // YYYY-MM-DD
   sort: number;
   createdAt: string;
 };
@@ -213,6 +216,8 @@ export type FamilySettings = {
   profileAvatar?: string;
   dailyMinutes?: number;
   bedtime?: string;
+  bonusMinutes?: number;
+  bonusDay?: string;
   /** 4-digit PIN to exit kid mode; stored hashed in Supabase, plain in local dev */
   pinHash: string;
   kidAge?: number;

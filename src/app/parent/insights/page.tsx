@@ -14,7 +14,7 @@ export default async function InsightsPage() {
   if (v.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent/insights" : "/unlock?next=/parent/insights");
   const fid = v.familyId;
   const [family, profiles, videos] = await Promise.all([db.getFamily(fid), db.listProfiles(fid), db.listVideos()]);
-  const tz = (family as { timezone?: string }).timezone;
+  const tz = family.timezone;
   const sinceMs = Date.now() - 60 * 86_400_000; // eslint-disable-line react-hooks/purity -- server component
   const since = new Date(sinceMs);
   const [events, days] = await Promise.all([watchEventsSince(fid, since.toISOString()), listKidDays(fid, localDay(tz, since))]);

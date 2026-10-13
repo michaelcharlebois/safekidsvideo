@@ -7,6 +7,8 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { resolveViewer } from "@/lib/family";
 import { db } from "@/lib/db";
 import WhoPage from "./who/page";
+import { timeState } from "@/lib/screentime";
+import { AllDone } from "./all-done";
 
 /** More than one kid and nobody picked yet: show the chooser instead of the page. */
 function WhoGate() {
@@ -19,6 +21,8 @@ export default async function WatchLayout({ children }: LayoutProps<"/watch">) {
   const settings = viewer.familyId ? await db.getSettings(viewer.familyId, viewer.profileId) : null;
   const canSearch = settings ? settings.mode !== "locked" : false;
   const needsPick = viewer.familyId && profiles.length > 1 && !viewer.profileId;
+  const family = viewer.familyId ? await db.getFamily(viewer.familyId) : null;
+  const time = viewer.familyId && settings && !needsPick ? await timeState(viewer.familyId, settings, family?.timezone) : null;
   return (
     <div className="kid-mode kid-pane flex-1 flex flex-col" data-scroll-pane>
       <RemoteNav />
@@ -41,7 +45,7 @@ export default async function WatchLayout({ children }: LayoutProps<"/watch">) {
           <ExitButton target={supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent"} />
         </div>
       </KidHeader>
-      {needsPick ? <WhoGate /> : children}
+      {needsPick ? <WhoGate /> : time && !time.allowed ? <AllDone time={time} name={settings?.profileName} /> : children}
     </div>
   );
 }

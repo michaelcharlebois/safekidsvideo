@@ -17,7 +17,7 @@ export default async function CheckinPage(props: PageProps<"/parent/checkin">) {
   if (v.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent/checkin" : "/unlock?next=/parent/checkin");
   const fid = v.familyId;
   const [family, profiles] = await Promise.all([db.getFamily(fid), db.listProfiles(fid)]);
-  const tz = (family as { timezone?: string }).timezone;
+  const tz = family.timezone;
   const day = typeof sp.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(sp.day) ? sp.day : localDay(tz);
   const start = new Date(`${day}T00:00:00`);
   const [events, done, videos, channels] = await Promise.all([
