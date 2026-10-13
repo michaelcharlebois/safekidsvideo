@@ -208,9 +208,13 @@ export type Profile = {
   skipRegen: number;
   skipCooldownSec: number;
   freePeekSec: number;
+  /** Home-screen arrangement: channel ids in the parent's order (unlisted ones follow), and nudges for the "For <kid>" row. */
+  channelOrder: string[];
+  boosts: Boosts;
   sort: number;
   createdAt: string;
 };
+export type Boosts = { formats?: Partial<Record<VideoFormat, number>>; pace?: number; learning?: number }; // each -2..2
 export const AVATARS = ["🦊", "🐼", "🦄", "🐸", "🐙", "🦖", "🐧", "🦁", "🐰", "🐢", "🚀", "🌈"];
 
 /** Effective settings for one kid on one family: family-level fields + that kid's profile. */
@@ -227,6 +231,9 @@ export type FamilySettings = {
   skipRegen?: number;
   skipCooldownSec?: number;
   freePeekSec?: number;
+  channelOrder?: string[];
+  boosts?: Boosts;
+  interests?: string[];
   /** 4-digit PIN to exit kid mode; stored hashed in Supabase, plain in local dev */
   pinHash: string;
   kidAge?: number;

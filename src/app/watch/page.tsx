@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { resolveViewer } from "@/lib/family";
 import { blockedReasons, getLibrary } from "@/lib/queries";
 import { recentlyApprovedIds, recentWatchIds } from "@/lib/activity";
+import { watchEventsSince } from "@/lib/checkin";
+import { forKid, orderShelves, tasteFrom } from "@/lib/arrange";
 import { db } from "@/lib/db";
 import { AutoRefresh } from "./auto-refresh";
 import { ChannelAvatar, PlayTile, Shelf } from "./kid-ui";
@@ -14,8 +16,9 @@ export default async function WatchPage() {
   const viewer = await resolveViewer();
   if (!viewer.familyId) redirect("/pair");
   const fid = viewer.familyId;
-  const [lib, settings, approved, recent] = await Promise.all([
+  const [lib, settings, approved, recent, events] = await Promise.all([
     getLibrary(fid), db.getSettings(fid, viewer.profileId), recentlyApprovedIds(fid), recentWatchIds(fid, 8, viewer.profileId),
+    watchEventsSince(fid, new Date(Date.now() - 30 * 86_400_000).toISOString()), // eslint-disable-line react-hooks/purity -- server component
   ]);
 
   const byId = new Map(lib.map((v) => [v.id, v]));
@@ -24,6 +27,8 @@ export default async function WatchPage() {
   const playable = mine.filter(ok);
   const justApproved = playable.filter((v) => approved.has(v.id));
   const keepWatching = recent.map((id) => byId.get(id)).filter((v): v is VideoWithCard => !!v && ok(v));
+  const taste = tasteFrom(events.filter((e) => !viewer.profileId || e.profileId === viewer.profileId || !e.profileId), byId);
+  const forYou = playable.length >= 6 ? forKid(playable, settings, taste, 8) : [];
 
   // Home is only things that play. Unchecked videos live under Search, not in front of a six-year-old.
   const byChannel = new Map<string, VideoWithCard[]>();
@@ -44,15 +49,15 @@ export default async function WatchPage() {
         checking: videos.length === 0 && unreviewed > 0 && now - added < FRESH_MS ? unreviewed : 0,
       };
     })
-    .filter((s) => s.videos.length > 0 || s.checking > 0)
-    .sort((a, b) => b.videos.length - a.videos.length);
+    .filter((s) => s.videos.length > 0 || s.checking > 0);
+  const ordered = orderShelves(shelves.map((x) => ({ ...x, id: x.channelId })), settings.channelOrder);
   const stillChecking = shelves.some((s) => s.checking > 0);
 
   return (
     <main className="flex-1 px-5 pb-12 pt-2 space-y-6">
       {stillChecking && <AutoRefresh />}
 
-      {shelves.length === 0 && keepWatching.length === 0 && (
+      {ordered.length === 0 && keepWatching.length === 0 && (
         <div className="mt-24 text-center">
           <p className="text-5xl">📺</p>
           <p className="mt-3 text-3xl font-extrabold">Nothing here yet</p>
@@ -72,7 +77,13 @@ export default async function WatchPage() {
         </Shelf>
       )}
 
-      {shelves.map((s) => (
+      {forYou.length > 0 && (
+        <Shelf title={`For ${settings.profileName ?? "you"}`} avatar={<span className="text-2xl">{settings.profileAvatar ?? "⭐"}</span>}>
+          {forYou.map((v) => <PlayTile key={v.id} v={v} />)}
+        </Shelf>
+      )}
+
+      {ordered.map((s) => (
         <Shelf key={s.channelId} title={s.title} avatar={<ChannelAvatar channel={s.channel} name={s.title} />}>
           {s.videos.map((v) => <PlayTile key={v.id} v={v} />)}
           {s.checking > 0 && (

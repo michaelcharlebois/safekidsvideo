@@ -100,6 +100,10 @@ New families land on `/start` (five steps: how it works → kids → trusted cha
 
 30-day free trial from first sign-in, then a subscription via Stripe Checkout. Env-gated: with `STRIPE_SECRET_KEY` + `STRIPE_PRICE_ID` unset nobody is locked out. Point a Stripe webhook at `/api/stripe/webhook` (`checkout.session.completed`, `customer.subscription.*`) with `STRIPE_WEBHOOK_SECRET`. When a trial lapses the kid screen keeps playing already-approved videos; searching, checking and new approvals pause until the parent subscribes at `/parent/billing`. Remaining trial days carry into the subscription so nobody is charged early.
 
+## Home-screen arrangement
+
+Per kid (migration `0017_arrangement.sql`): the parent orders channel shelves with ▲▼ on the dashboard (`profiles.channel_order`; unlisted channels follow by size). A "For <kid>" row leads the TV when there are 6+ playable videos, scored in `src/lib/arrange.ts` from the last 30 days of watching (channel and format affinity, finished videos, a penalty for the last 3 days' videos), the profile's interests matched against titles/synopses, light freshness, and parent nudges from Settings → "What shows up first" (−2..2 per kind of video, calmer↔livelier, fun↔learning; stored in `profiles.boosts`). At most two videos per channel in that row.
+
 ## Skip budget
 
 Per kid (Settings → Skipping), off by default. A sitting starts with N skips (default 3); leaving a video early costs one, finishing earns `regen` back (default 1), leaving in the first `freePeekSec` (30) is free, and leaving past 70% counts as finished. Out of skips: the current video keeps playing and Next becomes a countdown (`skipCooldownSec`, default 2 min); when it ends you get one skip back. Home → a different video is still a skip; if you're out, the player sends you back to the one you left. State lives in sessionStorage (resets when the TV app relaunches). Each play's ending is logged to `watch_events.outcome` (migration `0016_skips.sql`), and Stats shows started / finished / skipped.

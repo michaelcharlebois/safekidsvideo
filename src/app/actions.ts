@@ -23,6 +23,8 @@ import { BudgetExceededError, reviewVideo } from "@/lib/reviewer";
 import { pushToFamily, removeSubscription, saveSubscription } from "@/lib/push";
 import { runPipeline, seedChannelReviews } from "@/lib/pipeline";
 
+const clampBoost = (v: FormDataEntryValue | null) => Math.max(-2, Math.min(2, Math.round(Number(v ?? 0)) || 0));
+
 /** Resolve the signed-in parent's family, or bounce to sign-in / unlock. */
 async function requireParent(): Promise<string> {
   const v = await resolveViewer();
@@ -169,6 +171,11 @@ export async function saveSettings(form: FormData) {
     skipRegen: Math.max(0, Math.min(5, Number(form.get("skipRegen") ?? current.skipRegen ?? 1))),
     skipCooldownSec: Math.max(30, Math.min(900, (Number(form.get("skipCooldownMin")) || 2) * 60)),
     freePeekSec: Math.max(0, Math.min(120, Number(form.get("freePeekSec") ?? current.freePeekSec ?? 30))),
+    boosts: {
+      formats: Object.fromEntries(FORMATS.map((f) => [f, clampBoost(form.get(`boost:${f}`))]).filter(([, n]) => n !== 0)) as Record<VideoFormat, number>,
+      pace: clampBoost(form.get("boost:pace")),
+      learning: clampBoost(form.get("boost:learning")),
+    },
     });
   } catch (e) {
     redirect(`/parent/settings?kid=${profileId ?? ""}&error=${encodeURIComponent((e as Error).message)}`);
@@ -465,6 +472,24 @@ export async function skipOnboarding() {
   const fid = await requireParent();
   await db.updateFamily(fid, { onboardedAt: new Date().toISOString() });
   redirect("/parent");
+}
+
+/** Nudge a channel up or down on one kid's home screen. The order is stored on the profile. */
+export async function moveChannel(form: FormData) {
+  const fid = await requireParent();
+  const profileId = String(form.get("profileId") ?? "");
+  const channelId = String(form.get("channelId") ?? "");
+  const dir = form.get("dir") === "up" ? -1 : 1;
+  const p = await db.getProfile(profileId);
+  if (!p || p.familyId !== fid) redirect("/parent");
+  // Current full order = parent's list, then any approved channels not yet in it (same rule the TV uses).
+  const approved = (await db.listWhitelist(fid)).filter((w) => w.kind === "channel").map((w) => w.targetId);
+  const order = [...p.channelOrder.filter((id) => approved.includes(id)), ...approved.filter((id) => !p.channelOrder.includes(id))];
+  const i = order.indexOf(channelId);
+  const j = i + dir;
+  if (i >= 0 && j >= 0 && j < order.length) { [order[i], order[j]] = [order[j], order[i]]; await db.upsertProfile({ ...p, channelOrder: order }); }
+  revalidatePath("/parent"); revalidatePath("/watch");
+  redirect(`/parent?kid=${profileId}#channels`);
 }
 
 // ---- Kid profiles -------------------------------------------------------------

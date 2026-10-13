@@ -102,6 +102,16 @@ export default async function SettingsPage(props: PageProps<"/parent/settings">)
               Done for the day at <span className="text-muted text-xs ml-auto mr-2">TV&apos;s local time</span>
               <input type="time" name="bedtime" defaultValue={settings.bedtime ?? ""} className="rounded-lg border border-line px-2 py-1" />
             </label>
+            <h2 className="font-extrabold pt-2">What shows up first</h2>
+            <p className="text-xs text-muted">The &ldquo;For {kid?.name ?? "them"}&rdquo; row learns from what {kid?.name ?? "they"} finishes. These nudge it. Filters above still hide things outright.</p>
+            <div className="space-y-1.5 text-sm">
+              {FORMATS.filter((f) => f !== "other").map((f) => (
+                <Slider key={f} name={`boost:${f}`} label={FORMAT_LABELS[f]} value={settings.boosts?.formats?.[f] ?? 0} />
+              ))}
+              <Slider name="boost:pace" label="Calmer ↔ livelier" value={settings.boosts?.pace ?? 0} />
+              <Slider name="boost:learning" label="Fun ↔ learning" value={settings.boosts?.learning ?? 0} />
+            </div>
+            {kid?.interests.length ? <p className="text-xs text-muted">Also boosting {kid.name}&apos;s interests: {kid.interests.join(", ")} — edit under <Link href="/parent/kids" className="underline">Kids</Link>.</p> : null}
             <h2 className="font-extrabold pt-2">Skipping</h2>
             <p className="text-xs text-muted">Like Pandora: a few skips per sitting, earned back by finishing videos. When they&apos;re out, the current video keeps playing and Next becomes a short countdown. Leaving in the first half-minute is always free.</p>
             <label className="flex items-center gap-2 text-sm">
@@ -135,5 +145,14 @@ export default async function SettingsPage(props: PageProps<"/parent/settings">)
 
       </main>
     </>
+  );
+}
+
+function Slider({ name, label, value }: { name: string; label: string; value: number }) {
+  return (
+    <label className="grid grid-cols-[1fr_8rem] items-center gap-3">
+      <span>{label}</span>
+      <input type="range" name={name} min={-2} max={2} step={1} defaultValue={value} className="accent-ink" aria-label={`${label}: less to more`} />
+    </label>
   );
 }

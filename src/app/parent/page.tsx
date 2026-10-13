@@ -7,7 +7,9 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { blockedReasons, getLibrary } from "@/lib/queries";
 import { MODE_LABELS, type VideoWithCard } from "@/lib/types";
 import { Button, Card } from "@/components/ui";
-import { approvePack, grantMoreTime, resolveWatchRequest, reviewNextBatch, toggleWhitelist } from "@/app/actions";
+import { approvePack, grantMoreTime, moveChannel, resolveWatchRequest, reviewNextBatch, toggleWhitelist } from "@/app/actions";
+import { watchEventsSince } from "@/lib/checkin";
+import { forKid, orderShelves, tasteFrom } from "@/lib/arrange";
 import { listPendingRequests, recentWatchIds } from "@/lib/activity";
 import { AddForm } from "./add-form";
 import { SearchAdd } from "./search-add";
@@ -36,8 +38,9 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const profiles = await db.listProfiles(fid);
   const kidId = (typeof sp.kid === "string" && profiles.some((p) => p.id === sp.kid) ? sp.kid : undefined) ?? viewer.profileId ?? profiles[0]?.id;
   const kid = profiles.find((p) => p.id === kidId);
-  const [lib, settings, channels, requests, wl, recent] = await Promise.all([
+  const [lib, settings, channels, requests, wl, recent, events] = await Promise.all([
     getLibrary(fid), db.getSettings(fid, kidId), db.listChannels(), listPendingRequests(fid), db.listWhitelist(fid), recentWatchIds(fid, 6, kidId),
+    watchEventsSince(fid, new Date(Date.now() - 30 * 86_400_000).toISOString()), // eslint-disable-line react-hooks/purity -- server component
   ]);
   const approvedChannels = new Set(wl.filter((w) => w.kind === "channel").map((w) => w.targetId));
   const moreAsk = typeof sp.more === "string" ? profiles.find((p) => p.id === sp.more) : undefined;
@@ -58,9 +61,12 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const keepWatching = recent.map((id) => byId.get(id)).filter((v): v is VideoWithCard => !!v && status(v) === "visible");
   const byChannel = new Map<string, VideoWithCard[]>();
   for (const v of visible) byChannel.set(v.channelId, [...(byChannel.get(v.channelId) ?? []), v]);
+  const taste = tasteFrom(events.filter((e) => !kidId || e.profileId === kidId || !e.profileId), byId);
+  const forYou = visible.length >= 6 ? forKid(visible, settings, taste, 8) : [];
   const tvShelves = [
+    ...(forYou.length ? [{ id: "for-you", title: `For ${kid?.name ?? "you"}`, videos: forYou }] : []),
     ...(keepWatching.length ? [{ id: "recent", title: "Keep watching", videos: keepWatching }] : []),
-    ...[...byChannel.entries()].map(([id, vids]) => ({ id, title: vids[0].channel?.title ?? id, videos: vids.sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "")) })).sort((a, b) => b.videos.length - a.videos.length),
+    ...orderShelves([...byChannel.entries()].map(([id, vids]) => ({ id, title: vids[0].channel?.title ?? id, videos: vids.sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "")) })), settings.channelOrder),
   ].slice(0, 3);
 
   // Library by channel.
@@ -68,7 +74,8 @@ export default async function ParentPage(props: PageProps<"/parent">) {
     const vids = mine.filter((v) => v.channelId === id);
     const channel = channels.find((c) => c.id === id);
     return { id, title: channel?.title ?? vids[0]?.channel?.title ?? id, channel, vids, visible: vids.filter((v) => status(v) === "visible").length, hidden: vids.filter((v) => status(v) === "hidden").length, unreviewed: vids.filter((v) => status(v) === "unreviewed").length };
-  }).sort((a, b) => b.visible - a.visible || b.vids.length - a.vids.length);
+  });
+  const orderedGroups = orderShelves(groups.map((g) => ({ ...g, videos: g.vids.filter((v) => status(v) === "visible") })), settings.channelOrder);
   const filtered = (view || q)
     ? groups.map((g) => ({ ...g, shown: g.vids.filter((v) => (!view || status(v) === view) && (!q || v.title.toLowerCase().includes(q))).sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "")) })).filter((g) => g.shown.length)
     : null;
@@ -196,9 +203,9 @@ export default async function ParentPage(props: PageProps<"/parent">) {
         </section>
 
         {/* ---- library ---- */}
-        <section>
+        <section id="channels">
           <div className="flex items-end justify-between gap-3">
-            <h2 className="text-lg">Channels</h2>
+            <h2 className="text-lg">Channels <span className="text-sm font-normal text-muted">in {kid?.name ?? "the kid"}&apos;s order</span></h2>
             <form action="/parent" className="flex-1 max-w-xs">
               <input type="hidden" name="kid" value={kidId ?? ""} />
               <input name="q" defaultValue={q} type="search" placeholder="Find a video" className="w-full rounded-full border border-line bg-surface px-4 py-1.5 text-sm outline-none focus:border-ink" />
@@ -225,9 +232,13 @@ export default async function ParentPage(props: PageProps<"/parent">) {
           ) : (
             <ul className="mt-3 divide-y divide-line rounded-2xl border border-line bg-surface">
               {groups.length === 0 && <li className="p-4 text-sm text-muted">No channels yet. Add a starter pack below.</li>}
-              {groups.map((g) => (
-                <li key={g.id}>
-                  <Link href={`/parent/channel/${g.id}`} className="flex items-center gap-3 px-3 py-2.5 hover:bg-bg/60">
+              {orderedGroups.map((g, idx) => (
+                <li key={g.id} className="flex items-center">
+                  <div className="flex flex-col pl-2 text-muted">
+                    <form action={moveChannel}><input type="hidden" name="profileId" value={kidId ?? ""} /><input type="hidden" name="channelId" value={g.id} /><input type="hidden" name="dir" value="up" /><button type="submit" disabled={idx === 0} aria-label="Move up" className="block px-1 text-xs leading-none hover:text-ink disabled:opacity-20">▲</button></form>
+                    <form action={moveChannel}><input type="hidden" name="profileId" value={kidId ?? ""} /><input type="hidden" name="channelId" value={g.id} /><input type="hidden" name="dir" value="down" /><button type="submit" disabled={idx === orderedGroups.length - 1} aria-label="Move down" className="block px-1 text-xs leading-none hover:text-ink disabled:opacity-20">▼</button></form>
+                  </div>
+                  <Link href={`/parent/channel/${g.id}`} className="flex flex-1 items-center gap-3 px-3 py-2.5 hover:bg-bg/60">
                     <ChannelAvatar channel={g.channel} name={g.title} size={40} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-extrabold">{g.title}</span>

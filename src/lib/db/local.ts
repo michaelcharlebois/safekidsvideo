@@ -152,7 +152,7 @@ export const localStore: Store = {
     db.profiles ??= [];
     const p = db.profiles.find((x) => x.id === s.profileId && x.familyId === s.familyId);
     if (p) Object.assign(p, { age: s.kidAge, mode: s.mode, blockedTags: s.blockedTags, blockedFormats: s.blockedFormats, hideUnreviewed: s.hideUnreviewed, dailyCheckLimit: s.dailyCheckLimit, kidsOnlySearch: s.kidsOnlySearch, dailyMinutes: s.dailyMinutes, bedtime: s.bedtime,
-      skipLimit: s.skipLimit, skipRegen: s.skipRegen ?? 1, skipCooldownSec: s.skipCooldownSec ?? 120, freePeekSec: s.freePeekSec ?? 30 });
+      skipLimit: s.skipLimit, skipRegen: s.skipRegen ?? 1, skipCooldownSec: s.skipCooldownSec ?? 120, freePeekSec: s.freePeekSec ?? 30, boosts: s.boosts ?? p.boosts ?? {} });
     await persist(db);
   },
   async getFamily(familyId) {

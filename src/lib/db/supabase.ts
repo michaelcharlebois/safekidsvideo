@@ -36,6 +36,7 @@ const toProfile = (r: any): Profile => ({
   dailyCheckLimit: r.daily_check_limit ?? 20, kidsOnlySearch: r.kids_only_search ?? false, dailyMinutes: r.daily_minutes ?? undefined,
   bedtime: r.bedtime ?? undefined, bonusMinutes: r.bonus_minutes ?? 0, bonusDay: r.bonus_day ?? undefined,
   skipLimit: r.skip_limit ?? undefined, skipRegen: r.skip_regen ?? 1, skipCooldownSec: r.skip_cooldown_sec ?? 120, freePeekSec: r.free_peek_sec ?? 30,
+  channelOrder: r.channel_order ?? [], boosts: r.boosts ?? {},
   sort: r.sort ?? 0, createdAt: r.created_at,
 });
 const fromProfile = (p: Omit<Profile, "createdAt"> & { createdAt?: string }) => ({
@@ -43,7 +44,8 @@ const fromProfile = (p: Omit<Profile, "createdAt"> & { createdAt?: string }) => 
   mode: p.mode, blocked_tags: p.blockedTags, blocked_formats: p.blockedFormats, hide_unreviewed: p.hideUnreviewed,
   daily_check_limit: p.dailyCheckLimit, kids_only_search: p.kidsOnlySearch, daily_minutes: p.dailyMinutes ?? null, bedtime: p.bedtime ?? null,
   bonus_minutes: p.bonusMinutes ?? 0, bonus_day: p.bonusDay ?? null,
-  skip_limit: p.skipLimit ?? null, skip_regen: p.skipRegen ?? 1, skip_cooldown_sec: p.skipCooldownSec ?? 120, free_peek_sec: p.freePeekSec ?? 30, sort: p.sort,
+  skip_limit: p.skipLimit ?? null, skip_regen: p.skipRegen ?? 1, skip_cooldown_sec: p.skipCooldownSec ?? 120, free_peek_sec: p.freePeekSec ?? 30,
+  channel_order: p.channelOrder ?? [], boosts: p.boosts ?? {}, sort: p.sort,
 });
 const toNotes = (r: any): ReviewerNotes => ({ version: r.version, notes: r.notes, stats: r.stats ?? undefined, source: r.source, createdAt: r.created_at });
 const toConfirmation = (r: any): Confirmation => ({
@@ -152,6 +154,7 @@ export const supabaseStore: Store = {
         age: s.kidAge ?? null, mode: s.mode, blocked_tags: s.blockedTags, blocked_formats: s.blockedFormats, hide_unreviewed: s.hideUnreviewed,
         daily_check_limit: s.dailyCheckLimit, kids_only_search: s.kidsOnlySearch, daily_minutes: s.dailyMinutes ?? null, bedtime: s.bedtime ?? null,
         skip_limit: s.skipLimit ?? null, skip_regen: s.skipRegen ?? 1, skip_cooldown_sec: s.skipCooldownSec ?? 120, free_peek_sec: s.freePeekSec ?? 30,
+        boosts: s.boosts ?? {},
       }).eq("id", s.profileId).eq("family_id", s.familyId));
     }
   },
