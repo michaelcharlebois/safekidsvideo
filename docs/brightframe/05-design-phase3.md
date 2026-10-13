@@ -73,3 +73,25 @@ Files:
 - `kids-desktop`, `kids-mobile-1`
 - `child-desktop` (full page), `child-mobile-1..3`
 - `fix-review-mobile-evidence`, `fix-review-desktop`, `fix-video-mobile` (the corrections)
+
+## Refinements after review (Phase 3b)
+
+1. **Each section saves only its own fields.**
+   - `settingsPatch()` builds a patch holding just the named sections' fields.
+   - The stores write that patch alone: `updateProfileSettings` (child columns, scoped to the family) and `updateFamilySettings` (PIN, report threshold).
+   - Two saves of different sections, even from pages loaded at the same moment, both stick.
+   - `saveSettings` on the store still exists, for scripts and tests.
+2. **Child validation** (`lib/settings-save.ts`).
+   - Any child section must name an existing child of the signed-in family, or nothing is written. A missing, deleted or foreign id never falls back to the first child.
+   - The store also refuses a profile outside the family.
+   - Family-only forms never touch a profile, even if child fields are posted with them.
+   - Tests: `test/settings-save.test.ts` (14 tests), plus a walkthrough check (32 in all).
+3. **Outcomes appear where you pressed Save.** A save returns to its section, and its "saved" note or error is shown there (`failed=<section>`), not only at the top of the page. This includes the family settings card on Kids.
+4. **Screens.** "Make it Maya's own" / "Make shared" returns to Maya's Screens section and says what changed ("Living room TV is now Maya's own"). The return path must be a same-site path (`lib/paths.ts`), otherwise it goes to Devices. Errors stay in the section.
+5. **Mobile.**
+   - Shorter intro and a four-row summary (Watch / When / Asking / Where) that links to sections. The full summary cards show from tablet width.
+   - The chosen viewing mode always shows its full description. The other two collapse to name and tagline, with "What this means" to expand them; choosing one shows "Not saved yet".
+   - The section row is sticky. An arrow and fade appear at whichever edge has more to scroll, the arrows scroll the row, and the section you're reading is highlighted and kept in view.
+   - Viewing permissions are unchanged.
+
+Screenshots are in `phase3b/`. Devices only exist with Supabase, so the Screens confirmation can't be shown in local mode. It's in the staging checklist.

@@ -63,7 +63,7 @@ The local walkthrough (31 checks) and the real-Postgres tests can't cover the it
 - Shared TV: pick a child with arrows and OK, and with number keys.
 - Five wrong PINs: the lockout and its countdown. Let it expire.
 - A second paired device keeps its own counter.
-- Make a device a child's own from the child page: it can't switch.
+- Make a device a child's own from the child page: you return to that child's Screens section with "… is now Maya's own", and the device can't switch. "Make shared" reverses it.
 - Revoke a device mid-session.
 
 **Child settings**

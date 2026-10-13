@@ -4,7 +4,9 @@ import type { ReactNode } from "react";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMATS, FORMAT_LABELS, type ConcernTag } from "@/lib/types";
-import { MODE_ORDER, MODE_UI } from "@/lib/modes";
+import { MODE_ORDER, MODE_UI, whenSentence } from "@/lib/modes";
+import { ModePicker } from "./mode-picker";
+import { SectionNav } from "./section-nav";
 import { loadChildFacts } from "@/lib/kid-facts";
 import { localDay } from "@/lib/checkin";
 import { pinIsSet } from "@/lib/pin";
@@ -57,12 +59,17 @@ export default async function ChildSettingsPage(props: PageProps<"/parent/settin
   const here = `/parent/settings?kid=${kid.id}`;
   const saved = str("saved");
   const error = str("error");
+  const failed = str("failed");
   const bonusToday = s.bonusDay === localDay(timezone) ? s.bonusMinutes ?? 0 : 0;
   const multi = facts.length > 1;
   const pinSet = pinIsSet(s.pinHash);
   const childDevices = devices?.filter((d) => d.assigned_profile_id === kid.id) ?? [];
   const sharedDevices = devices?.filter((d) => !d.assigned_profile_id) ?? [];
-  const savedNote = (section: string, text = "Saved.") => (saved === section ? <Notice tone="ok" className="mt-3">{text}</Notice> : null);
+  // A save comes back to its own section, so its outcome is shown there (not only at the top of the page).
+  const savedNote = (section: string, text = "Saved.") =>
+    error && failed === section ? <Notice tone="bad" className="mt-3"><b>Not saved:</b> {error}</Notice>
+    : saved === section ? <Notice tone="ok" className="mt-3">{text}</Notice> : null;
+  const changedScreen = saved === "screens" ? devices?.find((d) => d.id === str("screen")) : undefined;
 
   return (
     <main className="mx-auto w-full max-w-[76rem] px-4 pb-10 pt-5 sm:px-6 lg:px-10 lg:pt-8">
@@ -86,41 +93,39 @@ export default async function ChildSettingsPage(props: PageProps<"/parent/settin
         )}
       </header>
 
-      <p className="mt-3 text-sm text-muted">Everything on this page is {kid.name}&apos;s own. The family PIN and parent-report threshold apply to all children and live on <Link href="/parent/kids#family" className="font-bold text-forest underline">Kids</Link>.</p>
-      {error && <Notice tone="bad" className="mt-4"><b>Couldn&apos;t save:</b> {error}</Notice>}
+      <p className="mt-3 text-xs text-muted sm:text-sm">Settings here are {kid.name}&apos;s own. <span className="hidden sm:inline">The family PIN and parent-report threshold apply to everyone and are on </span><Link href="/parent/kids#family" className="font-bold text-forest underline"><span className="sm:hidden">Family settings</span><span className="hidden sm:inline">Kids</span></Link>.</p>
+      {error && !failed && <Notice tone="bad" className="mt-4"><b>Couldn&apos;t save:</b> {error}</Notice>}
 
-      <section aria-label={`${kid.name} at a glance`} className="mt-5">
-        <ChildSummary f={f} link={(sec) => `#${sec}`} />
+      <section aria-label={`${kid.name} at a glance`} className="mt-4 sm:mt-5">
+        {/* Phone: one line per answer, each a jump to its section. Wider: the full four answers. */}
+        <ul className="divide-y divide-sand overflow-hidden rounded-[var(--radius-card)] border border-sand bg-surface text-sm sm:hidden">
+          {[
+            { href: "#viewing", q: "Watch", a: `${MODE_UI[s.mode].title}, ${f.ready} ready` },
+            { href: "#time", q: "When", a: whenSentence(s) },
+            { href: "#viewing", q: "Asking", a: f.pending ? `${f.pending} waiting in Review` : s.mode === "locked" ? "Can't ask (Locked)" : "Nothing waiting" },
+            { href: "#screens", q: "Where", a: f.screens === undefined ? "This browser" : f.screens.length ? f.screens.map((x) => x.name).join(", ") : "No screens yet" },
+          ].map((r) => (
+            <li key={r.q}>
+              <a href={r.href} className="flex items-center gap-3 px-4 py-2.5">
+                <span className="w-14 shrink-0 font-bold text-muted">{r.q}</span>
+                <span className="min-w-0 flex-1 truncate font-semibold text-forest">{r.a}</span>
+                <IconChevron size={16} className="text-muted" />
+              </a>
+            </li>
+          ))}
+        </ul>
+        <div className="hidden sm:block"><ChildSummary f={f} link={(sec) => `#${sec}`} /></div>
       </section>
 
       {/* section index: sticky pills on wide screens, a scrollable row on phones */}
-      <nav aria-label="Sections" className="sticky top-[57px] z-10 -mx-4 mt-6 overflow-x-auto bg-ivory/95 px-4 py-2 backdrop-blur lg:top-0 lg:mx-0 lg:px-0">
-        <ul className="flex gap-1.5 whitespace-nowrap">
-          {SECTIONS.map((x) => <li key={x.id}><a href={`#${x.id}`} className="inline-block rounded-full border border-sand bg-surface px-3 py-1.5 text-sm font-bold text-ink hover:border-forest/40">{x.label}</a></li>)}
-        </ul>
-      </nav>
+      <SectionNav sections={SECTIONS.map((x) => ({ ...x }))} />
 
       <div className="mt-4 space-y-6">
         {/* ---- viewing mode ---- */}
         <Section id="viewing" icon={<IconPlayCircle />} title="Viewing mode" sub={`How ${kid.name} finds videos, and what happens when ${kid.name} wants something new.`}>
           <form action={saveSettings} className="space-y-4">
             <Hidden kid={kid.id} section="access" next={`${here}#viewing`} />
-            <fieldset>
-              <legend className="sr-only">Viewing mode</legend>
-              <div className="grid gap-3 md:grid-cols-3">
-                {MODE_ORDER.map((m) => (
-                  <label key={m} className="group relative cursor-pointer">
-                    <input type="radio" name="mode" value={m} defaultChecked={s.mode === m} className="peer sr-only" />
-                    <span className="flex h-full flex-col gap-1.5 rounded-[var(--radius-card)] border border-sand bg-surface p-4 peer-checked:border-forest peer-checked:bg-sage-soft peer-checked:ring-2 peer-checked:ring-forest peer-focus-visible:ring-2 peer-focus-visible:ring-forest">
-                      <span className="font-bold text-forest">{MODE_UI[m].title}</span>
-                      <span className="text-xs font-semibold text-muted">{MODE_UI[m].tagline}</span>
-                      <span className="text-sm text-ink">{MODE_UI[m].watch(kid.name)}</span>
-                      <span className="text-sm text-muted">{MODE_UI[m].ask(kid.name)}</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+            <ModePicker current={s.mode} modes={MODE_ORDER.map((m) => ({ mode: m, title: MODE_UI[m].title, tagline: MODE_UI[m].tagline, watch: MODE_UI[m].watch(kid.name), ask: MODE_UI[m].ask(kid.name) }))} />
             <p className="text-sm text-muted">In every mode, a video plays only after its AI review passes {kid.name}&apos;s content settings, or when you allow that video for {kid.name}.</p>
             <details className="rounded-xl border border-sand bg-surface text-sm">
               <summary className="cursor-pointer px-4 py-3 font-bold text-forest">Search options (Ask first and Open)</summary>
@@ -226,6 +231,12 @@ export default async function ChildSettingsPage(props: PageProps<"/parent/settin
 
         {/* ---- screens ---- */}
         <Section id="screens" icon={<IconTv />} title="Screens" sub={`Where ${kid.name} watches.`}>
+          {error && failed === "screens" && <Notice tone="bad" className="mb-3"><b>Not changed:</b> {error}</Notice>}
+          {saved === "screens" && (
+            <Notice tone="ok" className="mb-3">
+              {changedScreen ? <><b>{changedScreen.name}</b> is now {changedScreen.assigned_profile_id === kid.id ? `${kid.name}'s own` : changedScreen.assigned_profile_id ? "another child's own" : "shared"}.</> : "Screen updated."}
+            </Notice>
+          )}
           {devices === null ? (
             <p className="text-sm text-muted">Connecting TVs and tablets needs a family account. In this local mode, this browser is the kid screen.</p>
           ) : devices.length === 0 ? (
@@ -283,17 +294,19 @@ export default async function ChildSettingsPage(props: PageProps<"/parent/settin
 
 function Section({ id, icon, title, sub, children }: { id: string; icon: ReactNode; title: string; sub?: string; children: ReactNode }) {
   return (
-    <Card as="section" className="scroll-mt-28 p-5 sm:p-6">
-      <div id={id} className="relative -top-28" aria-hidden />
-      <div className="mb-4 flex items-start gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sage-soft text-forest">{icon}</span>
-        <div>
-          <h2 className="text-lg leading-tight">{title}</h2>
-          {sub && <p className="text-sm text-muted">{sub}</p>}
+    <div id={`sec-${id}`}>
+      <Card as="section" className="p-5 sm:p-6">
+        <div id={id} className="relative -top-32" aria-hidden />
+        <div className="mb-4 flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sage-soft text-forest">{icon}</span>
+          <div>
+            <h2 className="text-lg leading-tight">{title}</h2>
+            {sub && <p className="text-sm text-muted">{sub}</p>}
+          </div>
         </div>
-      </div>
-      {children}
-    </Card>
+        {children}
+      </Card>
+    </div>
   );
 }
 
