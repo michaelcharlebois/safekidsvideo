@@ -8,7 +8,7 @@ import { videoForChildren } from "@/lib/queries";
 import { reviewEligibility } from "@/lib/gate";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS } from "@/lib/types";
 import { Button, Card, ConcernPill, PacePill, Pill, Stars, TopBar } from "@/components/ui";
-import { addAndReview, allowVideoForChild, decideVideo, runReview, unhideForFamily } from "@/app/actions";
+import { addAndReview, allowVideoForChild, decideVideo, manageFamilyBlock, runReview, unhideForFamily } from "@/app/actions";
 import { FeedbackForm } from "./feedback-form";
 import { VERDICT_LABELS } from "@/lib/types";
 
@@ -19,6 +19,7 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
   const { id } = await props.params;
   const sp = await props.searchParams;
   const reviewing = sp.reviewing === "1";
+  const unblockAll = sp.unblockAll === "1";
   const viewer = await resolveViewer();
   if (viewer.role !== "parent") redirect(supabaseEnabled ? `/login?next=/parent/video/${id}` : `/unlock?next=/parent/video/${id}`);
   const fid = viewer.familyId;
@@ -67,31 +68,58 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
 
         <Card className="p-4">
           <h2 className="font-extrabold">Who can watch this</h2>
+          {view.familyBlocked && (
+            <div className="mt-2 rounded-xl border border-bad/30 bg-bad/5 p-3 text-sm space-y-2">
+              <p><b>Blocked for every child.</b> This block was set before permissions were per child, so no single child&apos;s &ldquo;Allow&rdquo; can get past it.</p>
+              {unblockAll ? (
+                <div className="space-y-2">
+                  <p className="font-bold">Unblocking for everyone means:</p>
+                  <ul className="space-y-0.5">
+                    {view.perChild.map(({ profile, ifUnblocked }) => (
+                      <li key={profile.id}>{profile.avatar} {profile.name}: {ifUnblocked?.allow ? <b className="text-bad">it would play</b> : <>still hidden ({ifUnblocked?.reasons.join(", ")})</>}</li>
+                    ))}
+                  </ul>
+                  <div className="flex flex-wrap gap-2">
+                    <form action={manageFamilyBlock}><input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="op" value="remove" /><input type="hidden" name="confirm" value="1" /><Button type="submit" variant="danger" className="text-xs px-3 py-1">Unblock for everyone</Button></form>
+                    <Link href={`/parent/video/${v.id}`}><Button variant="ghost" className="text-xs px-3 py-1">Cancel</Button></Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <form action={manageFamilyBlock}><input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="op" value="split" /><Button type="submit" variant="ghost" className="text-xs px-3 py-1">Block each child separately</Button></form>
+                  <form action={manageFamilyBlock}><input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="op" value="remove" /><Button type="submit" variant="ghost" className="text-xs px-3 py-1">Unblock for everyone…</Button></form>
+                </div>
+              )}
+              {!unblockAll && <p className="text-xs text-muted">&ldquo;Block each child separately&rdquo; keeps it blocked for every child you have now, then lets you change one child at a time. Children you add later won&apos;t be blocked automatically.</p>}
+            </div>
+          )}
           <ul className="mt-2 divide-y divide-line">
-            {view.perChild.map(({ profile, v: kv, decision }) => (
+            {view.perChild.map(({ profile, v: kv, decision, childBlocked }) => (
               <li key={profile.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
                 <span className="text-xl">{profile.avatar}</span>
                 <span className="font-bold">{profile.name}</span>
-                <span className={`min-w-0 flex-1 ${decision.allow ? "text-ok" : "text-muted"}`}>
+                <span className={`min-w-0 basis-full sm:basis-0 sm:flex-1 order-last sm:order-none ${decision.allow ? "text-ok" : "text-muted"}`}>
                   {decision.allow
                     ? decision.basis === "explicit" ? "Plays — you allowed it" : decision.basis === "open" ? "Plays — passes the review (Open mode)" : "Plays — reviewed and passes their rules"
+                    : view.familyBlocked ? "Doesn't play: blocked for every child"
+                    : childBlocked ? `Doesn't play: you chose Never for ${profile.name}`
                     : `Doesn't play: ${decision.reasons.join(", ")}`}
                 </span>
-                {kv.overridden ? (
+                {view.familyBlocked ? null : kv.overridden ? (
                   <form action={allowVideoForChild}>
                     <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} /><input type="hidden" name="undo" value="1" />
                     <Button type="submit" variant="ghost" className="text-xs px-3 py-1">Undo allow</Button>
                   </form>
                 ) : (
                   <>
-                  {kv.dismissed && !kv.blockedByParent && (
+                  {(kv.dismissed || childBlocked) && (
                     <form action={decideVideo}>
                       <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} /><input type="hidden" name="decision" value="undo" />
                       <input type="hidden" name="next" value={`/parent/video/${v.id}`} />
-                      <Button type="submit" variant="ghost" className="text-xs px-3 py-1">Stop keeping hidden</Button>
+                      <Button type="submit" variant="ghost" className="text-xs px-3 py-1">{childBlocked ? "Undo Never" : "Stop keeping hidden"}</Button>
                     </form>
                   )}
-                  {(!decision.allow || kv.blockedByParent) && (
+                  {!decision.allow && (
                   <form action={allowVideoForChild}>
                     <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} />
                     <Button type="submit" variant="ghost" className="text-xs px-3 py-1">Allow for {profile.name}{!reviewed ? " (unreviewed)" : ""}</Button>

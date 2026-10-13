@@ -24,14 +24,18 @@ export async function videoForChildren(familyId: string, videoId: string) {
   if (!video) return null;
   const base = { videos: [video], channels, cards: card ? [card] : [], confirmations, whitelist };
   const family = buildLibrary({ ...base })[0];
+  const familyBlocked = whitelist.some((w) => w.kind === "block" && w.targetId === videoId && w.profileId == null);
+  // What each child would get if the family-wide block were lifted (to preview "Unblock for everyone").
+  const unblocked = { ...base, whitelist: whitelist.filter((w) => !(w.kind === "block" && w.targetId === videoId && w.profileId == null)) };
   const perChild = await Promise.all(profiles.map(async (p) => {
     const settings = await db.getSettings(familyId, p.id);
     const v = buildLibrary({ ...base, profileId: p.id })[0];
-    return { profile: p, settings, v, decision: authorize(v, settings) };
+    const ifUnblocked = familyBlocked ? authorize(buildLibrary({ ...unblocked, profileId: p.id })[0], settings) : null;
+    return { profile: p, settings, v, decision: authorize(v, settings), ifUnblocked, childBlocked: v.blockedByParent && !familyBlocked };
   }));
   const addedDirectly = whitelist.some((w) => w.kind === "video" && w.targetId === videoId && w.profileId == null);
   const channelApproved = whitelist.some((w) => w.kind === "channel" && w.targetId === video.channelId && w.profileId == null);
-  return { video: family, perChild, addedDirectly, channelApproved };
+  return { video: family, perChild, addedDirectly, channelApproved, familyBlocked };
 }
 
 /** Settings for a specific child, or null — never "the first profile" — so kid surfaces fail closed. */

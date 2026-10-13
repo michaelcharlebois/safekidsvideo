@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { localStore as db, __resetLocalStoreCache, migrateLocalToChildScope } from "@/lib/db/local";
-import { addVideoToLibrary, allowForChild, approveRequest, decideForChild, GrantError, NeedsUnreviewedConfirm, recordOpenClearance, resolveLegacy, unhideForFamily } from "@/lib/grants";
+import { addVideoToLibrary, allowForChild, approveRequest, decideForChild, GrantError, FamilyBlockError, NeedsUnreviewedConfirm, recordOpenClearance, removeFamilyBlock, resolveLegacy, splitFamilyBlock, unhideForFamily } from "@/lib/grants";
 import { buildLibrary, canPlay } from "@/lib/gate";
 import { DEFAULT_PROFILE } from "@/lib/db/store";
 import { card, video } from "./fixtures";
@@ -218,6 +218,47 @@ describe('"Keep hidden" through the store', () => {
     await unhideForFamily(db, FAM, VID2);
     expect(await playsFor(maya.id)).toContain(VID2);
     expect(await playsFor(leo.id)).not.toContain(VID2);
+  });
+});
+
+describe("family-wide (pre-0018) blocks", () => {
+  async function familyBlocked() {
+    const kids = await family();
+    await addVideoToLibrary(db, FAM, VID2);
+    await db.addToWhitelist({ familyId: FAM, kind: "block", targetId: VID2, profileId: null });
+    return kids;
+  }
+  it("Allow for one child is refused (not silently ineffective) and writes nothing", async () => {
+    const { maya } = await familyBlocked();
+    for (const run of [
+      () => allowForChild(db, FAM, maya.id, VID2, OK),
+      () => decideForChild(db, FAM, maya.id, VID2, "allow"),
+      () => approveRequest(db, FAM, { videoId: VID2, profileId: maya.id }, null, OK),
+    ]) await expect(run()).rejects.toBeInstanceOf(FamilyBlockError);
+    expect((await db.listWhitelist(FAM)).filter((w) => w.kind === "override")).toEqual([]);
+    expect(await playsFor(maya.id)).not.toContain(VID2);
+  });
+  it("split: blocked for every current child, never a gap, then one child can be allowed alone", async () => {
+    const { maya, leo } = await familyBlocked();
+    await splitFamilyBlock(db, FAM, VID2);
+    const blocks = (await db.listWhitelist(FAM)).filter((w) => w.kind === "block").map((w) => w.profileId).sort();
+    expect(blocks).toEqual([maya.id, leo.id].sort());
+    expect(await playsFor(maya.id)).not.toContain(VID2);
+    expect(await playsFor(leo.id)).not.toContain(VID2);
+    await allowForChild(db, FAM, maya.id, VID2);
+    expect(await playsFor(maya.id)).toContain(VID2);
+    expect(await playsFor(leo.id)).not.toContain(VID2); // Leo's restriction untouched
+  });
+  it("remove: lifts only the family-wide block; a child's own Never stays", async () => {
+    const { maya, leo } = await familyBlocked();
+    await decideForChild(db, FAM, leo.id, VID2, "never");
+    await removeFamilyBlock(db, FAM, VID2);
+    expect(await playsFor(maya.id)).toContain(VID2);
+    expect(await playsFor(leo.id)).not.toContain(VID2);
+  });
+  it("split refuses when there's no family-wide block", async () => {
+    await family();
+    await expect(splitFamilyBlock(db, FAM, VID2)).rejects.toThrow(/isn't blocked/);
   });
 });
 

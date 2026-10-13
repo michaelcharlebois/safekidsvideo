@@ -15,7 +15,7 @@ import { CONCERN_TAGS, FORMATS, type ConcernTag, type ConfirmationVerdict, type 
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
 import { assignDevice, createPairingCode, DEVICE_COOKIE, claimDevicePinAttempt, devicePinSucceeded, PinCheckUnavailable, PROFILE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice, setDeviceActiveProfile } from "@/lib/family";
-import { addVideoToLibrary, allowForChild, approveRequest, decideForChild, GrantError, NeedsUnreviewedConfirm, recordOpenClearance, resolveLegacy, unhideForFamily as unhideForFamilyGrant } from "@/lib/grants";
+import { addVideoToLibrary, allowForChild, approveRequest, decideForChild, GrantError, NeedsUnreviewedConfirm, recordOpenClearance, removeFamilyBlock, resolveLegacy, splitFamilyBlock, unhideForFamily as unhideForFamilyGrant } from "@/lib/grants";
 import { hashPin, newPinProblem, pinIsSet, verifyPin } from "@/lib/pin";
 import { nextAuthorized, reviewEligibility } from "@/lib/gate";
 import { timeState } from "@/lib/screentime";
@@ -662,6 +662,29 @@ export async function unhideForFamily(form: FormData) {
   try { await unhideForFamilyGrant(db, fid, videoId); }
   catch (e) { if (e instanceof GrantError) redirect(`/parent/video/${videoId}?error=${encodeURIComponent(e.message)}`); throw e; }
   revalidatePath(`/parent/video/${videoId}`); revalidatePath("/parent"); revalidatePath("/watch");
+  redirect(`/parent/video/${videoId}`);
+}
+
+/**
+ * Parent: manage a family-wide block (only pre-0018 data has these).
+ *  - split: one block per current child, so each can be changed separately (nobody is unblocked)
+ *  - remove: unblock for every child — needs confirm=1, after the page shows what that changes
+ */
+export async function manageFamilyBlock(form: FormData) {
+  const fid = await requireParent();
+  const videoId = String(form.get("videoId") ?? "");
+  const op = String(form.get("op") ?? "");
+  try {
+    if (op === "split") await splitFamilyBlock(db, fid, videoId);
+    else if (op === "remove") {
+      if (form.get("confirm") !== "1") redirect(`/parent/video/${videoId}?unblockAll=1`);
+      await removeFamilyBlock(db, fid, videoId);
+    } else redirect(`/parent/video/${videoId}`);
+  } catch (e) {
+    if (e instanceof GrantError) redirect(`/parent/video/${videoId}?error=${encodeURIComponent(e.message)}`);
+    throw e;
+  }
+  revalidatePath(`/parent/video/${videoId}`); revalidatePath("/parent"); revalidatePath("/parent/review"); revalidatePath("/watch");
   redirect(`/parent/video/${videoId}`);
 }
 

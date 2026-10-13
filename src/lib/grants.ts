@@ -17,6 +17,17 @@ export class NeedsUnreviewedConfirm extends GrantError {
   }
 }
 
+/** The video is blocked for every child by a family-wide block; no single child's Allow can override it. */
+export class FamilyBlockError extends GrantError {
+  constructor(public videoId: string) {
+    super("This video is blocked for every child. Change that block first, then allow it for one child.");
+  }
+}
+
+export async function hasFamilyBlock(store: Store, familyId: string, videoId: string) {
+  return (await store.listWhitelist(familyId)).some((w) => w.kind === "block" && w.targetId === videoId && w.profileId == null);
+}
+
 /** Options for an explicit allow. `confirmedUnreviewed` = the parent saw and accepted the unreviewed disclosure. */
 export type AllowOpts = { confirmedUnreviewed?: boolean };
 
@@ -46,6 +57,9 @@ async function clearChildDecisions(store: Store, familyId: string, profileId: st
 export async function allowForChild(store: Store, familyId: string, profileId: string, videoId: string, opts: AllowOpts = {}) {
   checkVideoId(videoId);
   await childOf(store, familyId, profileId);
+  // A family-wide block (only pre-0018 data has these) beats any child's Allow. Refuse rather than write an
+  // approval that would look successful but change nothing; the parent manages the block itself first.
+  if (await hasFamilyBlock(store, familyId, videoId)) throw new FamilyBlockError(videoId);
   const review = reviewEligibility(await store.getCard(videoId));
   if (!review.eligible && !opts.confirmedUnreviewed) throw new NeedsUnreviewedConfirm(videoId, profileId, review.reason ?? "Not reviewed yet");
   await clearChildDecisions(store, familyId, profileId, videoId);
@@ -75,6 +89,26 @@ export async function decideForChild(
 export async function unhideForFamily(store: Store, familyId: string, videoId: string) {
   checkVideoId(videoId);
   await store.removeFromWhitelist(familyId, "dismissed", videoId, null);
+}
+
+/**
+ * Turn a family-wide block into one block per current child — the same restriction for everyone today,
+ * but now each child's block can be changed on its own. Per-child rows are written BEFORE the family row
+ * is removed, so there's never a moment the video is unblocked. (Children added later aren't covered.)
+ */
+export async function splitFamilyBlock(store: Store, familyId: string, videoId: string) {
+  checkVideoId(videoId);
+  if (!(await hasFamilyBlock(store, familyId, videoId))) throw new GrantError("This video isn't blocked for the whole family");
+  for (const p of await store.listProfiles(familyId)) {
+    await store.addToWhitelist({ familyId, profileId: p.id, kind: "block", targetId: videoId });
+  }
+  await store.removeFromWhitelist(familyId, "block", videoId, null);
+}
+
+/** Remove a family-wide block. Children's own blocks stay; everyone else goes back to the normal rules. */
+export async function removeFamilyBlock(store: Store, familyId: string, videoId: string) {
+  checkVideoId(videoId);
+  await store.removeFromWhitelist(familyId, "block", videoId, null);
 }
 
 /** A child's open-mode check passed: a record for that child only. Grants nothing outside Open mode. */
