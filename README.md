@@ -80,6 +80,10 @@ On every content card a parent can say the card is accurate, too strict or too l
 
 `/parent/reviewer` shows agreement rates per tag, the current notes, and recent disputes. Run migration `0009_feedback.sql`.
 
+## Reviewer evals
+
+`npm run eval -- --pin` freezes every parent-confirmed verdict into `data/eval.json` (commit it — it's the golden set). `npm run eval` re-reviews those videos with the current calibration notes and scores tag precision/recall, format, age and the gate decision; `--notes none` is the baseline, `--notes 3` a specific version, `--compare a.json b.json` diffs two reports. Run it before trusting a new notes version.
+
 ## Layout
 
 ```

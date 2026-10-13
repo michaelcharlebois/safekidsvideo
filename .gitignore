@@ -43,3 +43,6 @@ next-env.d.ts
 
 # local JSON store
 data/db.json
+
+# reviewer eval reports (local)
+data/eval-reports/

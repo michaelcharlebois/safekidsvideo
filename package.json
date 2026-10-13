@@ -10,7 +10,8 @@
     "review": "tsx --tsconfig tsconfig.json scripts/review.ts",
     "seed": "tsx --tsconfig tsconfig.json scripts/seed.ts",
     "migrate-local": "tsx --tsconfig tsconfig.json scripts/migrate-local.ts",
-    "pipeline": "tsx --tsconfig tsconfig.json scripts/pipeline.ts"
+    "pipeline": "tsx --tsconfig tsconfig.json scripts/pipeline.ts",
+    "eval": "tsx --tsconfig tsconfig.json scripts/eval.ts"
   },
   "dependencies": {
     "@google/genai": "^2.28.0",
