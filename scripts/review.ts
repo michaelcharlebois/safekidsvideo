@@ -6,6 +6,9 @@
  *   npm run review -- --file urls.txt                            (one URL per line, # comments ok)
  *   npm run review -- --all                                      (re-review every video without a real card)
  *   npm run review -- --force <url>                              (re-review even if a card exists)
+ *   npm run review -- --upgrade-v1 [--max 50] [--dry]            (re-review cards made by reviewer v1, which filled
+ *                                                                 un-assessed concern tags in as "absent"; oldest
+ *                                                                 first; the v1 card stays if the re-review fails)
  *
  * Needs GEMINI_API_KEY. Writes to Supabase if configured, else data/db.json.
  */
@@ -15,11 +18,11 @@ loadEnv();
 import { readFileSync } from "node:fs";
 import { db, STORE_KIND } from "@/lib/db/resolve";
 import { ingestChannel, ingestVideo } from "@/lib/ingest";
-import { reviewVideo } from "@/lib/reviewer";
+import { REVIEWER_VERSION, reviewVideo } from "@/lib/reviewer";
 import { CONCERN_LABELS, type ContentCard, type Video } from "@/lib/types";
 
 function parseArgs(argv: string[]) {
-  const o = { urls: [] as string[], channels: [] as string[], max: 5, all: false, force: false, dry: false };
+  const o = { urls: [] as string[], channels: [] as string[], max: 5, all: false, force: false, dry: false, upgradeV1: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--channel") o.channels.push(argv[++i]);
@@ -33,6 +36,7 @@ function parseArgs(argv: string[]) {
       );
     } else if (a === "--all") o.all = true;
     else if (a === "--force") o.force = true;
+    else if (a === "--upgrade-v1") o.upgradeV1 = true;
     else if (a === "--dry") o.dry = true;
     else o.urls.push(a);
   }
@@ -74,6 +78,19 @@ async function main() {
       if (!card || card.reviewer.model === "sample") videos.push(v);
     }
   }
+  const upgrading = new Set<string>();
+  if (args.upgradeV1) {
+    const all = await db.listVideos();
+    const cards = await db.listCards(all.map((v) => v.id));
+    const old = cards
+      .filter((c) => c.reviewer.model !== "sample" && (c.reviewer.version ?? "1") < REVIEWER_VERSION)
+      .sort((a, b) => a.reviewer.reviewedAt.localeCompare(b.reviewer.reviewedAt));
+    console.log(`${old.length} card(s) from an older reviewer version; re-reviewing up to ${args.max}`);
+    for (const c of old.slice(0, args.max)) {
+      const v = all.find((x) => x.id === c.videoId);
+      if (v) { videos.push(v); upgrading.add(v.id); }
+    }
+  }
   if (!videos.length) {
     console.error("Nothing to review. Pass URLs, --channel, --file, or --all.");
     process.exit(1);
@@ -82,7 +99,7 @@ async function main() {
   let ok = 0;
   for (const v of videos) {
     const existing = await db.getCard(v.id);
-    if (existing && existing.reviewer.model !== "sample" && !args.force) {
+    if (existing && existing.reviewer.model !== "sample" && !args.force && !upgrading.has(v.id)) {
       console.log(`have card for ${v.id} (${v.title}); use --force to redo`);
       continue;
     }

@@ -23,7 +23,7 @@ import { DEFAULT_PROFILE } from "@/lib/db/store";
 import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
 import { checksToday, createRequest, finishCheck, getRequest, logCheck, logWatch, logWatchEnd, resolveRequest } from "@/lib/activity";
 import { authorize, childSettings, getKidScreen, getLibrary, playableFor, screen } from "@/lib/queries";
-import { BudgetExceededError, reviewVideo } from "@/lib/reviewer";
+import { BudgetExceededError, IncompleteReviewError, reviewVideo } from "@/lib/reviewer";
 import { pushToFamily, removeSubscription, saveSubscription } from "@/lib/push";
 import { runPipeline, seedChannelReviews } from "@/lib/pipeline";
 
@@ -805,8 +805,10 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
         await db.upsertCard(await reviewVideo(video.id, { durationSeconds: video.durationSeconds, budget: "kid" }));
         await settleCheck(familyId, video.id, deviceId, checkId, profileId);
       } catch (e) {
-        if (e instanceof BudgetExceededError) {
-          // Out of reviewer budget for today: ask the parent instead of failing the kid.
+        if (e instanceof BudgetExceededError || e instanceof IncompleteReviewError) {
+          // Out of reviewer budget, or the AI's review came back incomplete (nothing is stored for it):
+          // ask the parent instead of failing the kid. The video stays unreviewed, so it doesn't play.
+          if (e instanceof IncompleteReviewError) console.error(e.message);
           await createRequest(familyId, video.id, deviceId, "Couldn't be checked automatically right now", profileId);
           await finishCheck(checkId, "needs_parent");
           revalidatePath("/parent");

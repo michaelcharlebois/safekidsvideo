@@ -6,7 +6,11 @@ import { z } from "zod";
 import { CONCERN_TAGS, FORMATS, type ContentCard } from "@/lib/types";
 import { videoUrl } from "@/lib/youtube";
 
-export const REVIEWER_VERSION = "1";
+/**
+ * "2": every concern tag must be genuinely assessed by the model — omissions and duplicates are rejected
+ * (version "1" filled omitted tags in as "absent"; see normalizeReview).
+ */
+export const REVIEWER_VERSION = "2";
 
 /** $ per million tokens. Override with GEMINI_PRICE_IN_PER_M / GEMINI_PRICE_OUT_PER_M as pricing changes. */
 const PRICE_IN = Number(process.env.GEMINI_PRICE_IN_PER_M ?? 0.3);
@@ -27,7 +31,8 @@ export const CardSchema = z.object({
   synopsis: z.string().describe("2–3 plain sentences describing what happens in the video"),
   format: z.enum(FORMATS).describe("What kind of video this is; gameplay_commentary = someone playing a video game (Minecraft, Roblox, etc.) and talking over it"),
   ageFit: z.object({ min: z.number().int().min(0).max(14), max: z.number().int().min(0).max(14) }),
-  concerns: z.array(FindingSchema).describe("One entry for EVERY tag in the taxonomy, present or not"),
+  concerns: z.array(FindingSchema).min(CONCERN_TAGS.length).max(CONCERN_TAGS.length)
+    .describe("Exactly one entry for EVERY tag in the taxonomy, present or not — no tag missing, none repeated"),
   pace: z.enum(["calm", "moderate", "frenetic"]),
   educationalValue: z.number().min(0).max(5),
   rating: z.number().min(0).max(5).describe("Overall parent-friendliness for the stated age range"),
@@ -159,39 +164,83 @@ export async function reviewVideo(videoId: string, opts: ReviewOpts = {}): Promi
     },
   }));
 
-  const text = res.text;
-  if (!text) throw new Error(`Empty response from ${model} for ${videoId}`);
   const u = res.usageMetadata;
   const inputTokens = u?.promptTokenCount ?? 0, outputTokens = (u?.candidatesTokenCount ?? 0) + (u?.thoughtsTokenCount ?? 0);
   const usage = { inputTokens, outputTokens, costUsd: estimateCost(inputTokens, outputTokens) };
-  const parsed = CardSchema.parse(JSON.parse(text));
-
-  // Guarantee one finding per tag, in taxonomy order.
-  const byTag = new Map(parsed.concerns.map((c) => [c.tag, c]));
-  const concerns = CONCERN_TAGS.map((tag) => {
-    const c = byTag.get(tag);
-    return c
-      ? { ...c, intensity: c.intensity as 0 | 1 | 2 | 3, present: c.present && c.intensity > 0 }
-      : { tag, present: false, intensity: 0 as const };
-  });
-
-  return {
-    videoId,
-    synopsis: parsed.synopsis,
-    format: parsed.format,
-    ageFit: parsed.ageFit,
-    concerns,
-    pace: parsed.pace,
-    educationalValue: round1(parsed.educationalValue),
-    rating: round1(parsed.rating),
-    parentRecommendation: parsed.parentRecommendation,
-    confidence: Math.round(parsed.confidence * 100) / 100,
+  return normalizeReview(res.text, {
+    videoId, usage,
     reviewer: {
       model, version: REVIEWER_VERSION, reviewedAt: new Date().toISOString(),
       revisions: (opts.previous?.reviewer.revisions ?? 0) + (opts.feedback ? 1 : 0),
       notesVersion: notes?.version,
     },
-    usage,
+  });
+}
+
+/**
+ * The model's answer didn't amount to a complete assessment (unparseable, a concern tag missing or
+ * repeated, out-of-range values). Callers store NOTHING for it: the video stays unreviewed, so the gate
+ * keeps it off every child's screen until a review succeeds or a parent explicitly allows it.
+ */
+export class IncompleteReviewError extends Error {
+  constructor(public videoId: string, public problems: string[]) {
+    super(`Incomplete AI review for ${videoId}: ${problems.slice(0, 4).join("; ")}${problems.length > 4 ? "; …" : ""}`);
+    this.name = "IncompleteReviewError";
+  }
+}
+
+/**
+ * AI response text → ContentCard, or IncompleteReviewError. Pure, so it's tested directly.
+ * Never synthesizes findings: every tag in the taxonomy must appear exactly once, as the model's own
+ * assessment. (Findings are re-ordered into taxonomy order; `present` is cleared when intensity is 0.)
+ */
+export function normalizeReview(
+  text: string | undefined | null,
+  meta: { videoId: string; reviewer: ContentCard["reviewer"]; usage?: ContentCard["usage"] },
+): ContentCard {
+  const { videoId } = meta;
+  if (!text || !text.trim()) throw new IncompleteReviewError(videoId, ["empty response"]);
+  let raw: unknown;
+  try { raw = JSON.parse(text); } catch { throw new IncompleteReviewError(videoId, ["response is not JSON"]); }
+
+  // Count tags before schema validation so the error names exactly what's missing or repeated.
+  const problems: string[] = [];
+  const list = (raw as { concerns?: unknown })?.concerns;
+  if (Array.isArray(list)) {
+    const counts = new Map<string, number>();
+    for (const f of list) { const t = (f as { tag?: unknown })?.tag; if (typeof t === "string") counts.set(t, (counts.get(t) ?? 0) + 1); }
+    for (const t of CONCERN_TAGS) {
+      const n = counts.get(t) ?? 0;
+      if (n === 0) problems.push(`${t} not assessed`);
+      if (n > 1) problems.push(`${t} assessed ${n} times`);
+    }
+  }
+  const parsed = CardSchema.safeParse(raw);
+  if (!parsed.success) problems.push(...parsed.error.issues.map((i) => `${i.path.join(".") || "card"}: ${i.message}`));
+  else if (parsed.data.ageFit.min > parsed.data.ageFit.max) problems.push("ageFit.min > ageFit.max");
+  if (problems.length || !parsed.success) throw new IncompleteReviewError(videoId, [...new Set(problems)]);
+  const card = parsed.data;
+
+  const byTag = new Map(card.concerns.map((c) => [c.tag, c]));
+  const concerns = CONCERN_TAGS.map((tag) => {
+    const c = byTag.get(tag)!; // present exactly once — checked above
+    return { ...c, intensity: c.intensity as 0 | 1 | 2 | 3, present: c.present && c.intensity > 0 };
+  });
+  const parsedCard = card;
+
+  return {
+    videoId,
+    synopsis: parsedCard.synopsis,
+    format: parsedCard.format,
+    ageFit: parsedCard.ageFit,
+    concerns,
+    pace: parsedCard.pace,
+    educationalValue: round1(parsedCard.educationalValue),
+    rating: round1(parsedCard.rating),
+    parentRecommendation: parsedCard.parentRecommendation,
+    confidence: Math.round(parsedCard.confidence * 100) / 100,
+    reviewer: meta.reviewer,
+    usage: meta.usage,
   };
 }
 
