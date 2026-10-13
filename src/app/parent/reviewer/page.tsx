@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { feedbackStats, isDisagreement } from "@/lib/learn";
+import { DAILY_BUDGET_USD, spentLast24h } from "@/lib/reviewer";
 import { CONCERN_LABELS, CONCERN_TAGS, VERDICT_LABELS } from "@/lib/types";
 import { Button, Card, TopBar } from "@/components/ui";
 import { learnNow, saveReviewerNotes } from "@/app/actions";
@@ -22,6 +23,7 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
     feedbackStats(90), db.getReviewerNotes(), db.listReviewerNotes(5), db.listAllConfirmations(monthAgo), db.listCardsSince(monthAgo),
   ]);
   const spend = spendByDay(recentCards);
+  const last24 = await spentLast24h();
   const disputes = recent.filter(isDisagreement).slice(0, 12);
   const videos = new Map((await Promise.all(disputes.map((d) => db.getVideo(d.videoId)))).filter(Boolean).map((x) => [x!.id, x!]));
   const pct = (n: number, d: number) => (d ? `${Math.round((100 * n) / d)}%` : "—");
@@ -71,7 +73,11 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
               {spend.byDay.slice(-14).map(([d, c]) => <li key={d} className="rounded bg-surface px-1.5 py-0.5">{d.slice(5)} ${c.toFixed(2)}</li>)}
             </ul>
           )}
-          <p className="mt-2 text-xs text-muted">Priced from token counts at the rates in GEMINI_PRICE_*; nightly discovery stops at DISCOVERY_BUDGET_USD.</p>
+          <div className="mt-3">
+            <div className="flex items-center justify-between text-sm"><span className="font-bold">Last 24 hours</span><span className={last24 >= DAILY_BUDGET_USD ? "font-bold text-bad" : "text-muted"}>${last24.toFixed(2)} of ${DAILY_BUDGET_USD.toFixed(2)}</span></div>
+            <div className="mt-1 h-2 rounded-full bg-line"><div className={`h-2 rounded-full ${last24 >= DAILY_BUDGET_USD ? "bg-bad" : "bg-ink"}`} style={{ width: `${Math.min(100, Math.round((100 * last24) / Math.max(0.01, DAILY_BUDGET_USD)))}%` }} /></div>
+            <p className="mt-1 text-xs text-muted">All-in cap across every family and job. When it&apos;s reached, nightly jobs stop and a kid&apos;s &ldquo;Check it&rdquo; becomes a request to you instead.</p>
+          </div>
         </Card>
 
         <Card className="p-4">

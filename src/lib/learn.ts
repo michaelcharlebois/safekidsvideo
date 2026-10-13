@@ -3,7 +3,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { db } from "@/lib/db/resolve";
-import { reviewVideo, DEFAULT_MODEL } from "@/lib/reviewer";
+import { BudgetExceededError, reviewVideo, DEFAULT_MODEL } from "@/lib/reviewer";
 import { CONCERN_LABELS, CONCERN_TAGS, type ConcernTag, type Confirmation, type ContentCard, type FeedbackStats, type ReviewerNotes } from "@/lib/types";
 
 export const isDisagreement = (c: Confirmation) =>
@@ -132,6 +132,7 @@ export async function rereviewDisputed(opts: { max?: number; days?: number; log?
       await db.upsertCard(await reviewVideo(videoId, { durationSeconds: video.durationSeconds, notes, feedback, previous: card }));
       reviewed++;
     } catch (e) {
+      if (e instanceof BudgetExceededError) { log(e.message); break; }
       failed++;
       log(`failed: ${video.title} — ${(e as Error).message}`);
     }

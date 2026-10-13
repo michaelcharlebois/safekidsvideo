@@ -111,7 +111,7 @@ async function run() {
   const worker = async () => {
     for (let it = queue.shift(); it; it = queue.shift()) {
       try {
-        const card = await reviewVideo(it.videoId, { durationSeconds: it.durationSeconds, notes });
+        const card = await reviewVideo(it.videoId, { durationSeconds: it.durationSeconds, notes, budget: "none" });
         model = card.reviewer.model;
         const present = presentTags(card);
         const expected = CONCERN_TAGS.filter((t) => it.expected.tags[t]);

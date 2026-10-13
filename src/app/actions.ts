@@ -19,7 +19,7 @@ import { DEFAULT_PROFILE } from "@/lib/db/store";
 import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
 import { checksToday, createRequest, finishCheck, logCheck, logWatch, logWatchEnd, resolveRequest } from "@/lib/activity";
 import { aiPasses, canPlay, getKidScreen, getLibrary } from "@/lib/queries";
-import { reviewVideo } from "@/lib/reviewer";
+import { BudgetExceededError, reviewVideo } from "@/lib/reviewer";
 import { pushToFamily, removeSubscription, saveSubscription } from "@/lib/push";
 import { runPipeline, seedChannelReviews } from "@/lib/pipeline";
 
@@ -583,9 +583,16 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
     const checkId = await logCheck(familyId, video.id, deviceId, "pending", profileId);
     after(async () => {
       try {
-        await db.upsertCard(await reviewVideo(video.id, { durationSeconds: video.durationSeconds }));
+        await db.upsertCard(await reviewVideo(video.id, { durationSeconds: video.durationSeconds, budget: "kid" }));
         await settleCheck(familyId, video.id, deviceId, checkId, profileId);
       } catch (e) {
+        if (e instanceof BudgetExceededError) {
+          // Out of reviewer budget for today: ask the parent instead of failing the kid.
+          await createRequest(familyId, video.id, deviceId, "Sift's daily review budget is used up", profileId);
+          await finishCheck(checkId, "needs_parent");
+          revalidatePath("/parent");
+          return;
+        }
         console.error("background review failed", video.id, (e as Error).message);
         await finishCheck(checkId, "failed");
       }

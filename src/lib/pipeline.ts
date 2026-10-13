@@ -1,6 +1,6 @@
 import { db, STORE_KIND, DEFAULT_FAMILY_ID } from "@/lib/db/resolve";
 import { fetchChannelUploads } from "@/lib/youtube";
-import { reviewVideo } from "@/lib/reviewer";
+import { BudgetExceededError, reviewVideo } from "@/lib/reviewer";
 import { ingestChannel } from "@/lib/ingest";
 import discovery from "../../data/discovery.json";
 import type { Video } from "@/lib/types";
@@ -74,6 +74,7 @@ export async function runPipeline(opts: { familyId?: string; maxReviews?: number
       await db.upsertCard(await reviewVideo(v.id, { durationSeconds: v.durationSeconds }));
       result.reviewed++;
     } catch (e) {
+      if (e instanceof BudgetExceededError) { log(e.message); break; }
       result.failed++;
       log(`failed: ${v.title} — ${(e as Error).message}`);
     }
@@ -105,6 +106,7 @@ export async function seedChannelReviews(videos: Video[], opts: { max?: number; 
         await db.upsertCard(await reviewVideo(v.id, { durationSeconds: v.durationSeconds }));
         reviewed++;
       } catch (e) {
+        if (e instanceof BudgetExceededError) { log(e.message); queue.length = 0; return; }
         failed++;
         log(`failed: ${v.title} — ${(e as Error).message}`);
       }
@@ -170,6 +172,7 @@ export async function runDiscovery(opts: { max?: number; budgetMs?: number; budg
         result.reviewed++;
         result.costUsd = Math.round((result.costUsd + (card.usage?.costUsd ?? 0)) * 1e4) / 1e4;
       } catch (e) {
+        if (e instanceof BudgetExceededError) { log(e.message); queue.length = 0; return; }
         result.failed++;
         log(`failed: ${v.title} — ${(e as Error).message}`);
       }

@@ -92,7 +92,7 @@ async function main() {
     }
     process.stdout.write(`reviewing ${v.id} ${v.title} … `);
     try {
-      const card = await reviewVideo(v.id, { durationSeconds: v.durationSeconds });
+      const card = await reviewVideo(v.id, { durationSeconds: v.durationSeconds, budget: args.force ? "none" : "normal" });
       await db.upsertCard(card);
       ok++;
       console.log("done");

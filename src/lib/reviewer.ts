@@ -82,9 +82,34 @@ export function fpsForDuration(seconds?: number): number | undefined {
   return 0.25;
 }
 
+/** All-in reviewer spend cap per rolling 24 hours, across every family and every path. */
+export const DAILY_BUDGET_USD = Number(process.env.DAILY_REVIEW_BUDGET_USD ?? 10);
+/** Kid-triggered checks may run a little past the cap, so a kid never hits a wall a parent didn't set. */
+const KID_OVERFLOW = 1.25;
+
+export class BudgetExceededError extends Error {
+  constructor(public spent: number, public budget: number) {
+    super(`Daily review budget reached ($${spent.toFixed(2)} of $${budget.toFixed(2)} in the last 24h)`);
+    this.name = "BudgetExceededError";
+  }
+}
+
+/** Estimated spend over the last 24 hours, from the cost meter on each card. */
+export async function spentLast24h(): Promise<number> {
+  try {
+    const { db } = await import("@/lib/db/resolve");
+    const cards = await db.listCardsSince(new Date(Date.now() - 24 * 3600 * 1000).toISOString());
+    return Math.round(cards.reduce((a, c) => a + (c.usage?.costUsd ?? 0), 0) * 1e4) / 1e4;
+  } catch {
+    return 0;
+  }
+}
+
 export type ReviewOpts = {
   model?: string;
   durationSeconds?: number;
+  /** "kid" checks get a small overflow allowance; "none" skips the budget (evals, CLI --force). */
+  budget?: "normal" | "kid" | "none";
   /** Calibration guidelines learned from parent feedback (appended to the system prompt). */
   notes?: { version: number; notes: string } | null;
   /** For a re-review: what parents disputed about the previous card. */
@@ -97,6 +122,11 @@ export async function reviewVideo(videoId: string, opts: ReviewOpts = {}): Promi
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
   const model = opts.model ?? DEFAULT_MODEL;
+  if ((opts.budget ?? "normal") !== "none" && DAILY_BUDGET_USD > 0) {
+    const spent = await spentLast24h();
+    const cap = DAILY_BUDGET_USD * (opts.budget === "kid" ? KID_OVERFLOW : 1);
+    if (spent >= cap) throw new BudgetExceededError(spent, DAILY_BUDGET_USD);
+  }
   const ai = new GoogleGenAI({ apiKey });
   const notes = opts.notes === undefined ? await loadNotes() : opts.notes;
   const system = notes?.notes.trim()
