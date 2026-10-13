@@ -111,7 +111,7 @@ export async function sendCheckinNudges(log: (s: string) => void = () => {}): Pr
     const names = pending.map((p) => p.name);
     const n = await pushToFamily(f.id, {
       title: `How ${names.length === 1 ? `was ${names[0]}` : `were ${names.join(" and ")}`} today?`,
-      body: "One tap. Over a few weeks Sift connects it to what they watched.",
+      body: "One tap. Over a few weeks Brightframe connects it to what they watched.",
       url: "/parent/checkin",
       tag: `checkin-${day}`,
     });

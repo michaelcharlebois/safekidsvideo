@@ -12,7 +12,7 @@ export function AddForm() {
         name="url"
         required
         placeholder="https://www.youtube.com/watch?v=…  or  @SuperSimpleSongs"
-        className="flex-1 rounded-full border border-line bg-bg px-4 py-2 text-sm outline-none focus:border-accent"
+        className="flex-1 rounded-full border border-sand bg-surface px-4 py-2.5 text-sm outline-none focus:border-forest"
       />
       <Button type="submit" disabled={pending}>{pending ? "Adding…" : "Approve"}</Button>
       {state && (

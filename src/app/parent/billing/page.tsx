@@ -32,7 +32,7 @@ export default async function BillingPage(props: PageProps<"/parent/billing">) {
           {billingEnabled && (
             <>
               <p className="text-sm text-muted">
-                Sift is <b>{PRICE_DISPLAY}</b> after a {TRIAL_DAYS}-day free trial. One subscription covers every kid and every screen in the house. Cancel any time.
+                Brightframe is <b>{PRICE_DISPLAY}</b> after a {TRIAL_DAYS}-day free trial. One subscription covers every kid and every screen in the house. Cancel any time.
                 {status.state === "trial" && family.trialEndsAt ? <> Your trial runs until <b>{new Date(family.trialEndsAt).toLocaleDateString()}</b>; subscribing now doesn&apos;t charge you until then.</> : null}
                 {status.state === "expired" ? <> The kid screen keeps playing what you&apos;ve already approved, but searching, checking and approving new videos are paused until you subscribe.</> : null}
               </p>

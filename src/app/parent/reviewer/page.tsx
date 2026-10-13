@@ -35,7 +35,7 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
       <main className="mx-auto w-full max-w-3xl px-4 py-6 space-y-4">
         {sp.learning === "1" && <Card className="p-3 bg-grass text-sm font-bold">Learning in the background — new notes and any re-reviews land within a few minutes. Refresh to see them.</Card>}
         {sp.saved === "1" && <Card className="p-3 bg-grass text-sm font-bold">Notes saved. Every review from now on uses them.</Card>}
-        {sp.error === "admin" && <Card className="p-3 border-bad/40 bg-bad/5 text-sm font-bold">Only a Sift admin can change the shared reviewer notes. Your feedback on individual cards still counts.</Card>}
+        {sp.error === "admin" && <Card className="p-3 border-bad/40 bg-bad/5 text-sm font-bold">Only a Brightframe admin can change the shared reviewer notes. Your feedback on individual cards still counts.</Card>}
 
         <Card className="p-4">
           <h2 className="font-extrabold">How parents rate the cards <span className="text-muted font-bold">· last 90 days</span></h2>

@@ -1,23 +1,66 @@
 @import "tailwindcss";
 
+/*
+ * Brightframe design tokens — Forest & Apricot. Single source for colour, type, radius and elevation.
+ * Parent/touch surfaces use these. The kid/TV screen keeps its own remote-first theme (.kid-mode, below)
+ * until its own design phase. Every text/background pairing here meets WCAG AA (checked ≥ 4.5:1).
+ */
 :root {
-  /* Daytime sibling of the kid screen's night theme: navy ink + sunshine on milk. */
-  --bg: #f5f3ec;
-  --surface: #ffffff;
-  --ink: #141a3a;
-  --muted: #5f6478;
-  --line: #e3e1d8;
-  --accent: #2b3a8f;
-  --accent-ink: #ffffff;
-  --ok: #2f9e6b;
-  --warn: #c98a12;
-  --bad: #d94848;
-  --sky: #dbe7ff;
-  --sun: #ffcf3f;
-  --grass: #d4f0cf;
+  /* brand */
+  --forest: #0f3d2e;      /* brand, primary actions, headings      11.6:1 on ivory */
+  --forest-700: #175440;  /* hover on forest                                       */
+  --forest-900: #0a2c21;  /* pressed / deepest surfaces                            */
+  --apricot: #ff9f6e;     /* warmth + "a child asked" moments; never as text on light */
+  --apricot-soft: #ffe6d8;
+  --apricot-ink: #a84a1a; /* apricot-family text on light          5.5:1 on ivory  */
+  --sage: #b7c9b1;
+  --sage-soft: #e9f0e5;
+  --ivory: #fff9f1;       /* page                                                  */
+  --sand: #eadfcf;        /* borders, warm neutrals                                */
+  --sand-soft: #f4ede2;
+
+  /* neutrals */
+  --surface: #fffefb;     /* cards on ivory                                        */
+  --ink: #1e2b26;         /* body text                             14:1 on ivory   */
+  --muted: #56655e;       /* secondary text                        5.9:1 on ivory  */
+
+  /* status — each distinct in hue AND carried by an icon/label, never colour alone */
+  --ok: #1b7a4b;  --ok-soft: #e3f2e6;    /* plays for this child                    */
+  --warn: #9a5b00; --warn-soft: #fff1d6; /* held back — needs a parent's decision    */
+  --bad: #b3261e; --bad-soft: #fcebe8;   /* blocked / problem                        */
+  --pending: #4f5d72; --pending-soft: #eceff4; /* AI review not done yet (neutral)   */
+
+  /* legacy names kept so not-yet-redesigned pages adopt the palette */
+  --bg: var(--ivory);
+  --line: var(--sand);
+  --accent: var(--forest);
+  --accent-ink: var(--ivory);
+  --sky: var(--sage-soft);
+  --sun: var(--apricot);
+  --grass: var(--ok-soft);
+
+  --shadow-raised: 0 1px 2px rgb(15 61 46 / 0.06), 0 12px 32px -16px rgb(15 61 46 / 0.22);
+  --focus-ring: 0 0 0 2px var(--ivory), 0 0 0 4px var(--forest);
 }
 
 @theme inline {
+  --color-forest: var(--forest);
+  --color-forest-700: var(--forest-700);
+  --color-forest-900: var(--forest-900);
+  --color-apricot: var(--apricot);
+  --color-apricot-soft: var(--apricot-soft);
+  --color-apricot-ink: var(--apricot-ink);
+  --color-sage: var(--sage);
+  --color-sage-soft: var(--sage-soft);
+  --color-ivory: var(--ivory);
+  --color-sand: var(--sand);
+  --color-sand-soft: var(--sand-soft);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad-soft: var(--bad-soft);
+  --color-pending: var(--pending);
+  --color-pending-soft: var(--pending-soft);
+
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-ink: var(--ink);
@@ -31,22 +74,46 @@
   --color-sky: var(--sky);
   --color-sun: var(--sun);
   --color-grass: var(--grass);
-  --font-sans: "Nunito", ui-rounded, "SF Pro Rounded", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Fredoka", "Nunito", ui-rounded, system-ui, sans-serif;
+
+  --font-sans: "Plus Jakarta Sans Variable", "Plus Jakarta Sans", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-display: "Plus Jakarta Sans Variable", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-kid: "Fredoka", "Nunito", ui-rounded, system-ui, sans-serif; /* kid/TV screen until its redesign */
+
+  /* type scale (major third, 16px base) */
+  --text-caption: 0.8125rem;  --text-caption--line-height: 1.15rem;
+  --text-title: 1.5625rem;    --text-title--line-height: 1.9rem;
+  --text-display: 2.4375rem;  --text-display--line-height: 2.75rem;
+
+  /* radius: controls are pills; cards 18; panels 24 */
+  --radius-card: 1.125rem;
+  --radius-panel: 1.5rem;
   --radius-xl: 1.25rem;
+
+  --shadow-raised: var(--shadow-raised);
 }
 
-/* Headings and the wordmark carry the personality; body stays quiet. */
-h1, h2, .font-display { font-family: var(--font-display); letter-spacing: -0.01em; }
-h1 { font-weight: 600; }
-h2 { font-weight: 600; }
-.kid-mode, .kid-mode h1, .kid-mode h2 { font-family: var(--font-display); }
+/* Headings: tight, heavy, forest. Body stays quiet. */
+h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
+h1 { font-weight: 800; color: var(--forest); }
+h2, h3 { font-weight: 700; color: var(--forest); }
+.kid-mode, .kid-mode h1, .kid-mode h2 { font-family: var(--font-kid); color: inherit; letter-spacing: -0.01em; }
 
 html,
 body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
+}
+
+/* Keyboard focus on parent surfaces: a forest ring with an ivory gap, visible on every ground. */
+/* (The kid/TV screen has its own, bigger D-pad focus treatment.) */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible:not(:where(.kid-mode *)) {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
 
 /* Kid mode: no text selection, no long-press menus, big targets */

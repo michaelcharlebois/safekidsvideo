@@ -28,7 +28,7 @@ export function SearchAdd({ approvedChannels, approvedVideos }: { approvedChanne
           type="search"
           defaultValue={state?.query}
           placeholder="Search YouTube — “Super Simple Songs”, “Numberblocks”, “how volcanoes work”…"
-          className="flex-1 rounded-full border border-line bg-bg px-4 py-2 text-sm outline-none focus:border-accent"
+          className="flex-1 rounded-full border border-sand bg-surface px-4 py-2.5 text-sm outline-none focus:border-forest"
         />
         <Button type="submit" disabled={searching}>{searching ? "Searching…" : "Search"}</Button>
       </form>
@@ -36,7 +36,7 @@ export function SearchAdd({ approvedChannels, approvedVideos }: { approvedChanne
 
       {r && r.channels.length > 0 && (
         <section>
-          <h3 className="text-xs font-extrabold uppercase tracking-wide text-muted">Channels</h3>
+          <h3 className="text-sm font-bold text-forest">Channels</h3>
           <ul className="mt-2 divide-y divide-line">
             {r.channels.map((c) => <ChannelRow key={c.id} c={c} approved={channelSet.has(c.id)} />)}
           </ul>
@@ -44,7 +44,7 @@ export function SearchAdd({ approvedChannels, approvedVideos }: { approvedChanne
       )}
       {r && r.videos.length > 0 && (
         <section>
-          <h3 className="text-xs font-extrabold uppercase tracking-wide text-muted">Videos</h3>
+          <h3 className="text-sm font-bold text-forest">Videos</h3>
           <ul className="mt-2 divide-y divide-line">
             {r.videos.map((v) => <VideoRow key={v.id} v={v} approved={videoSet.has(v.id) || channelSet.has(v.channelId)} />)}
           </ul>

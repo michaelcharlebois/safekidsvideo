@@ -802,7 +802,7 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
   const profileId = v.profileId;
   const settings = await childSettings(familyId, profileId);
   if (!profileId || !settings) return { status: "error", message: "Pick who's watching first" };
-  if (!(await familyStatus(familyId)).status.ok) return { status: "error", message: "Ask a grown-up to renew Sift" };
+  if (!(await familyStatus(familyId)).status.ok) return { status: "error", message: "Ask a grown-up to renew Brightframe" };
   if (settings.mode === "locked") return { status: "error", message: "Search is off" };
   const deviceId = v.role === "device" ? v.deviceId : undefined;
   if ((await checksToday(familyId, profileId)) >= settings.dailyCheckLimit) return { status: "limit" };
@@ -878,7 +878,7 @@ export async function unsubscribePush(endpoint: string) {
 
 export async function sendTestPush() {
   const fid = await requireParent();
-  const n = await pushToFamily(fid, { title: "Sift is set up 🎉", body: "You'll get a ping here when your kid asks for a video.", url: "/parent", tag: "test" });
+  const n = await pushToFamily(fid, { title: "Brightframe is set up 🎉", body: "You'll get a ping here when your kid asks for a video.", url: "/parent", tag: "test" });
   redirect(`/parent?push=${n}`);
 }
 

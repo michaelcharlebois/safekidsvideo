@@ -14,7 +14,7 @@ export default async function DemoPage(props: PageProps<"/demo">) {
     <main className="mx-auto w-full max-w-xl flex-1 px-5 py-10 space-y-6">
       <Wordmark size={32} />
       <div>
-        <h1 className="text-3xl">Try Sift</h1>
+        <h1 className="text-3xl">Try Brightframe</h1>
         <p className="mt-2 text-muted">A demo family with two kids — Maya, 6, and Leo, 4 — and a few channels already approved. Nothing you do here touches anyone else&apos;s account.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">

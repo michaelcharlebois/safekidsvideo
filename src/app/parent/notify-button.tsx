@@ -66,9 +66,9 @@ export function NotifyButton({ vapidPublicKey, registered }: { vapidPublicKey?: 
   }
 
   if (state === "checking") return null;
-  if (state === "needs_install") return <p className="text-xs text-muted">To get notifications on iPhone, add Sift to your home screen (Share → Add to Home Screen) and open it from there.</p>;
+  if (state === "needs_install") return <p className="text-xs text-muted">To get notifications on iPhone, add Brightframe to your home screen (Share → Add to Home Screen) and open it from there.</p>;
   if (state === "unsupported") return <p className="text-xs text-muted">Notifications aren&apos;t available in this browser.</p>;
-  if (state === "denied") return <p className="text-xs text-muted">Notifications are blocked for Sift in your phone&apos;s settings.</p>;
+  if (state === "denied") return <p className="text-xs text-muted">Notifications are blocked for Brightframe in your phone&apos;s settings.</p>;
 
   return (
     <div className="space-y-1">

@@ -31,7 +31,7 @@ export default async function StartPage(props: PageProps<"/start">) {
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-8 space-y-5">
       <header>
-        <p className="text-accent font-extrabold text-sm tracking-widest uppercase">Set up Sift</p>
+        <p className="text-accent font-extrabold text-sm tracking-widest uppercase">Set up Brightframe</p>
         <ol className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs font-bold">
           {STEPS.map((s, i) => (
             <li key={s} className={i + 1 === step ? "text-ink" : i + 1 < step ? "text-ok" : "text-muted"}>{i + 1 < step ? "✓" : `${i + 1}.`} {s}</li>
@@ -134,7 +134,7 @@ export default async function StartPage(props: PageProps<"/start">) {
         <Card className="p-5 space-y-4">
           <h1 className="text-2xl font-extrabold">You&apos;re set. Now connect a screen.</h1>
           <ol className="list-decimal pl-5 text-sm space-y-1">
-            <li>On the TV, tablet or phone your kid will use, open <b>siftkids.com/pair</b> (or the Sift app).</li>
+            <li>On the TV, tablet or phone your kid will use, open <b>siftkids.com/pair</b> (or the Brightframe app).</li>
             <li>Type this code. It works once and expires in 10 minutes.</li>
             <li>Pick who&apos;s watching, and hand it over.</li>
           </ol>
