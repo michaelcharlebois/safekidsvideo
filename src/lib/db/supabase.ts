@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Channel, Confirmation, ContentCard, Family, Profile, ReviewerNotes, Video } from "@/lib/types";
+import type { Channel, Confirmation, ContentCard, Profile, ReviewerNotes, Video } from "@/lib/types";
 import { DEFAULT_PROFILE, mergeSettings, type Store } from "./store";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
