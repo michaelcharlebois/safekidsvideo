@@ -1,17 +1,21 @@
 import Link from "next/link";
 import Image from "next/image";
 import { redirect } from "next/navigation";
+import type { ReactNode } from "react";
 import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
-import { blockedReasons, canPlay, getLibrary } from "@/lib/queries";
-import { hasRealReview, needsDecision } from "@/lib/gate";
+import { getLibrary } from "@/lib/queries";
+import { needsDecision, reviewEligibility } from "@/lib/gate";
+import { playStatus, type PlayStatus } from "@/lib/status";
 import { MODE_LABELS, type VideoWithCard } from "@/lib/types";
-import { Button, Card } from "@/components/ui";
+import { Button, buttonClass, Card, EmptyState, Meter, Notice, SectionHeader, StatusBadge, Tag } from "@/components/ui";
+import { IconAlert, IconArrowDown, IconArrowUp, IconChannels, IconChevron, IconClock, IconHand, IconPlayCircle, IconPlus, IconTv } from "@/components/icons";
 import { approvePack, grantMoreTime, moveChannel, resolveWatchRequest, reviewNextBatch, toggleWhitelist } from "@/app/actions";
-import { watchEventsSince } from "@/lib/checkin";
+import { localDay, watchEventsSince } from "@/lib/checkin";
 import { forKid, orderShelves, tasteFrom } from "@/lib/arrange";
 import { listPendingRequests, recentWatchIds } from "@/lib/activity";
+import { minutesUsedToday } from "@/lib/screentime";
 import { AddForm } from "./add-form";
 import { SearchAdd } from "./search-add";
 import { PACKS } from "@/lib/packs";
@@ -21,12 +25,21 @@ import { ChannelAvatar } from "@/app/watch/kid-ui";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // background batch reviews run within this budget
 
+/** Library filters (?view=). Names kept for existing links; labels are the new status words. */
 type View = "visible" | "hidden" | "unreviewed";
+const VIEW_OF: Record<PlayStatus, View> = { plays: "visible", allowed: "visible", reviewing: "unreviewed", held: "hidden", hidden: "hidden", blocked: "hidden", outside: "hidden" };
+const VIEW_LABEL: Record<View, string> = { visible: "Ready", hidden: "Held back", unreviewed: "Being reviewed" };
 const thumb = (v: { id: string; thumbnailUrl?: string }) => v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`;
+const fmtTime = (hhmm?: string) => {
+  if (!hhmm) return "";
+  const [h, m] = hhmm.split(":").map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
+};
 
 /**
- * Home. Phone-first. In order: anything that needs you (only if non-zero), what the kid actually sees
- * right now (a miniature of their TV), the library by channel, and a way to add more.
+ * Home: one child at a time. Top to bottom: who and how they're set up; four counts that each open the
+ * matching list; the decision waiting on you (if any); what's on their screen right now; their channels.
+ * Every number is computed from the gate (authorize) for THIS child — nothing here is sample data.
  */
 export default async function ParentPage(props: PageProps<"/parent">) {
   const sp = await props.searchParams;
@@ -39,285 +52,398 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const profiles = await db.listProfiles(fid);
   const kidId = (typeof sp.kid === "string" && profiles.some((p) => p.id === sp.kid) ? sp.kid : undefined) ?? viewer.profileId ?? profiles[0]?.id;
   const kid = profiles.find((p) => p.id === kidId);
-  const [lib, settings, channels, requests, wl, recent, events] = await Promise.all([
+  const [lib, settings, channels, allRequests, wl, recent, events, usedToday] = await Promise.all([
     getLibrary(fid, kidId), db.getSettings(fid, kidId), db.listChannels(), listPendingRequests(fid), db.listWhitelist(fid), recentWatchIds(fid, 6, kidId),
     watchEventsSince(fid, new Date(Date.now() - 30 * 86_400_000).toISOString()), // eslint-disable-line react-hooks/purity -- server component
+    kidId ? minutesUsedToday(fid, kidId, family.timezone) : Promise.resolve(0),
   ]);
-  const approvedChannels = new Set(wl.filter((w) => w.kind === "channel").map((w) => w.targetId));
+  const name = kid?.name ?? "your child";
+  const approvedChannels = new Set(wl.filter((w) => w.kind === "channel" && w.profileId == null).map((w) => w.targetId));
   const moreAsk = typeof sp.more === "string" ? profiles.find((p) => p.id === sp.more) : undefined;
   const batchStarted = typeof sp.batch === "string" ? Number(sp.batch) : 0;
   const view: View | undefined = (["visible", "hidden", "unreviewed"] as View[]).includes(sp.view as View) ? (sp.view as View) : undefined;
   const q = typeof sp.q === "string" ? sp.q.trim().toLowerCase() : "";
   const byId = new Map(lib.map((v) => [v.id, v]));
 
-  const mine = lib.filter((v) => v.whitelisted);
-  const reviewed = (v: VideoWithCard) => hasRealReview(v.card);
-  const status = (v: VideoWithCard): View => (canPlay(v, settings) ? "visible" : !reviewed(v) ? "unreviewed" : "hidden");
-  const visible = mine.filter((v) => status(v) === "visible");
+  // Everything below derives from the gate's decision for this child.
+  const mine = lib.filter((v) => v.whitelisted); // in their library, or allowed / cleared for them
+  const stat = new Map(mine.map((v) => [v.id, playStatus(v, settings)]));
+  const viewOf = (v: VideoWithCard) => VIEW_OF[stat.get(v.id)?.status ?? playStatus(v, settings).status];
+  const ready = mine.filter((v) => viewOf(v) === "visible");
+  const reviewing = mine.filter((v) => viewOf(v) === "unreviewed");
   const undecided = mine.filter((v) => needsDecision(v, settings));
-  const backlog = mine.filter((v) => status(v) === "unreviewed" && (v.durationSeconds ?? 0) <= 20 * 60).length;
-  const needsYou = requests.length + undecided.length + (moreAsk ? 1 : 0);
+  // This child's asks, plus old asks that never recorded a child (Review lets you pick one).
+  const requests = allRequests.filter((r) => (r.profileId === kidId || !r.profileId) && byId.has(r.videoId));
+  const needsYou = requests.length + undecided.length;
+  const backlog = reviewing.filter((v) => (v.durationSeconds ?? 0) <= 20 * 60).length;
+  const limit = settings.dailyMinutes ? settings.dailyMinutes + (settings.bonusDay === localDay(family.timezone) ? settings.bonusMinutes ?? 0 : 0) : undefined;
 
-  // The TV, in miniature: the same shelves the kid sees.
-  const keepWatching = recent.map((id) => byId.get(id)).filter((v): v is VideoWithCard => !!v && status(v) === "visible");
+  // The kid screen, in miniature: the same shelves they see.
+  const keepWatching = recent.map((id) => byId.get(id)).filter((v): v is VideoWithCard => !!v && viewOf(v) === "visible");
   const byChannel = new Map<string, VideoWithCard[]>();
-  for (const v of visible) byChannel.set(v.channelId, [...(byChannel.get(v.channelId) ?? []), v]);
+  for (const v of ready) byChannel.set(v.channelId, [...(byChannel.get(v.channelId) ?? []), v]);
   const taste = tasteFrom(events.filter((e) => !kidId || e.profileId === kidId || !e.profileId), byId);
-  const forYou = visible.length >= 6 ? forKid(visible, settings, taste, 8) : [];
+  const forYou = ready.length >= 6 ? forKid(ready, settings, taste, 8) : [];
   const tvShelves = [
-    ...(forYou.length ? [{ id: "for-you", title: `For ${kid?.name ?? "you"}`, videos: forYou }] : []),
+    ...(forYou.length ? [{ id: "for-you", title: `For ${name}`, videos: forYou }] : []),
     ...(keepWatching.length ? [{ id: "recent", title: "Keep watching", videos: keepWatching }] : []),
     ...orderShelves([...byChannel.entries()].map(([id, vids]) => ({ id, title: vids[0].channel?.title ?? id, videos: vids.sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "")) })), settings.channelOrder),
-  ].slice(0, 3);
+  ].slice(0, 2);
 
-  // Library by channel.
+  // Channels (family content sources) with what each means for this child.
   const groups = [...approvedChannels].map((id) => {
     const vids = mine.filter((v) => v.channelId === id);
     const channel = channels.find((c) => c.id === id);
-    return { id, title: channel?.title ?? vids[0]?.channel?.title ?? id, channel, vids, visible: vids.filter((v) => status(v) === "visible").length, hidden: vids.filter((v) => status(v) === "hidden").length, unreviewed: vids.filter((v) => status(v) === "unreviewed").length };
+    const count = (w: View) => vids.filter((v) => viewOf(v) === w).length;
+    return { id, title: channel?.title ?? vids[0]?.channel?.title ?? id, channel, vids, ready: count("visible"), held: count("hidden"), reviewing: count("unreviewed") };
   });
-  const orderedGroups = orderShelves(groups.map((g) => ({ ...g, videos: g.vids.filter((v) => status(v) === "visible") })), settings.channelOrder);
+  const orderedGroups = orderShelves(groups.map((g) => ({ ...g, videos: g.vids.filter((v) => viewOf(v) === "visible") })), settings.channelOrder);
   const filtered = (view || q)
-    ? groups.map((g) => ({ ...g, shown: g.vids.filter((v) => (!view || status(v) === view) && (!q || v.title.toLowerCase().includes(q))).sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "")) })).filter((g) => g.shown.length)
+    ? groups.map((g) => ({ ...g, shown: g.vids.filter((v) => (!view || viewOf(v) === view) && (!q || v.title.toLowerCase().includes(q))).sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "")) })).filter((g) => g.shown.length)
     : null;
+  const libHref = (v?: View) => `/parent?kid=${kidId ?? ""}${v ? `&view=${v}` : ""}#channels`;
+
+  if (!kid) {
+    return (
+      <main className="mx-auto w-full max-w-3xl px-4 py-10">
+        <Card><EmptyState icon={<IconPlus />} title="Add your first child" action={<Link href="/parent/kids" className={buttonClass("primary")}>Add a child</Link>}>Each child gets their own library rules, viewing mode and screen-time limits.</EmptyState></Card>
+      </main>
+    );
+  }
+
+  const setup = [
+    MODE_LABELS[settings.mode].title === "Open, ask first" ? "Ask-first mode" : `${MODE_LABELS[settings.mode].title} mode`,
+    settings.dailyMinutes ? `up to ${settings.dailyMinutes} minutes a day` : "no daily limit",
+    settings.bedtime ? `done by ${fmtTime(settings.bedtime)}` : null,
+  ].filter(Boolean).join(", ");
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-4 lg:grid lg:grid-cols-[1fr_22rem] lg:gap-8">
-      <section className="space-y-6">
-        {/* ---- who ---- */}
-        <div className="flex items-center justify-between gap-3">
+    <main className="mx-auto w-full max-w-[76rem] px-4 pb-10 pt-5 sm:px-6 lg:px-10 lg:pt-10">
+      {/* ---- who ---- */}
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-surface text-3xl ring-1 ring-sand sm:h-16 sm:w-16 sm:text-4xl" aria-hidden>{kid.avatar}</span>
           <div>
-            <h1 className="text-3xl">{kid ? `${kid.name}'s Sift` : "Sift"}</h1>
-            {kid && <p className="text-sm text-muted">{MODE_LABELS[settings.mode].title}{settings.dailyMinutes ? `, ${settings.dailyMinutes} min a day` : ""}{settings.bedtime ? `, done at ${settings.bedtime}` : ""} — <Link href={`/parent/settings?kid=${kidId}`} className="underline">change</Link></p>}
+            <h1 className="text-title sm:text-display">{kid.name}</h1>
+            <p className="text-sm text-muted sm:text-base">
+              {setup.charAt(0).toUpperCase() + setup.slice(1)}. <Link href={`/parent/settings?kid=${kidId}`} className="font-bold text-forest underline decoration-sand underline-offset-4 hover:decoration-forest">Change</Link>
+            </p>
           </div>
-          {profiles.length > 1 && (
-            <div className="flex -space-x-2">
-              {profiles.map((p) => (
-                <Link key={p.id} href={`/parent?kid=${p.id}`} title={p.name} className={`flex h-10 w-10 items-center justify-center rounded-full border-2 bg-surface text-xl ${p.id === kidId ? "border-ink z-10" : "border-bg opacity-60 hover:opacity-100"}`}>{p.avatar}</Link>
-              ))}
-            </div>
-          )}
         </div>
-
-        {/* ---- needs you (only when it does) ---- */}
-        {!billing.ok && (
-          <Card className="p-4 border-bad/40">
-            <p className="font-extrabold">{billing.state === "past_due" ? "There's a payment problem." : "Your free trial has ended."}</p>
-            <p className="mt-1 text-sm text-muted">The TV keeps playing what&apos;s already approved. New approvals and searches are paused.</p>
-            <Link href="/parent/billing" className="mt-3 inline-block"><Button>Subscribe</Button></Link>
-          </Card>
-        )}
-        {billing.ok && billing.state === "trial" && (billing.daysLeft ?? 99) <= 7 && (
-          <p className="text-sm text-muted">{billing.daysLeft} day{billing.daysLeft === 1 ? "" : "s"} left in your trial. <Link href="/parent/billing" className="font-bold underline">Keep Sift going</Link></p>
-        )}
-
-        {needsYou > 0 ? (
-          <section className="space-y-3">
-            <h2 className="flex items-center gap-2 text-lg"><span className="inline-block h-2.5 w-2.5 rounded-full bg-sun" />Needs you</h2>
-            {moreAsk && (
-              <Card className="p-4">
-                <p className="font-extrabold">{moreAsk.avatar} {moreAsk.name} is asking for more time today</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {[15, 30, 60].map((m) => (
-                    <form key={m} action={grantMoreTime}><input type="hidden" name="profileId" value={moreAsk.id} /><input type="hidden" name="minutes" value={m} /><Button type="submit" className="px-4">+{m} min</Button></form>
-                  ))}
-                  <Link href="/parent" className="self-center text-sm font-bold text-muted hover:text-ink">Not today</Link>
-                </div>
-              </Card>
-            )}
-            {requests.map((r) => {
-              const v = byId.get(r.videoId);
-              if (!v) return null;
-              const why = blockedReasons(v, settings);
-              const who = profiles.find((p) => p.id === r.profileId);
-              return (
-                <Card key={r.id} className="overflow-hidden">
-                  <div className="flex gap-3 p-3">
-                    <Link href={`/parent/video/${v.id}`} className="shrink-0"><Image src={thumb(v)} alt="" width={160} height={90} unoptimized className="w-32 rounded-lg aspect-video object-cover bg-line" /></Link>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-muted">{who?.avatar ?? "🙋"} {who?.name ?? "Your kid"} asked for</p>
-                      <Link href={`/parent/video/${v.id}`} className="font-extrabold leading-snug hover:underline line-clamp-2">{v.title}</Link>
-                      <p className="text-xs text-muted">{v.channel?.title}{v.card ? ` — rated ${v.card.rating}/5 for ages ${v.card.ageFit.min}–${v.card.ageFit.max}` : " — not reviewed yet"}</p>
-                      {why.length > 0 && <p className="text-xs font-bold text-bad">Hidden: {why.join(", ")}</p>}
-                    </div>
-                  </div>
-                  <form action={resolveWatchRequest} className="flex gap-2 border-t border-line px-3 py-2">
-                    <input type="hidden" name="requestId" value={r.id} /><input type="hidden" name="next" value="/parent" />
-                    {who ? (
-                      <Button type="submit" name="decision" value="approve" className="px-4">Allow for {who.name}</Button>
-                    ) : (
-                      <Link href="/parent/review" className="self-center rounded-full bg-ink px-4 py-2 text-sm font-bold text-bg">Choose a child</Link>
-                    )}
-                    <Button type="submit" name="decision" value="deny" variant="ghost">Not now</Button>
-                    <Link href={`/parent/review`} className="ml-auto self-center text-xs font-bold text-muted hover:text-ink">See the card</Link>
-                  </form>
-                </Card>
-              );
-            })}
-            {undecided.length > 0 && (
-              <Link href={`/parent/review?kid=${kidId ?? ""}`} className="block">
-                <Card className="flex items-center gap-3 p-3 hover:bg-surface/60">
-                  <div className="flex -space-x-6">
-                    {undecided.slice(0, 3).map((v) => <Image key={v.id} src={thumb(v)} alt="" width={96} height={54} unoptimized className="w-20 rounded-lg aspect-video object-cover bg-line ring-2 ring-surface" />)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-extrabold">{undecided.length} video{undecided.length === 1 ? "" : "s"} your filters are hiding</p>
-                    <p className="text-sm text-muted">Reviewed and waiting on your call. Allow, keep hidden, or never.</p>
-                  </div>
-                  <span className="text-muted">›</span>
-                </Card>
+        {profiles.length > 1 && (
+          <nav aria-label="Switch child" className="flex gap-1.5 lg:hidden">
+            {profiles.map((p) => (
+              <Link key={p.id} href={`/parent?kid=${p.id}`} aria-current={p.id === kidId ? "true" : undefined}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-bold ${p.id === kidId ? "border-forest bg-forest text-ivory" : "border-sand bg-surface text-ink"}`}>
+                <span aria-hidden>{p.avatar}</span>{p.name}
               </Link>
-            )}
-          </section>
-        ) : (
-          <p className="inline-flex items-center gap-2 rounded-full bg-grass/70 px-3 py-1.5 text-sm font-bold text-ink"><span className="h-2 w-2 rounded-full bg-ok" />All clear — nothing needs you</p>
+            ))}
+          </nav>
         )}
+      </header>
 
-        {/* ---- the TV ---- */}
-        <section>
-          <h2 className="text-lg">What {kid?.name ?? "your kid"} sees right now</h2>
-          <div className="mt-2 rounded-[1.5rem] bg-[#0b1020] p-3 text-white shadow-[0_24px_60px_-24px_rgba(20,26,58,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] ring-1 ring-white/10 sm:p-4" style={{ backgroundImage: "radial-gradient(120% 80% at 50% -10%, #223064 0%, #0b1020 55%)" }}>
-            {tvShelves.length === 0 ? (
-              <div className="py-10 text-center">
-                <p className="text-3xl">📺</p>
-                <p className="mt-2 font-extrabold">Nothing here yet</p>
-                <p className="text-sm text-white/60">Approve a channel below and the first videos appear after they&apos;re reviewed.</p>
+      {/* ---- account notices ---- */}
+      {!billing.ok && (
+        <Notice tone="bad" className="mt-5">
+          <b>{billing.state === "past_due" ? "There's a payment problem." : "Your free trial has ended."}</b> The kid screen keeps playing what&apos;s already allowed. New approvals and searches are paused. <Link href="/parent/billing" className="font-bold underline">Subscribe</Link>
+        </Notice>
+      )}
+      {billing.ok && billing.state === "trial" && (billing.daysLeft ?? 99) <= 7 && (
+        <Notice className="mt-5">{billing.daysLeft} day{billing.daysLeft === 1 ? "" : "s"} left in your free trial. <Link href="/parent/billing" className="font-bold text-forest underline">Keep Brightframe going</Link></Notice>
+      )}
+      {moreAsk && (
+        <Card raised className="mt-5 flex flex-wrap items-center gap-3 border-apricot/60 p-4">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-apricot-soft text-apricot-ink"><IconClock /></span>
+          <p className="flex-1 font-bold text-forest">{moreAsk.name} is asking for more time today</p>
+          <div className="flex flex-wrap gap-2">
+            {[15, 30, 60].map((m) => (
+              <form key={m} action={grantMoreTime}><input type="hidden" name="profileId" value={moreAsk.id} /><input type="hidden" name="minutes" value={m} /><Button type="submit" size="sm">+{m} min</Button></form>
+            ))}
+            <Link href={`/parent?kid=${kidId}`} className={buttonClass("quiet", "sm")}>Not today</Link>
+          </div>
+        </Card>
+      )}
+
+      {/* ---- four counts, each a door ---- */}
+      <section aria-label={`${kid.name} at a glance`} className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile href={libHref("visible")} icon={<IconPlayCircle />} tone="ok" value={ready.length} label="Ready to watch" sub="Reviewed and within the rules" />
+        <StatTile href={libHref("unreviewed")} icon={<IconClock />} tone="pending" value={reviewing.length} label="Being reviewed" sub="Won't play until reviewed" />
+        <StatTile href={`/parent/review?kid=${kidId}`} icon={<IconAlert />} tone={needsYou ? "warn" : "quiet"} value={needsYou} label="Needs your decision" sub={requests.length ? `${requests.length} asked by ${kid.name}` : "Held back by filters"} />
+        <StatTile href={`/parent/stats?kid=${kidId}`} icon={<IconTv />} tone="forest" value={`${usedToday}`} unit="min" label={limit ? `of ${limit} min today` : "watched today"} meter={limit ? { value: usedToday, max: limit } : undefined} />
+      </section>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-8">
+        <div className="min-w-0 space-y-6">
+          {/* ---- the decision waiting on you ---- */}
+          {needsYou > 0 ? (
+            <Card as="section" raised className="overflow-hidden">
+              <div className="flex items-center justify-between gap-3 border-b border-sand px-5 py-4">
+                <SectionHeader icon={<IconAlert />} title="Needs your decision" sub={requests.length ? `${kid.name} asked to watch ${requests.length === 1 ? "this video" : `${requests.length} videos`}.` : `Reviewed, but ${kid.name}'s filters hold these back.`} />
               </div>
-            ) : (
-              <div className="space-y-3">
-                {tvShelves.map((s) => (
-                  <div key={s.id}>
-                    <p className="mb-1.5 text-xs font-extrabold text-white/80">{s.title}</p>
-                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                      {s.videos.slice(0, 4).map((v, i) => (
-                        <Link key={v.id} href={`/parent/video/${v.id}`} className={`overflow-hidden rounded-xl bg-[#141b33] ring-1 ring-white/5 transition hover:ring-[#ffcf3f] ${i === 3 ? "hidden sm:block" : ""}`}>
-                          <Image src={thumb(v)} alt="" width={160} height={90} unoptimized className="aspect-video w-full object-cover" />
-                          <p className="truncate px-2 py-1.5 text-[11px] font-bold text-white/75">{v.title}</p>
-                        </Link>
-                      ))}
+              {requests.slice(0, 2).map((r) => {
+                const v = byId.get(r.videoId)!;
+                const who = profiles.find((p) => p.id === r.profileId);
+                const { status, reasons } = playStatus(v, settings);
+                const eligible = reviewEligibility(v.card).eligible;
+                return (
+                  <article key={r.id} className="grid gap-4 border-b border-sand px-5 py-5 last:border-b-0 sm:grid-cols-[14rem_minmax(0,1fr)]">
+                    <Link href={`/parent/video/${v.id}`} className="relative block overflow-hidden rounded-xl bg-sand-soft">
+                      <Image src={thumb(v)} alt="" width={320} height={180} unoptimized className="aspect-video w-full object-cover" />
+                      {v.durationSeconds ? <span className="absolute bottom-2 right-2 rounded-md bg-forest-900/85 px-1.5 py-0.5 text-xs font-bold text-ivory">{Math.floor(v.durationSeconds / 60)}:{String(v.durationSeconds % 60).padStart(2, "0")}</span> : null}
+                    </Link>
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5 text-sm font-bold text-apricot-ink"><IconHand size={16} />{who ? `${who.name} asked for this` : "A child asked for this (which one wasn't recorded)"}</p>
+                      <Link href={`/parent/video/${v.id}`} className="mt-1 block text-lg font-bold leading-snug text-forest hover:underline line-clamp-2">{v.title}</Link>
+                      <p className="text-sm text-muted">{v.channel?.title ?? v.channelId}</p>
+                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                        <StatusBadge status={status} />
+                        {eligible && v.card && <Tag>AI review: ages {v.card.ageFit.min}–{v.card.ageFit.max}</Tag>}
+                        {reasons.filter((x) => x !== "Not in this child's library").slice(0, 3).map((x) => <Tag key={x} className="border-warn/30 bg-warn-soft text-warn">{x}</Tag>)}
+                      </div>
+                      <form action={resolveWatchRequest} className="mt-4 flex flex-wrap items-center gap-2">
+                        <input type="hidden" name="requestId" value={r.id} /><input type="hidden" name="next" value={`/parent?kid=${kidId}`} />
+                        {who ? (
+                          <Button type="submit" name="decision" value="approve">Allow for {who.name}{eligible ? "" : " (not reviewed)"}</Button>
+                        ) : (
+                          <Link href={`/parent/review?kid=${kidId}`} className={buttonClass("primary")}>Choose a child</Link>
+                        )}
+                        <Button type="submit" name="decision" value="deny" variant="secondary">Not now</Button>
+                        <Link href={`/parent/video/${v.id}`} className={buttonClass("quiet", "md")}>See the full review</Link>
+                      </form>
+                      {!eligible && who && <p className="mt-2 text-xs text-muted">Not reviewed yet: you&apos;ll be asked to confirm before it plays for {who.name}.</p>}
                     </div>
+                  </article>
+                );
+              })}
+              {(requests.length > 2 || undecided.length > 0) && (
+                <Link href={`/parent/review?kid=${kidId}`} className="flex items-center gap-4 px-5 py-4 hover:bg-sand-soft">
+                  <span className="hidden -space-x-5 sm:flex">
+                    {undecided.slice(0, 3).map((v) => <Image key={v.id} src={thumb(v)} alt="" width={96} height={54} unoptimized className="aspect-video w-16 rounded-lg object-cover ring-2 ring-surface" />)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-bold text-forest">
+                      {[requests.length > 2 ? `${requests.length - 2} more request${requests.length - 2 === 1 ? "" : "s"}` : null, undecided.length ? `${undecided.length} reviewed video${undecided.length === 1 ? "" : "s"} held back by ${kid.name}'s filters` : null].filter(Boolean).join(" and ")}
+                    </span>
+                    <span className="block text-sm text-muted">Allow, keep hidden, or never, one at a time.</span>
+                  </span>
+                  <IconChevron className="text-muted" />
+                </Link>
+              )}
+            </Card>
+          ) : (
+            <Notice tone="ok" className="flex items-center gap-2 font-bold"><IconPlayCircle size={18} />Nothing needs your decision for {kid.name} right now.</Notice>
+          )}
+
+          {/* ---- the kid screen, in miniature ---- */}
+          <section aria-labelledby="screen-h">
+            <SectionHeader id="screen-h" title={`On ${kid.name}'s screen`} sub="The shelves your child sees right now." action={<Link href="/watch" className="inline-flex items-center gap-1 text-forest hover:underline">Open the kid screen<IconChevron size={16} /></Link>} />
+            <div className="mt-3 rounded-[var(--radius-panel)] bg-forest-900 p-4 text-ivory ring-1 ring-forest sm:p-5" style={{ backgroundImage: "radial-gradient(110% 90% at 85% -10%, rgb(255 159 110 / 0.16) 0%, transparent 55%)" }}>
+              {tvShelves.length === 0 ? (
+                <div className="py-10 text-center">
+                  <p className="font-bold">Nothing on the screen yet</p>
+                  <p className="mx-auto mt-1 max-w-sm text-sm text-ivory/70">Add a channel. Its videos appear here once they&apos;re reviewed and fit {kid.name}&apos;s rules.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {tvShelves.map((s) => (
+                    <div key={s.id}>
+                      <p className="mb-2 text-sm font-bold text-ivory/90">{s.title}</p>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        {s.videos.slice(0, 4).map((v, i) => (
+                          <Link key={v.id} href={`/parent/video/${v.id}`} className={`group overflow-hidden rounded-xl bg-forest ring-1 ring-ivory/10 hover:ring-2 hover:ring-apricot ${i >= 2 ? "hidden sm:block" : ""}`}>
+                            <Image src={thumb(v)} alt="" width={240} height={135} unoptimized className="aspect-video w-full object-cover" />
+                            <p className="truncate px-2.5 py-2 text-xs font-semibold text-ivory/85">{v.title}</p>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="mt-4 text-xs text-ivory/65">{ready.length} video{ready.length === 1 ? "" : "s"} ready across {byChannel.size} channel{byChannel.size === 1 ? "" : "s"}.</p>
+            </div>
+          </section>
+
+          {/* ---- channels ---- */}
+          <section id="channels" aria-labelledby="channels-h" className="scroll-mt-20">
+            <SectionHeader id="channels-h" icon={<IconChannels />} title="Channels" sub={`Your family's channels, in ${kid.name}'s order. A channel brings videos in; each one still needs a review.`} />
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <nav aria-label="Filter videos" className="flex flex-wrap gap-1.5">
+                <FilterChip href={`/parent?kid=${kidId}#channels`} active={!view}>All channels</FilterChip>
+                {(["visible", "unreviewed", "hidden"] as View[]).map((w) => (
+                  <FilterChip key={w} href={libHref(w)} active={view === w}>{VIEW_LABEL[w]} <span className="opacity-70">{w === "visible" ? ready.length : w === "unreviewed" ? reviewing.length : mine.length - ready.length - reviewing.length}</span></FilterChip>
+                ))}
+              </nav>
+              <form action="/parent" className="ml-auto w-full sm:w-64">
+                <input type="hidden" name="kid" value={kidId} />
+                {view && <input type="hidden" name="view" value={view} />}
+                <label className="sr-only" htmlFor="find">Find a video</label>
+                <input id="find" name="q" defaultValue={q} type="search" placeholder="Find a video" className="w-full rounded-full border border-sand bg-surface px-4 py-2 text-sm outline-none focus:border-forest" />
+              </form>
+            </div>
+            {(view || q) && <p className="mt-2 text-sm text-muted">Showing {view ? VIEW_LABEL[view].toLowerCase() : "all"} videos{q ? ` matching “${q}”` : ""}. <Link href={`/parent?kid=${kidId}#channels`} className="font-bold text-forest underline">Clear</Link></p>}
+
+            {filtered ? (
+              <div className="mt-4 space-y-6">
+                {filtered.length === 0 && <Card><EmptyState title="No videos match">Try another word, or clear the filter.</EmptyState></Card>}
+                {filtered.map((g) => (
+                  <div key={g.id}>
+                    <p className="flex items-center gap-2 font-bold text-forest"><ChannelAvatar channel={g.channel} name={g.title} size={24} />{g.title}</p>
+                    <ul className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {g.shown.slice(0, 12).map((v) => <VideoTile key={v.id} v={v} st={stat.get(v.id)!.status} why={stat.get(v.id)!.reasons} />)}
+                    </ul>
+                    {g.shown.length > 12 && <p className="mt-2 text-sm"><Link href={`/parent/channel/${g.id}`} className="font-bold text-forest underline">{g.shown.length - 12} more on the channel page</Link></p>}
                   </div>
                 ))}
               </div>
+            ) : groups.length === 0 ? (
+              <Card className="mt-3"><EmptyState icon={<IconChannels />} title="No channels yet">Search for a channel or add a starter pack. New videos are reviewed before they can play.</EmptyState></Card>
+            ) : (
+              <Card as="section" className="mt-3 overflow-hidden">
+                <ul className="divide-y divide-sand">
+                  {orderedGroups.map((g, idx) => (
+                    <li key={g.id} className="flex items-center gap-1 pl-2">
+                      <div className="flex flex-col text-muted">
+                        <form action={moveChannel}><input type="hidden" name="profileId" value={kidId} /><input type="hidden" name="channelId" value={g.id} /><input type="hidden" name="dir" value="up" /><button type="submit" disabled={idx === 0} aria-label={`Move ${g.title} up`} className="block rounded-md p-0.5 hover:text-forest disabled:opacity-25"><IconArrowUp size={16} /></button></form>
+                        <form action={moveChannel}><input type="hidden" name="profileId" value={kidId} /><input type="hidden" name="channelId" value={g.id} /><input type="hidden" name="dir" value="down" /><button type="submit" disabled={idx === orderedGroups.length - 1} aria-label={`Move ${g.title} down`} className="block rounded-md p-0.5 hover:text-forest disabled:opacity-25"><IconArrowDown size={16} /></button></form>
+                      </div>
+                      <Link href={`/parent/channel/${g.id}`} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 hover:bg-sand-soft">
+                        <ChannelAvatar channel={g.channel} name={g.title} size={40} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-bold text-forest">{g.title}</span>
+                          <span className="mt-1 flex flex-wrap gap-1.5">
+                            {g.ready > 0 && <StatusBadge status="plays" className="py-0.5">{g.ready} ready</StatusBadge>}
+                            {g.reviewing > 0 && <StatusBadge status="reviewing" className="py-0.5">{g.reviewing} being reviewed</StatusBadge>}
+                            {g.held > 0 && <StatusBadge status="held" className="py-0.5">{g.held} held back</StatusBadge>}
+                            {!g.ready && !g.reviewing && !g.held && <span className="text-xs text-muted">No videos yet</span>}
+                          </span>
+                        </span>
+                        <span className="hidden -space-x-3 sm:flex">
+                          {g.videos.slice(0, 3).map((v) => <Image key={v.id} src={thumb(v)} alt="" width={64} height={36} unoptimized className="h-9 w-16 rounded-md object-cover ring-2 ring-surface" />)}
+                        </span>
+                        <IconChevron className="text-muted" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
             )}
-            <div className="mt-3 flex items-center justify-between text-xs text-white/60">
-              <span>{visible.length} video{visible.length === 1 ? "" : "s"} across {byChannel.size} channel{byChannel.size === 1 ? "" : "s"}</span>
-              <Link href="/watch" className="font-bold text-white/80 hover:text-white">Open the kid screen →</Link>
-            </div>
-          </div>
-        </section>
+            {backlog > 0 && (
+              <form action={reviewNextBatch} className="mt-3 text-sm text-muted">
+                <input type="hidden" name="n" value={10} />
+                {backlog} more video{backlog === 1 ? "" : "s"} will be reviewed overnight.{" "}
+                {batchStarted ? <span className="font-bold text-ok">Reviewing {batchStarted} now. Check back in a few minutes.</span> : <button type="submit" className="font-bold text-forest underline">Review 10 now</button>}
+              </form>
+            )}
+          </section>
+        </div>
 
-        {/* ---- library ---- */}
-        <section id="channels">
-          <div className="flex items-end justify-between gap-3">
-            <h2 className="text-lg">Channels <span className="text-sm font-normal text-muted">in {kid?.name ?? "the kid"}&apos;s order</span></h2>
-            <form action="/parent" className="flex-1 max-w-xs">
-              <input type="hidden" name="kid" value={kidId ?? ""} />
-              <input name="q" defaultValue={q} type="search" placeholder="Find a video" className="w-full rounded-full border border-line bg-surface px-4 py-1.5 text-sm outline-none focus:border-ink" />
-            </form>
-          </div>
-          {(view || q) && (
-            <p className="mt-2 text-sm text-muted">
-              Showing {view ?? "all"}{q ? ` matching “${q}”` : ""}. <Link href={`/parent?kid=${kidId ?? ""}`} className="font-bold underline">Clear</Link>
-            </p>
-          )}
-          {filtered ? (
-            <ul className="mt-3 space-y-4">
-              {filtered.length === 0 && <li className="text-sm text-muted">Nothing matches.</li>}
-              {filtered.map((g) => (
-                <li key={g.id}>
-                  <p className="flex items-center gap-2 font-extrabold"><ChannelAvatar channel={g.channel} name={g.title} size={24} />{g.title}</p>
-                  <ul className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {g.shown.slice(0, 12).map((v) => <VideoTile key={v.id} v={v} st={status(v)} why={blockedReasons(v, settings)} />)}
-                  </ul>
-                  {g.shown.length > 12 && <p className="mt-1 text-xs text-muted"><Link href={`/parent/channel/${g.id}`} className="underline">{g.shown.length - 12} more on the channel page</Link></p>}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <ul className="mt-3 divide-y divide-line rounded-2xl border border-line bg-surface">
-              {groups.length === 0 && <li className="p-4 text-sm text-muted">No channels yet. Add a starter pack below.</li>}
-              {orderedGroups.map((g, idx) => (
-                <li key={g.id} className="flex items-center">
-                  <div className="flex flex-col pl-2 text-muted">
-                    <form action={moveChannel}><input type="hidden" name="profileId" value={kidId ?? ""} /><input type="hidden" name="channelId" value={g.id} /><input type="hidden" name="dir" value="up" /><button type="submit" disabled={idx === 0} aria-label="Move up" className="block px-1 text-xs leading-none hover:text-ink disabled:opacity-20">▲</button></form>
-                    <form action={moveChannel}><input type="hidden" name="profileId" value={kidId ?? ""} /><input type="hidden" name="channelId" value={g.id} /><input type="hidden" name="dir" value="down" /><button type="submit" disabled={idx === orderedGroups.length - 1} aria-label="Move down" className="block px-1 text-xs leading-none hover:text-ink disabled:opacity-20">▼</button></form>
-                  </div>
-                  <Link href={`/parent/channel/${g.id}`} className="flex flex-1 items-center gap-3 px-3 py-2.5 hover:bg-bg/60">
-                    <ChannelAvatar channel={g.channel} name={g.title} size={40} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-extrabold">{g.title}</span>
-                      <span className="block text-xs text-muted">
-                        {g.visible ? `${g.visible} ready` : "nothing ready yet"}{g.hidden ? `, ${g.hidden} hidden` : ""}{g.unreviewed ? `, ${g.unreviewed} being reviewed` : ""}
-                      </span>
-                    </span>
-                    <span className="hidden sm:flex -space-x-3">
-                      {g.vids.filter((v) => status(v) === "visible").slice(0, 3).map((v) => (
-                        <Image key={v.id} src={thumb(v)} alt="" width={64} height={36} unoptimized className="h-9 w-16 rounded-md object-cover ring-2 ring-surface" />
-                      ))}
-                    </span>
-                    <span className="text-muted">›</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-          {!view && !q && (
-            <p className="mt-2 text-xs text-muted">
-              Browse every video:{" "}
-              <Link href={`/parent?kid=${kidId ?? ""}&view=visible`} className="font-bold underline">ready</Link>,{" "}
-              <Link href={`/parent?kid=${kidId ?? ""}&view=hidden`} className="font-bold underline">hidden</Link>,{" "}
-              <Link href={`/parent?kid=${kidId ?? ""}&view=unreviewed`} className="font-bold underline">being reviewed</Link>
-            </p>
-          )}
-        </section>
+        {/* ---- side column ---- */}
+        <aside className="space-y-6">
+          <Card as="section" className="p-5">
+            <SectionHeader icon={<IconTv />} title="Today" action={<Link href={`/parent/stats?kid=${kidId}`} className="text-forest hover:underline">Viewing stats</Link>} />
+            <p className="mt-4 text-3xl font-extrabold tracking-tight text-forest">{usedToday} min <span className="text-base font-semibold text-muted">{limit ? `of ${limit}` : "watched"}</span></p>
+            {limit ? <div className="mt-2"><Meter value={usedToday} max={limit} label={`${usedToday} of ${limit} minutes watched today`} /></div> : <p className="mt-1 text-sm text-muted">No daily limit set. <Link href={`/parent/settings?kid=${kidId}`} className="font-bold text-forest underline">Add one</Link></p>}
+            {keepWatching.length > 0 && (
+              <>
+                <p className="mt-5 text-sm font-semibold text-muted">Recently watched</p>
+                <ul className="mt-2 space-y-2">
+                  {keepWatching.slice(0, 3).map((v) => (
+                    <li key={v.id}>
+                      <Link href={`/parent/video/${v.id}`} className="flex items-center gap-3 rounded-xl p-1 hover:bg-sand-soft">
+                        <Image src={thumb(v)} alt="" width={96} height={54} unoptimized className="aspect-video w-20 shrink-0 rounded-lg object-cover" />
+                        <span className="min-w-0 text-sm font-semibold leading-snug text-ink line-clamp-2">{v.title}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </Card>
 
-        {/* ---- add ---- */}
-        <section id="add" className="lg:hidden"><AddPanel approvedChannels={approvedChannels} lib={lib} packAdded={typeof sp.pack === "string" ? sp.pack : undefined} /></section>
-
-        {/* ---- pipeline, demoted ---- */}
-        {backlog > 0 && (
-          <form action={reviewNextBatch} className="text-xs text-muted">
-            <input type="hidden" name="n" value={10} />
-            {backlog} more video{backlog === 1 ? "" : "s"} will be reviewed overnight.{" "}
-            {batchStarted ? <span className="font-bold text-ok">Reviewing {batchStarted} now — give it a few minutes.</span> : <button type="submit" className="font-bold underline hover:text-ink">Review 10 now</button>}
-          </form>
-        )}
-      </section>
-
-      <aside className="hidden lg:block space-y-4">
-        <AddPanel approvedChannels={approvedChannels} lib={lib} packAdded={typeof sp.pack === "string" ? sp.pack : undefined} />
-        {channels.some((c) => !approvedChannels.has(c.id)) && (
-          <Card className="p-4">
-            <h2 className="font-extrabold">Also in the shared library</h2>
-            <p className="text-xs text-muted">Reviewed by Sift for other families. One tap to allow.</p>
-            <ul className="mt-2 space-y-1.5">
-              {channels.filter((c) => !approvedChannels.has(c.id)).slice(0, 12).map((c) => (
-                <li key={c.id} className="flex items-center gap-2 text-sm">
-                  <ChannelAvatar channel={c} name={c.title} size={24} />
-                  <Link href={`/parent/channel/${c.id}`} className="min-w-0 flex-1 truncate font-semibold hover:underline">{c.title}</Link>
-                  <form action={toggleWhitelist}>
-                    <input type="hidden" name="kind" value="channel" /><input type="hidden" name="targetId" value={c.id} /><input type="hidden" name="on" value="1" />
-                    <Button type="submit" variant="ghost" className="text-xs px-2.5 py-0.5">Allow</Button>
-                  </form>
-                </li>
-              ))}
+          <Card as="section" className="p-5">
+            <SectionHeader title="Library" sub={`What it means for ${kid.name}.`} />
+            <ul className="mt-3 divide-y divide-sand text-sm">
+              <SummaryRow href={`/parent?kid=${kidId}#channels`} icon={<IconChannels size={18} />} label="Channels in your library" value={approvedChannels.size} />
+              <SummaryRow href={libHref("visible")} icon={<IconPlayCircle size={18} />} label={`Ready for ${kid.name}`} value={ready.length} />
+              <SummaryRow href={libHref("unreviewed")} icon={<IconClock size={18} />} label="Being reviewed" value={reviewing.length} />
+              <SummaryRow href={libHref("hidden")} icon={<IconAlert size={18} />} label="Held back" value={mine.length - ready.length - reviewing.length} />
             </ul>
           </Card>
-        )}
-      </aside>
+
+          <AddPanel approvedChannels={approvedChannels} lib={lib} packAdded={typeof sp.pack === "string" ? sp.pack : undefined} />
+
+          {channels.some((c) => !approvedChannels.has(c.id)) && (
+            <Card as="section" className="p-5">
+              <SectionHeader title="Reviewed for other families" sub="Channels Brightframe already reviews. Adding one brings its videos in; each still has to fit your child's rules." />
+              <ul className="mt-3 space-y-2">
+                {channels.filter((c) => !approvedChannels.has(c.id)).slice(0, 8).map((c) => (
+                  <li key={c.id} className="flex items-center gap-2 text-sm">
+                    <ChannelAvatar channel={c} name={c.title} size={28} />
+                    <Link href={`/parent/channel/${c.id}`} className="min-w-0 flex-1 truncate font-semibold hover:underline">{c.title}</Link>
+                    <form action={toggleWhitelist}>
+                      <input type="hidden" name="kind" value="channel" /><input type="hidden" name="targetId" value={c.id} /><input type="hidden" name="on" value="1" />
+                      <Button type="submit" variant="secondary" size="sm">Add</Button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </aside>
+      </div>
     </main>
   );
 }
 
-function VideoTile({ v, st, why }: { v: VideoWithCard; st: View; why: string[] }) {
+function StatTile({ href, icon, tone, value, unit, label, sub, meter }: {
+  href: string; icon: ReactNode; tone: "ok" | "pending" | "warn" | "quiet" | "forest"; value: number | string; unit?: string; label: string; sub?: string; meter?: { value: number; max: number };
+}) {
+  const t = { ok: "bg-ok-soft text-ok", pending: "bg-pending-soft text-pending", warn: "bg-warn-soft text-warn", quiet: "bg-sand-soft text-muted", forest: "bg-sage-soft text-forest" }[tone];
+  return (
+    <Link href={href} className="group flex items-center gap-3 rounded-[var(--radius-card)] border border-sand bg-surface p-3.5 hover:border-forest/40 sm:p-5">
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full sm:h-11 sm:w-11 ${t}`}>{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-2xl font-extrabold leading-none tracking-tight text-forest sm:text-[1.75rem]">{value}{unit && <span className="ml-1 text-base font-bold">{unit}</span>}</span>
+        <span className="mt-1 block text-[0.8125rem] font-bold leading-tight text-ink sm:text-sm">{label}</span>
+        {sub && <span className="hidden text-xs text-muted sm:block">{sub}</span>}
+        {meter && <span className="mt-2 block"><Meter value={meter.value} max={meter.max} label={`${meter.value} of ${meter.max} minutes`} /></span>}
+      </span>
+    </Link>
+  );
+}
+
+function FilterChip({ href, active, children }: { href: string; active: boolean; children: ReactNode }) {
+  return (
+    <Link href={href} aria-current={active ? "true" : undefined}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-bold ${active ? "border-forest bg-forest text-ivory" : "border-sand bg-surface text-ink hover:border-forest/40"}`}>
+      {children}
+    </Link>
+  );
+}
+
+function SummaryRow({ href, icon, label, value }: { href: string; icon: ReactNode; label: string; value: number }) {
   return (
     <li>
-      <Link href={`/parent/video/${v.id}`} className="block overflow-hidden rounded-xl bg-surface border border-line hover:border-ink/30">
-        <Image src={thumb(v)} alt="" width={320} height={180} unoptimized className={`aspect-video w-full object-cover ${st !== "visible" ? "opacity-70" : ""}`} />
-        <div className="p-2">
-          <p className="text-xs font-bold leading-snug line-clamp-2">{v.title}</p>
-          <p className={`mt-0.5 text-[11px] ${st === "hidden" ? "text-bad" : "text-muted"}`}>{st === "visible" ? (v.card ? `★ ${v.card.rating}` : "ready") : st === "hidden" ? (v.dismissed ? "kept hidden" : why.join(", ")) : "being reviewed"}</p>
+      <Link href={href} className="flex items-center gap-3 py-2.5 hover:text-forest">
+        <span className="text-muted">{icon}</span>
+        <span className="flex-1 font-semibold">{label}</span>
+        <span className="font-extrabold text-forest">{value}</span>
+        <IconChevron size={16} className="text-muted" />
+      </Link>
+    </li>
+  );
+}
+
+function VideoTile({ v, st, why }: { v: VideoWithCard; st: PlayStatus; why: string[] }) {
+  return (
+    <li>
+      <Link href={`/parent/video/${v.id}`} className="block overflow-hidden rounded-[var(--radius-card)] border border-sand bg-surface hover:border-forest/40">
+        <Image src={thumb(v)} alt="" width={320} height={180} unoptimized className={`aspect-video w-full object-cover ${st === "plays" || st === "allowed" ? "" : "opacity-75"}`} />
+        <div className="space-y-1.5 p-2.5">
+          <p className="text-sm font-semibold leading-snug text-ink line-clamp-2">{v.title}</p>
+          <StatusBadge status={st} className="py-0.5" />
+          {(st === "held" || st === "blocked") && why[0] && <p className="text-xs text-muted line-clamp-1">{why.join(", ")}</p>}
         </div>
       </Link>
     </li>
@@ -326,27 +452,26 @@ function VideoTile({ v, st, why }: { v: VideoWithCard; st: View; why: string[] }
 
 function AddPanel({ approvedChannels, lib, packAdded }: { approvedChannels: Set<string>; lib: VideoWithCard[]; packAdded?: string }) {
   return (
-    <Card className="p-4">
-      <h2 className="font-extrabold">Add a channel</h2>
-      <p className="text-sm text-muted">Search YouTube and approve from the results. Sift pulls the channel&apos;s best videos and reviews them.</p>
-      <SearchAdd approvedChannels={[...approvedChannels]} approvedVideos={lib.filter((v) => v.whitelisted).map((v) => v.id)} />
-      <details className="mt-3 text-sm">
-        <summary className="cursor-pointer font-bold text-muted">Paste a link instead</summary>
+    <Card as="section" className="p-5">
+      <SectionHeader icon={<IconPlus />} title="Add a channel" sub="Search YouTube and add from the results. Brightframe reviews the channel's videos before any can play." />
+      <SearchAdd approvedChannels={[...approvedChannels]} approvedVideos={lib.filter((v) => v.inLibrary).map((v) => v.id)} />
+      <details className="mt-4 text-sm">
+        <summary className="cursor-pointer font-bold text-forest">Paste a link instead</summary>
         <AddForm />
       </details>
-      <details className="mt-2 text-sm" open={approvedChannels.size === 0}>
-        <summary className="cursor-pointer font-bold text-muted">Starter packs</summary>
+      <details className="mt-3 text-sm" open={approvedChannels.size === 0}>
+        <summary className="cursor-pointer font-bold text-forest">Starter packs</summary>
         <div className="mt-2 space-y-2">
           {PACKS.map((p) => (
-            <form key={p.id} action={approvePack} className="flex items-center gap-3 rounded-xl border border-line p-3">
+            <form key={p.id} action={approvePack} className="flex items-center gap-3 rounded-xl border border-sand p-3">
               <input type="hidden" name="pack" value={p.id} />
               <input type="hidden" name="next" value="/parent" />
-              <span className="text-2xl">{p.emoji}</span>
+              <span className="text-2xl" aria-hidden>{p.emoji}</span>
               <span className="min-w-0 flex-1">
-                <span className="block font-extrabold">{p.title} <span className="text-muted font-bold text-xs">ages {p.ages}</span></span>
+                <span className="block font-bold text-forest">{p.title} <span className="text-xs font-semibold text-muted">ages {p.ages}</span></span>
                 <span className="block text-xs text-muted">{p.blurb}</span>
               </span>
-              <Button type="submit" variant={packAdded === p.id ? "ghost" : "primary"} className="text-xs px-3 py-1.5">{packAdded === p.id ? "Added" : "Add"}</Button>
+              <Button type="submit" variant={packAdded === p.id ? "secondary" : "primary"} size="sm">{packAdded === p.id ? "Added" : "Add"}</Button>
             </form>
           ))}
         </div>

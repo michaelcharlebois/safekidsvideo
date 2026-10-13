@@ -1,0 +1,1045 @@
+{
+ "channels": [
+  {
+   "id": "@SuperSimpleSongs",
+   "title": "Super Simple Songs",
+   "handle": "@SuperSimpleSongs",
+   "createdAt": "2026-10-01T00:00:00Z"
+  },
+  {
+   "id": "@Cocomelon",
+   "title": "Cocomelon",
+   "handle": "@Cocomelon",
+   "createdAt": "2026-10-01T00:00:00Z"
+  },
+  {
+   "id": "@Pinkfong",
+   "title": "Pinkfong Baby Shark",
+   "handle": "@Pinkfong",
+   "createdAt": "2026-10-01T00:00:00Z"
+  },
+  {
+   "id": "@NatGeoKids",
+   "title": "Nat Geo Kids",
+   "handle": "@NatGeoKids",
+   "createdAt": "2026-10-01T00:00:00Z"
+  },
+  {
+   "id": "@SciShowKids",
+   "title": "SciShow Kids",
+   "handle": "@SciShowKids",
+   "createdAt": "2026-10-01T00:00:00Z"
+  }
+ ],
+ "videos": [
+  {
+   "id": "fxSSS000001",
+   "channelId": "@SuperSimpleSongs",
+   "title": "Twinkle Twinkle Little Star",
+   "thumbnailUrl": "https://i.ytimg.com/vi/fxSSS000001/hqdefault.jpg",
+   "durationSeconds": 180,
+   "createdAt": "2026-10-01T00:00:00Z",
+   "publishedAt": "2026-10-10T00:00:00Z"
+  },
+  {
+   "id": "fxSSS000002",
+   "channelId": "@SuperSimpleSongs",
+   "title": "The Wheels on the Bus",
+   "thumbnailUrl": "https://i.ytimg.com/vi/fxSSS000002/hqdefault.jpg",
+   "durationSeconds": 160,
+   "createdAt": "2026-10-01T00:00:00Z",
+   "publishedAt": "2026-10-09T00:00:00Z"
+  },
+  {
+   "id": "fxSSS000003",
+   "channelId": "@SuperSimpleSongs",
+   "title": "Five Little Ducks",
+   "thumbnailUrl": "https://i.ytimg.com/vi/fxSSS000003/hqdefault.jpg",
+   "durationSeconds": 150,
+   "createdAt": "2026-10-01T00:00:00Z",
+   "publishedAt": "2026-10-08T00:00:00Z"
+  },
+  {
+   "id": "fxSSS000004",
+   "channelId": "@SuperSimpleSongs",
+   "title": "Clean Up Song",
+   "thumbnailUrl": "https://i.ytimg.com/vi/fxSSS000004/hqdefault.jpg",
+   "durationSeconds": 140,
+   "createdAt": "2026-10-01T00:00:00Z",
+   "publishedAt": "2026-10-07T00:00:00Z"
+  },
+  {
+   "id": "fxCOC000001",
+   "channelId": "@Cocomelon",
+   "title": "Bath Song",
+   "thumbnailUrl": "https://i.ytimg.com/vi/fxCOC000001/hqdefault.jpg",
+   "durationSeconds": 190,
+   "createdAt": "2026-10-01T00:00:00Z",
+   "publishedAt": "2026-10-06T00:00:00Z"
+  },
+  {
+   "id": "fxCOC000002",
+   "channelId": "@Cocomelon",
+   "title": "Yes Yes Vegetables",
+   "thumbnailUrl": "https://i.ytimg.com/vi/fxCOC000002/hqdefault.jpg",
+   "durationSeconds": 200,
+   "createdAt": "2026-10-01T00:00:00Z",
+   "publishedAt": "2026-10-05T00:00:00Z"
+  },
+  {
+   "id": "fxCOC000003",
+   "channelId": "@Cocomelon",
+   "title": "Doctor Checkup Song",
+   "thumbnailUrl": "https://i.ytimg.com/vi/fxCOC000003/hqdefault.jpg",
+   "durationSeconds": 210,
+   "createdAt": "2026-10-01T00:00:00Z",
+   "publishedAt": "2026-10-04T00:00:00Z"
+  },
+  {
+   "id": "fxPNK000001",
+   "channelId": "@Pinkfong",
+   "title": "Baby Shark Dance",
+   "thumbnailUrl": "https://i.ytimg.com/vi/fxPNK000001/hqdefault.jpg",
+   "durationSeconds": 136,
+   "createdAt": "2026-10-01T00:00:00Z",
+   "publishedAt": "2026-10-03T00:00:00Z"
+  },
+  {
+   "id": "fxPNK000002",
+   "channelId": "@Pinkfong",
+   "title": "Police Car Song",
+   "thumbnailUrl": "https://i.ytimg.com/vi/fxPNK000002/hqdefault.jpg",
+   "durationSeconds": 170,
+   "createdAt": "2026-10-01T00:00:00Z",
+   "publishedAt": "2026-10-02T00:00:00Z"
+  },
+  {
+   "id": "fxPNK000003",
+   "channelId": "@Pinkfong",
+   "title": "Dinosaur Stomp",
+   "thumbnailUrl": "https://i.ytimg.com/vi/fxPNK000003/hqdefault.jpg",
+   "durationSeconds": 175,
+   "createdAt": "2026-10-01T00:00:00Z",
+   "publishedAt": "2026-10-10T00:00:00Z"
+  },
+  {
+   "id": "fxNGK000001",
+   "channelId": "@NatGeoKids",
+   "title": "Sea Turtles for Kids",
+   "thumbnailUrl": "https://i.ytimg.com/vi/fxNGK000001/hqdefault.jpg",
+   "durationSeconds": 380,
+   "createdAt": "2026-10-01T00:00:00Z",
+   "publishedAt": "2026-10-09T00:00:00Z"
+  },
+  {
+   "id": "fxSCI000001",
+   "channelId": "@SciShowKids",
+   "title": "How Do Plants Grow?",
+   "thumbnailUrl": "https://i.ytimg.com/vi/fxSCI000001/hqdefault.jpg",
+   "durationSeconds": 300,
+   "createdAt": "2026-10-01T00:00:00Z",
+   "publishedAt": "2026-10-08T00:00:00Z"
+  }
+ ],
+ "cards": [
+  {
+   "videoId": "fxSSS000001",
+   "synopsis": "Fixture card for UX review.",
+   "format": "song",
+   "ageFit": {
+    "min": 2,
+    "max": 7
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fixture recommendation.",
+   "confidence": 0.9,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-12T00:00:00Z",
+    "version": "2"
+   }
+  },
+  {
+   "videoId": "fxSSS000002",
+   "synopsis": "Fixture card for UX review.",
+   "format": "song",
+   "ageFit": {
+    "min": 2,
+    "max": 7
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": true,
+     "intensity": 3,
+     "timestamp": "1:12",
+     "evidence": "Fixture evidence."
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fixture recommendation.",
+   "confidence": 0.9,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-12T00:00:00Z",
+    "version": "2"
+   }
+  },
+  {
+   "videoId": "fxSSS000003",
+   "synopsis": "Fixture card for UX review.",
+   "format": "song",
+   "ageFit": {
+    "min": 2,
+    "max": 7
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fixture recommendation.",
+   "confidence": 0.9,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-12T00:00:00Z",
+    "version": "2"
+   }
+  },
+  {
+   "videoId": "fxCOC000001",
+   "synopsis": "Fixture card for UX review.",
+   "format": "song",
+   "ageFit": {
+    "min": 2,
+    "max": 7
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fixture recommendation.",
+   "confidence": 0.9,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-12T00:00:00Z",
+    "version": "2"
+   }
+  },
+  {
+   "videoId": "fxCOC000002",
+   "synopsis": "Fixture card for UX review.",
+   "format": "song",
+   "ageFit": {
+    "min": 2,
+    "max": 7
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fixture recommendation.",
+   "confidence": 0.9,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-12T00:00:00Z",
+    "version": "2"
+   }
+  },
+  {
+   "videoId": "fxCOC000003",
+   "synopsis": "Fixture card for UX review.",
+   "format": "song",
+   "ageFit": {
+    "min": 2,
+    "max": 7
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": true,
+     "intensity": 2,
+     "timestamp": "1:12",
+     "evidence": "Fixture evidence."
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fixture recommendation.",
+   "confidence": 0.9,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-12T00:00:00Z",
+    "version": "2"
+   }
+  },
+  {
+   "videoId": "fxPNK000001",
+   "synopsis": "Fixture card for UX review.",
+   "format": "song",
+   "ageFit": {
+    "min": 2,
+    "max": 7
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fixture recommendation.",
+   "confidence": 0.9,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-12T00:00:00Z",
+    "version": "2"
+   }
+  },
+  {
+   "videoId": "fxPNK000003",
+   "synopsis": "Fixture card for UX review.",
+   "format": "song",
+   "ageFit": {
+    "min": 2,
+    "max": 7
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": true,
+     "intensity": 2,
+     "timestamp": "1:12",
+     "evidence": "Fixture evidence."
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fixture recommendation.",
+   "confidence": 0.9,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-12T00:00:00Z",
+    "version": "2"
+   }
+  },
+  {
+   "videoId": "fxNGK000001",
+   "synopsis": "Fixture card for UX review.",
+   "format": "educational",
+   "ageFit": {
+    "min": 4,
+    "max": 10
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fixture recommendation.",
+   "confidence": 0.9,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-12T00:00:00Z",
+    "version": "2"
+   }
+  },
+  {
+   "videoId": "fxSCI000001",
+   "synopsis": "Fixture card for UX review.",
+   "format": "educational",
+   "ageFit": {
+    "min": 4,
+    "max": 9
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fixture recommendation.",
+   "confidence": 0.9,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-12T00:00:00Z",
+    "version": "2"
+   }
+  }
+ ],
+ "confirmations": [],
+ "whitelist": [
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "kind": "channel",
+   "targetId": "@SuperSimpleSongs",
+   "createdAt": "2026-10-01T00:00:00Z",
+   "profileId": null
+  },
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "kind": "channel",
+   "targetId": "@Cocomelon",
+   "createdAt": "2026-10-01T00:00:00Z",
+   "profileId": null
+  },
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "kind": "channel",
+   "targetId": "@Pinkfong",
+   "createdAt": "2026-10-01T00:00:00Z",
+   "profileId": null
+  },
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "kind": "channel",
+   "targetId": "@SciShowKids",
+   "createdAt": "2026-10-01T00:00:00Z",
+   "profileId": null
+  }
+ ],
+ "settings": [],
+ "_comment": "UX-review fixture for local screenshots. Titles/ids are fixture data, not real reviews.",
+ "profiles": [
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "name": "Maya",
+   "age": 6,
+   "avatar": "\ud83e\udd8a",
+   "interests": [],
+   "mode": "open",
+   "blockedTags": [
+    "violence",
+    "scary_imagery"
+   ],
+   "blockedFormats": [
+    "gameplay_commentary"
+   ],
+   "hideUnreviewed": true,
+   "dailyCheckLimit": 20,
+   "kidsOnlySearch": false,
+   "sort": 0,
+   "id": "e6148654-0dd2-4da9-ac82-3bb897a87d83",
+   "createdAt": "2026-10-13T07:03:25.726Z",
+   "dailyMinutes": 45,
+   "bedtime": "19:30"
+  },
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "name": "Leo",
+   "age": 4,
+   "avatar": "\ud83d\udc22",
+   "interests": [],
+   "mode": "locked",
+   "blockedTags": [
+    "violence",
+    "scary_imagery",
+    "monsters"
+   ],
+   "blockedFormats": [
+    "gameplay_commentary"
+   ],
+   "hideUnreviewed": true,
+   "dailyCheckLimit": 20,
+   "kidsOnlySearch": false,
+   "sort": 1,
+   "id": "11111111-2222-4333-8444-555555555555",
+   "createdAt": "2026-10-13T07:03:25.726Z"
+  }
+ ],
+ "whitelistPre0018": [],
+ "legacyGrants": [],
+ "schema": 18
+}
