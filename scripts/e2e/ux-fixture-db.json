@@ -988,6 +988,13 @@
    "targetId": "@SciShowKids",
    "createdAt": "2026-10-01T00:00:00Z",
    "profileId": null
+  },
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "kind": "override",
+   "targetId": "fxCOC000003",
+   "profileId": "e6148654-0dd2-4da9-ac82-3bb897a87d83",
+   "createdAt": "2026-10-05T00:00:00Z"
   }
  ],
  "settings": [],
@@ -1040,6 +1047,18 @@
   }
  ],
  "whitelistPre0018": [],
- "legacyGrants": [],
+ "legacyGrants": [
+  {
+   "id": "lg-ux-1",
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "kind": "auto",
+   "targetId": "fxPNK000002",
+   "createdAt": "2026-09-01T00:00:00Z",
+   "candidateProfileIds": [
+    "e6148654-0dd2-4da9-ac82-3bb897a87d83",
+    "11111111-2222-4333-8444-555555555555"
+   ]
+  }
+ ],
  "schema": 18
 }

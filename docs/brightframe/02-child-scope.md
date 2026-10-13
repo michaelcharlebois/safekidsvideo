@@ -182,3 +182,30 @@ Kid-side indicators are also child-scoped now: pending requests, running checks,
     - first shows what each child would then be able to watch, and asks for confirmation
     - leaves each child's own blocks in place
 - Tests are in `test/grants.test.ts`.
+
+## Before production: two policies to confirm
+
+**Version-1 AI reviews (those that may contain filled-in "absent" findings)**
+- **What they are:** cards made before reviewer version 2. If the model left a concern category out, the old code wrote it as "not present". Afterwards, there's no way to tell those apart from real "not present" findings.
+- **How they're treated now:**
+  - They count as complete reviews. The gate's checks (all categories present, values in range, confidence ≥ 0.7) all pass, because the filling-in made them look complete.
+  - Videos they cleared keep playing.
+  - The UI doesn't single them out.
+- **The risk:** a category the model never assessed reads as "not found". The only categories affected are those the model skipped; a skipped category was most often one that wasn't present.
+- **How to find out the scale:**
+  1. `npm run review -- --upgrade-v1 --dry` lists how many version-1 cards there are.
+  2. `--upgrade-v1 --max N` re-reviews them oldest first, within the daily budget. If a re-review fails, the version-1 card stays.
+- **Options (product decision):**
+  - **(a)** Re-review all version-1 cards in nightly batches after deploy. Recommended.
+  - **(b)** Also treat version-1 cards as "Awaiting review" until re-reviewed. Stricter, but every currently playable video stops playing until it's re-reviewed.
+  - **(c)** Leave them as they are.
+
+  This branch implements (a)'s tooling but doesn't run it.
+
+**Family-wide (pre-0018) blocks and children added later**
+- A family-wide block applies to every child, **including children added later**, until a parent changes it. No child's "Allow" can get past it, and the video page says so.
+- **"Block each child separately"** turns it into one block per *current* child. A child added afterwards is **not** blocked by it; the video page says this before you choose it.
+- **"Unblock for everyone"** removes it after showing what each current child would then be able to watch. A child added later gets the normal rules.
+- **Choice to confirm:**
+  - Keep these semantics (recommended): family-wide = everyone, now and later; per child = the children you chose.
+  - Or have new children inherit their siblings' blocks, which would be new functionality.

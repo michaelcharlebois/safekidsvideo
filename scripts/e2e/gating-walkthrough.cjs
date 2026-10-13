@@ -9,6 +9,9 @@ const results = [];
 const check = (name, ok, detail = "") => { results.push({ name, ok, detail }); console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? "  — " + detail : ""}`); };
 const ids = async (page) => page.$$eval('a[href^="/watch/"]', (as) => [...new Set(as.map((a) => a.getAttribute("href").split("/")[2]).filter((x) => /^[\w-]{11}$/.test(x)))]);
 
+// Parent pages stream behind a loading skeleton (loading.tsx); wait until it's gone before reading.
+const settled = async (page) => { await page.waitForSelector('[aria-busy="true"]', { state: "detached", timeout: 15000 }).catch(() => {}); await page.waitForLoadState("networkidle").catch(() => {}); };
+
 (async () => {
   const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {});
   const tv = await browser.newContext({ viewport: { width: 1280, height: 720 } }); // the shared TV
@@ -36,13 +39,13 @@ const ids = async (page) => page.$$eval('a[href^="/watch/"]', (as) => [...new Se
   await parent.fill('input[name="pin"]', "1234");
   await parent.keyboard.press("Enter");
   await parent.waitForURL((u) => u.pathname.startsWith("/parent"));
-  await parent.goto(`${BASE}/parent/settings?kid=${MAYA}`);
+  await parent.goto(`${BASE}/parent/settings?kid=${MAYA}`); await settled(parent);
   await parent.fill('input[name="pin"]', "1234");
   await parent.click('button:has-text("Save")');
-  await parent.waitForLoadState("networkidle");
+  await parent.waitForURL(/error=/, { timeout: 15000 }).catch(() => {}); await settled(parent);
   check("parent can't choose 1234 as the new PIN", (await parent.innerText("body")).includes("other than 1234"));
   await parent.screenshot({ path: `${OUT}/02-pin-1234-refused.png`, fullPage: false });
-  await parent.goto(`${BASE}/parent/settings?kid=${MAYA}`);
+  await parent.goto(`${BASE}/parent/settings?kid=${MAYA}`); await settled(parent);
   await parent.fill('input[name="pin"]', "2580");
   await parent.click('button:has-text("Save")');
   await parent.waitForURL(/saved=1/);
@@ -86,13 +89,14 @@ const ids = async (page) => page.$$eval('a[href^="/watch/"]', (as) => [...new Se
   check("remote: down reaches a video tile, up returns to the top menu", f1 === "tile" && f2 === "header", `${f1} / ${f2}`);
 
   // 6. Review queue: "Keep hidden" for Maya is a standing decision
-  await parent.goto(`${BASE}/parent/review?kid=${MAYA}`);
+  await parent.goto(`${BASE}/parent/review?kid=${MAYA}`); await settled(parent);
   check("review queue shows the filtered video for Maya", (await parent.innerText("body")).includes("Wheels on the Bus"));
   await parent.screenshot({ path: `${OUT}/05-queue.png`, fullPage: true });
-  await parent.click('button:has-text("Keep hidden for Maya")');
-  await parent.waitForLoadState("networkidle");
+  await parent.click('article:has-text("The Wheels on the Bus") button:has-text("Keep hidden")');
+  // Wait for the server action to finish (the item leaves the inbox) before navigating away.
+  await parent.waitForSelector('article:has-text("The Wheels on the Bus")', { state: "detached", timeout: 15000 });
   // relax Maya's filters: unblock violence
-  await parent.goto(`${BASE}/parent/settings?kid=${MAYA}`);
+  await parent.goto(`${BASE}/parent/settings?kid=${MAYA}`); await settled(parent);
   const box = parent.locator('input[name="block:violence"]');
   if (await box.isChecked()) await box.uncheck();
   await parent.click('button:has-text("Save")');
@@ -100,18 +104,18 @@ const ids = async (page) => page.$$eval('a[href^="/watch/"]', (as) => [...new Se
   await kid.goto(`${BASE}/watch`); await kid.waitForLoadState("networkidle");
   home = await ids(kid);
   check("Keep hidden holds after Maya's filters are relaxed", !home.includes("e_04ZrNroTo"), home.join(","));
-  await parent.goto(`${BASE}/parent/video/e_04ZrNroTo`);
+  await parent.goto(`${BASE}/parent/video/e_04ZrNroTo`); await settled(parent);
   const vtext = await parent.innerText("body");
   check("video page explains it's kept hidden for Maya, with a way to undo", vtext.includes("keep it hidden") && vtext.includes("Stop keeping hidden"));
   await parent.screenshot({ path: `${OUT}/06-kept-hidden.png`, fullPage: true });
   await parent.click('button:has-text("Stop keeping hidden")');
-  await parent.waitForLoadState("networkidle");
+  await parent.waitForSelector('button:has-text("Stop keeping hidden")', { state: "detached", timeout: 15000 });
   await kid.goto(`${BASE}/watch`); await kid.waitForLoadState("networkidle");
   home = await ids(kid);
   check("after Stop keeping hidden (filters relaxed) it plays for Maya", home.includes("e_04ZrNroTo"));
 
   // 7. Allow an unreviewed video for Maya from the video page: disclosure first
-  await parent.goto(`${BASE}/parent/video/XqZsoesa55w`);
+  await parent.goto(`${BASE}/parent/video/XqZsoesa55w`); await settled(parent);
   await parent.click('form:has(input[name="profileId"][value="' + MAYA + '"]) button:has-text("Allow for Maya")');
   await parent.waitForURL(/confirm=/);
   check("video page: unreviewed allow asks for confirmation", (await parent.innerText("body")).includes("hasn't been reviewed yet"));
@@ -124,11 +128,11 @@ const ids = async (page) => page.$$eval('a[href^="/watch/"]', (as) => [...new Se
   check("after confirming, it plays for Maya", (await ids(kid)).includes("XqZsoesa55w"));
 
   // 8. Old open-mode clearance → "Allow for Leo" goes through the same disclosure, then is an explicit approval
-  await parent.goto(`${BASE}/parent/review?kid=${LEO}`);
+  await parent.goto(`${BASE}/parent/review?kid=${LEO}`); await settled(parent);
   const rtext = await parent.innerText("body");
-  check("review page lists the old record and says it was an automatic clearance", rtext.includes("Old approvals to review") && rtext.includes("automatic Open-mode"));
+  check("review page lists the old record and says it was an automatic clearance", rtext.includes("Old approval record") && rtext.includes("automatic Open-mode"));
   await parent.screenshot({ path: `${OUT}/08-legacy.png`, fullPage: true });
-  await parent.click('li:has-text("automatic") button:has-text("Allow for Leo")');
+  await parent.click('article:has-text("automatic Open-mode") button:has-text("Allow for Leo")');
   await parent.waitForURL(/confirm=WRVsOCh907o/);
   check("review page: unreviewed legacy allow asks for confirmation", (await parent.innerText("body")).includes("hasn't been reviewed yet"));
   await parent.screenshot({ path: `${OUT}/09-confirm-review-page.png` });
@@ -137,7 +141,7 @@ const ids = async (page) => page.$$eval('a[href^="/watch/"]', (as) => [...new Se
   await parent.waitForLoadState("networkidle");
   await parent.screenshot({ path: `${OUT}/09b-after-legacy.png`, fullPage: true });
   const after = await parent.innerText("body");
-  check("legacy record resolved", !after.includes("Old approvals to review"), parent.url() + " :: " + after.slice(after.indexOf("Old approvals") - 20, after.indexOf("Old approvals") + 200));
+  check("legacy record resolved", !after.includes("Old approval record"), parent.url() + " :: " + after.slice(after.indexOf("Old approvals") - 20, after.indexOf("Old approvals") + 200));
 
   // 9. Switch the TV to Leo (needs the PIN again); Leo is Locked
   await kid.goto(`${BASE}/watch/who?pick=${LEO}`); await kid.waitForLoadState("networkidle"); await kid.waitForTimeout(500);

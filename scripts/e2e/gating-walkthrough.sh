@@ -7,9 +7,10 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 WORK="$(mktemp -d)"; PORT="${PORT:-3311}"
 cp scripts/e2e/fixture-db.json "$WORK/db.json"   # a throwaway copy; your data/db.json is untouched
-SIFT_LOCAL_DB="$WORK/db.json" npx next start -p "$PORT" > "$WORK/server.log" 2>&1 &
+# Own process group, so the cleanup also stops the next-server child (not just the npx wrapper).
+SIFT_LOCAL_DB="$WORK/db.json" setsid npx next start -p "$PORT" > "$WORK/server.log" 2>&1 &
 SERVER=$!
-trap 'kill $SERVER 2>/dev/null || true' EXIT
+trap 'kill -- -$SERVER 2>/dev/null || kill $SERVER 2>/dev/null || true' EXIT
 for _ in $(seq 1 30); do curl -s -o /dev/null "http://localhost:$PORT/watch/who" && break; sleep 0.5; done
 BASE_URL="http://localhost:$PORT" OUT_DIR="$WORK" node scripts/e2e/gating-walkthrough.cjs
 echo "screenshots: $WORK"
