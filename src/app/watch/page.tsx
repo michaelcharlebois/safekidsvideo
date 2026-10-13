@@ -29,7 +29,7 @@ export default async function WatchPage() {
   const byChannel = new Map<string, VideoWithCard[]>();
   for (const v of mine) byChannel.set(v.channelId, [...(byChannel.get(v.channelId) ?? []), v]);
   const FRESH_MS = 30 * 60 * 1000;
-  const now = Date.now();
+  const now = Date.now(); // eslint-disable-line react-hooks/purity -- server component, rendered per request
   const shelves = [...byChannel.entries()]
     .map(([channelId, vids]) => {
       const videos = vids.filter(ok).sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
