@@ -88,6 +88,10 @@ On every content card a parent can say the card is accurate, too strict or too l
 
 Each kid (`profiles` table, migration `0011_profiles.sql`) has their own viewing mode, filters, daily check limit and screen-time settings; the family shares the PIN and crowd threshold. The dashboard's filter card has a tab per kid; `/parent/kids` adds and edits them. On a shared TV the viewer shows "Who's watching?" when there's more than one kid and remembers the pick in a cookie; the avatar in the header switches. Watch history, checks and requests are tagged with the profile. Pairing codes are now 8 digits.
 
+## Onboarding and starter packs
+
+New families land on `/start` (five steps: how it works → kids → trusted channels → how each kid watches → pairing code) until `families.onboarded_at` is set (migration `0012_onboarding_billing.sql`). `data/packs.json` defines starter packs — one tap approves the set; channels are pulled and seed-reviewed in the background. Packs also appear on the dashboard's Approve card.
+
 ## Layout
 
 ```

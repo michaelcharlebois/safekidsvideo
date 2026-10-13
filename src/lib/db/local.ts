@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Channel, Confirmation, ContentCard, FamilySettings, Profile, ReviewerNotes, Video, WhitelistEntry } from "@/lib/types";
+import type { Channel, Confirmation, ContentCard, Family, FamilySettings, Profile, ReviewerNotes, Video, WhitelistEntry } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SETTINGS, mergeSettings, type Store } from "./store";
 
 type Db = {
@@ -13,6 +13,7 @@ type Db = {
   whitelist: WhitelistEntry[];
   settings: FamilySettings[];
   profiles?: Profile[];
+  families?: Family[];
 };
 
 const DB_PATH = path.join(process.cwd(), "data", "db.json");
@@ -151,6 +152,18 @@ export const localStore: Store = {
     db.profiles ??= [];
     const p = db.profiles.find((x) => x.id === s.profileId && x.familyId === s.familyId);
     if (p) Object.assign(p, { age: s.kidAge, mode: s.mode, blockedTags: s.blockedTags, blockedFormats: s.blockedFormats, hideUnreviewed: s.hideUnreviewed, dailyCheckLimit: s.dailyCheckLimit, kidsOnlySearch: s.kidsOnlySearch, dailyMinutes: s.dailyMinutes, bedtime: s.bedtime });
+    await persist(db);
+  },
+  async getFamily(familyId) {
+    const db = await load();
+    const f = (db.families ?? []).find((x) => x.id === familyId);
+    return f ?? { id: familyId, plan: "free" as const, onboardedAt: new Date(0).toISOString() }; // local mode: no billing, no onboarding nag
+  },
+  async updateFamily(familyId, patch) {
+    const db = await load();
+    db.families ??= [];
+    const f = db.families.find((x) => x.id === familyId);
+    if (f) Object.assign(f, patch); else db.families.push({ id: familyId, plan: "free", ...patch });
     await persist(db);
   },
   async listProfiles(familyId) {

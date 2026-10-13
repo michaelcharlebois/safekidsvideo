@@ -1,0 +1,13 @@
+{
+  "_comment": "Starter packs: one tap approves the set. Handles are resolved via the YouTube API; unknown ones are skipped.",
+  "packs": [
+    { "id": "little", "title": "Little ones", "ages": "2–4", "blurb": "Songs, gentle rhymes and slow, friendly faces.", "emoji": "🧸",
+      "channels": ["@SuperSimpleSongs", "@msrachel", "@Cocomelon", "@LittleBabyBum", "@Pinkfong", "@SesameStreet"] },
+    { "id": "preschool", "title": "Preschool learners", "ages": "4–6", "blurb": "Numbers, letters, Bluey and Blippi — learning that doesn't feel like it.", "emoji": "🎒",
+      "channels": ["@Numberblocks", "@BlueyOfficialChannel", "@BlippiOfficial", "@PBSKIDS", "@PeppaPigOfficial", "@JackHartmann", "@HomeschoolPop"] },
+    { "id": "curious", "title": "Curious kids", "ages": "6–9", "blurb": "Science, animals, art and big builds for kids who ask why.", "emoji": "🔬",
+      "channels": ["@SciShowKids", "@NatGeoKids", "@MarkRober", "@ArtforKidsHub", "@CrashCourseKids", "@WildKratts", "@BrainPOP"] },
+    { "id": "calm", "title": "Calm & creative", "ages": "any", "blurb": "Slower pacing, drawing along, singing along. Good for wind-down time.", "emoji": "🎨",
+      "channels": ["@ArtforKidsHub", "@SuperSimpleSongs", "@TheWigglesTV", "@OctonautsOfficial"] }
+  ]
+}

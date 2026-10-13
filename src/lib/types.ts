@@ -173,6 +173,17 @@ export type WhitelistEntry = {
   createdAt: string;
 };
 
+export type Plan = "trial" | "active" | "past_due" | "canceled" | "free";
+/** Family-level account state: onboarding and billing. */
+export type Family = {
+  id: string;
+  onboardedAt?: string;
+  plan: Plan;
+  trialEndsAt?: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+};
+
 /** A kid. Each has their own viewing mode, filters and limits; the family shares PIN + crowd threshold. */
 export type Profile = {
   id: string;

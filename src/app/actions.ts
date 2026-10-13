@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { ingestChannel, ingestVideo } from "@/lib/ingest";
-import { parseYouTubeUrl, searchForParent, type ParentSearch } from "@/lib/youtube";
+import { fetchChannelMeta, parseYouTubeUrl, searchForParent, type ParentSearch } from "@/lib/youtube";
+import { packById } from "@/lib/packs";
 import { CONCERN_TAGS, FORMATS, type ConcernTag, type ConfirmationVerdict, type FamilyMode, type TagVote, type VideoFormat } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
@@ -230,10 +231,12 @@ export async function signOut() {
 
 // ---- Supabase mode: kid-device pairing -----------------------------------
 
-export async function newPairingCode() {
+export async function newPairingCode(form?: FormData) {
   const fid = await requireParent();
   await createPairingCode(fid);
   revalidatePath("/parent/devices");
+  const next = String(form?.get("next") ?? "");
+  if (next.startsWith("/")) redirect(next);
 }
 
 export type PairResult = { error: string } | null;
@@ -295,6 +298,58 @@ export async function recordWatch(videoId: string, completed: boolean) {
   const v = await resolveViewer();
   if (!v.familyId) return;
   await logWatch(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, completed, v.profileId);
+}
+
+// ---- Starter packs + onboarding ---------------------------------------------------
+
+/** Approve every channel in a starter pack: whitelist now, pull + review in the background. */
+export async function approvePack(form: FormData) {
+  const fid = await requireParent();
+  const pack = packById(String(form.get("pack") ?? ""));
+  const next = String(form.get("next") ?? "/parent");
+  if (!pack) redirect(next);
+  const resolved: { id: string; handle: string }[] = [];
+  for (const handle of pack.channels) {
+    try {
+      const meta = await fetchChannelMeta(handle);
+      if (!meta || meta.id.startsWith("@")) continue;
+      await db.upsertChannel({ ...meta, createdAt: (await db.getChannel(meta.id))?.createdAt ?? new Date().toISOString() });
+      await db.addToWhitelist({ familyId: fid, kind: "channel", targetId: meta.id });
+      resolved.push({ id: meta.id, handle });
+    } catch { /* unknown handle — skip */ }
+  }
+  revalidatePath("/parent"); revalidatePath("/watch");
+  if (resolved.length && process.env.GEMINI_API_KEY) {
+    after(async () => {
+      for (const { id } of resolved) {
+        try {
+          const { videos } = await ingestChannel(id, 10, 10);
+          await seedChannelReviews(videos, { max: 4 });
+        } catch (e) { console.error("pack ingest failed", id, e); }
+      }
+      revalidatePath("/parent"); revalidatePath("/watch");
+    });
+  }
+  redirect(`${next}${next.includes("?") ? "&" : "?"}pack=${pack.id}`);
+}
+
+/** Onboarding step 4: each kid's viewing mode, then mark the family onboarded. */
+export async function finishOnboarding(form: FormData) {
+  const fid = await requireParent();
+  for (const p of await db.listProfiles(fid)) {
+    const m = String(form.get(`mode:${p.id}`) ?? "");
+    if (m === "locked" || m === "open" || m === "open_ask") await db.upsertProfile({ ...p, mode: m });
+  }
+  await db.updateFamily(fid, { onboardedAt: new Date().toISOString() });
+  revalidatePath("/parent"); revalidatePath("/watch");
+  redirect("/start?step=5");
+}
+
+/** Skip straight to the dashboard (but still count as onboarded so we don't nag). */
+export async function skipOnboarding() {
+  const fid = await requireParent();
+  await db.updateFamily(fid, { onboardedAt: new Date().toISOString() });
+  redirect("/parent");
 }
 
 // ---- Kid profiles -------------------------------------------------------------

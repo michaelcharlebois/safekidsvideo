@@ -7,13 +7,14 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { blockedReasons, getLibrary } from "@/lib/queries";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMATS, FORMAT_LABELS, MODE_LABELS, type FamilyMode } from "@/lib/types";
 import { Button, Card, CardSummary, Pill, TopBar } from "@/components/ui";
-import { lock, resolveWatchRequest, saveSettings, signOut, toggleWhitelist } from "@/app/actions";
+import { approvePack, lock, resolveWatchRequest, saveSettings, signOut, toggleWhitelist } from "@/app/actions";
 import { listPendingRequests } from "@/lib/activity";
 import { countSubscriptions, pushEnabled } from "@/lib/push";
 import { NotifyButton } from "./notify-button";
 import { reviewNextBatch, sendTestPush } from "@/app/actions";
 import { AddForm } from "./add-form";
 import { SearchAdd } from "./search-add";
+import { PACKS } from "@/lib/packs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // background batch reviews run within this budget
@@ -26,6 +27,8 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const viewer = await resolveViewer();
   if (viewer.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent");
   const fid = viewer.familyId;
+  const family = await db.getFamily(fid);
+  if (!family.onboardedAt) redirect("/start");
   const profiles = await db.listProfiles(fid);
   const kidParam = typeof sp.kid === "string" && profiles.some((p) => p.id === sp.kid) ? sp.kid : undefined;
   const kidId = kidParam ?? viewer.profileId ?? profiles[0]?.id;
@@ -112,6 +115,20 @@ export default async function ParentPage(props: PageProps<"/parent">) {
             <details className="mt-3 text-sm">
               <summary className="cursor-pointer font-bold text-muted">Or paste a link / @handle</summary>
               <AddForm />
+            </details>
+            <details className="mt-2 text-sm" open={approvedChannels.size === 0}>
+              <summary className="cursor-pointer font-bold text-muted">Starter packs</summary>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {PACKS.map((p) => (
+                  <form key={p.id} action={approvePack} className="rounded-xl border border-line p-3 flex flex-col gap-1.5">
+                    <input type="hidden" name="pack" value={p.id} />
+                    <input type="hidden" name="next" value="/parent" />
+                    <p className="font-extrabold"><span className="mr-1">{p.emoji}</span>{p.title} <span className="text-muted font-bold text-xs">· ages {p.ages}</span></p>
+                    <p className="text-xs text-muted flex-1">{p.blurb}</p>
+                    <Button type="submit" variant={sp.pack === p.id ? "ghost" : "primary"} className="text-xs px-3 py-1.5 self-start">{sp.pack === p.id ? "✓ Added" : "Add this pack"}</Button>
+                  </form>
+                ))}
+              </div>
             </details>
           </Card>
 

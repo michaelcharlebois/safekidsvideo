@@ -78,7 +78,7 @@ async function familyForUser(userId: string): Promise<string> {
   if (data) return data.id;
   const { data: created, error } = await sb
     .from("families")
-    .insert({ owner_user_id: userId, pin_hash: "1234", kid_age: 6 })
+    .insert({ owner_user_id: userId, pin_hash: "1234", kid_age: 6, plan: "trial", trial_ends_at: new Date(Date.now() + 30 * 86_400_000).toISOString() })
     .select("id")
     .single();
   if (error) throw new Error(error.message);

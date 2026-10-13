@@ -2,6 +2,7 @@ import type {
   Channel,
   ConcernTag,
   Confirmation,
+  Family,
   ContentCard,
   FamilySettings,
   Profile,
@@ -46,6 +47,8 @@ export interface Store {
   getSettings(familyId: string, profileId?: string): Promise<FamilySettings>;
   /** Writes family-level fields (PIN, threshold) to the family and the rest to s.profileId's profile. */
   saveSettings(s: FamilySettings): Promise<void>;
+  getFamily(familyId: string): Promise<Family>;
+  updateFamily(familyId: string, patch: Partial<Omit<Family, "id">>): Promise<void>;
   listProfiles(familyId: string): Promise<Profile[]>;
   getProfile(id: string): Promise<Profile | undefined>;
   upsertProfile(p: Omit<Profile, "createdAt"> & { createdAt?: string }): Promise<Profile>;

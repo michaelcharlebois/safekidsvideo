@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Channel, Confirmation, ContentCard, Profile, ReviewerNotes, Video } from "@/lib/types";
+import type { Channel, Confirmation, ContentCard, Family, Profile, ReviewerNotes, Video } from "@/lib/types";
 import { DEFAULT_PROFILE, mergeSettings, type Store } from "./store";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -149,6 +149,22 @@ export const supabaseStore: Store = {
         daily_check_limit: s.dailyCheckLimit, kids_only_search: s.kidsOnlySearch, daily_minutes: s.dailyMinutes ?? null, bedtime: s.bedtime ?? null,
       }).eq("id", s.profileId).eq("family_id", s.familyId));
     }
+  },
+  async getFamily(familyId) {
+    const d = must<any>(await client().from("families").select("id,onboarded_at,plan,trial_ends_at,stripe_customer_id,stripe_subscription_id").eq("id", familyId).maybeSingle());
+    return {
+      id: familyId, onboardedAt: d?.onboarded_at ?? undefined, plan: d?.plan ?? "trial", trialEndsAt: d?.trial_ends_at ?? undefined,
+      stripeCustomerId: d?.stripe_customer_id ?? undefined, stripeSubscriptionId: d?.stripe_subscription_id ?? undefined,
+    };
+  },
+  async updateFamily(familyId, patch) {
+    const row: Record<string, unknown> = {};
+    if ("onboardedAt" in patch) row.onboarded_at = patch.onboardedAt ?? null;
+    if ("plan" in patch) row.plan = patch.plan;
+    if ("trialEndsAt" in patch) row.trial_ends_at = patch.trialEndsAt ?? null;
+    if ("stripeCustomerId" in patch) row.stripe_customer_id = patch.stripeCustomerId ?? null;
+    if ("stripeSubscriptionId" in patch) row.stripe_subscription_id = patch.stripeSubscriptionId ?? null;
+    if (Object.keys(row).length) must(await client().from("families").update(row).eq("id", familyId));
   },
   async listProfiles(familyId) {
     return must(await client().from("profiles").select("*").eq("family_id", familyId).order("sort").order("created_at")).map(toProfile);
