@@ -3,10 +3,11 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
-import { blockedReasons, getLibrary } from "@/lib/queries";
+import { videoForChildren } from "@/lib/queries";
+import { reviewEligibility } from "@/lib/gate";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS } from "@/lib/types";
 import { Button, Card, ConcernPill, PacePill, Pill, Stars, TopBar } from "@/components/ui";
-import { runReview, toggleWhitelist } from "@/app/actions";
+import { addAndReview, allowVideoForChild, runReview } from "@/app/actions";
 import { FeedbackForm } from "./feedback-form";
 import { VERDICT_LABELS } from "@/lib/types";
 
@@ -20,11 +21,13 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
   const viewer = await resolveViewer();
   if (viewer.role !== "parent") redirect(supabaseEnabled ? `/login?next=/parent/video/${id}` : `/unlock?next=/parent/video/${id}`);
   const fid = viewer.familyId;
-  const [lib, settings, confirmations] = await Promise.all([getLibrary(fid), db.getSettings(fid), db.listConfirmations([id])]);
-  const v = lib.find((x) => x.id === id);
-  if (!v) notFound();
-  const blocked = blockedReasons(v, settings);
+  const [view, settings, confirmations] = await Promise.all([videoForChildren(fid, id), db.getSettings(fid), db.listConfirmations([id])]);
+  if (!view) notFound();
+  const v = view.video;
   const c = v.card;
+  const reviewed = reviewEligibility(c).eligible;
+  const confirmFor = typeof sp.confirm === "string" ? view.perChild.find((k) => k.profile.id === sp.confirm) : undefined;
+  const error = typeof sp.error === "string" ? sp.error : null;
   const mine = confirmations.find((x) => x.familyId === fid);
   const present = c?.concerns.filter((x) => x.present) ?? [];
   const absent = c?.concerns.filter((x) => !x.present) ?? [];
@@ -48,19 +51,53 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
             <h1 className="text-2xl font-extrabold leading-tight">{v.title}</h1>
             <p className="text-sm text-muted"><Link href={`/parent/channel/${v.channelId}`} className="hover:underline">{v.channel?.title ?? v.channelId}</Link></p>
           </div>
-          <form action={toggleWhitelist}>
-            <input type="hidden" name="kind" value="video" />
-            <input type="hidden" name="targetId" value={v.id} />
-            <input type="hidden" name="on" value={v.whitelisted ? "0" : "1"} />
-            <Button type="submit" variant={v.whitelisted ? "ghost" : "primary"}>{v.whitelisted ? "✓ Approved" : "Approve"}</Button>
-          </form>
+          <LibraryControl videoId={v.id} addedDirectly={view.addedDirectly} channelApproved={view.channelApproved} />
         </div>
 
-        {blocked.length > 0 && (
-          <Card className="p-3 border-bad/40 bg-bad/5 text-sm">
-            <b className="text-bad">Hidden from kid mode</b> — your filters block: {blocked.join(", ")}.
+        {error && <Card className="p-3 border-bad/40 bg-bad/5 text-sm font-bold text-bad">{error}</Card>}
+
+        {confirmFor && !reviewed && (
+          <Card className="p-4 border-warn bg-sun/30 space-y-2">
+            <p className="font-extrabold">This video hasn&apos;t been reviewed yet.</p>
+            <p className="text-sm">Allowing it means {confirmFor.profile.name} can watch it before anyone has checked what&apos;s in it — the AI review and your filters won&apos;t apply. You can undo this any time.</p>
+            <div className="flex gap-2">
+              <form action={allowVideoForChild}>
+                <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={confirmFor.profile.id} /><input type="hidden" name="confirm" value="1" />
+                <Button type="submit">Allow anyway for {confirmFor.profile.name}</Button>
+              </form>
+              <Link href={`/parent/video/${v.id}`}><Button variant="ghost">Cancel</Button></Link>
+            </div>
           </Card>
         )}
+
+        <Card className="p-4">
+          <h2 className="font-extrabold">Who can watch this</h2>
+          <ul className="mt-2 divide-y divide-line">
+            {view.perChild.map(({ profile, v: kv, decision }) => (
+              <li key={profile.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
+                <span className="text-xl">{profile.avatar}</span>
+                <span className="font-bold">{profile.name}</span>
+                <span className={`min-w-0 flex-1 ${decision.allow ? "text-ok" : "text-muted"}`}>
+                  {decision.allow
+                    ? decision.basis === "explicit" ? "Plays — you allowed it" : decision.basis === "open" ? "Plays — passes the review (Open mode)" : "Plays — reviewed and passes their rules"
+                    : `Doesn't play: ${decision.reasons.join(", ")}`}
+                </span>
+                {kv.overridden ? (
+                  <form action={allowVideoForChild}>
+                    <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} /><input type="hidden" name="undo" value="1" />
+                    <Button type="submit" variant="ghost" className="text-xs px-3 py-1">Undo allow</Button>
+                  </form>
+                ) : !decision.allow || kv.blockedByParent ? (
+                  <form action={allowVideoForChild}>
+                    <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} />
+                    <Button type="submit" variant="ghost" className="text-xs px-3 py-1">Allow for {profile.name}{!reviewed ? " (unreviewed)" : ""}</Button>
+                  </form>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted">&ldquo;Allow for&rdquo; is just for that child, and overrides the review and their filters for this one video.</p>
+        </Card>
 
         {!c ? (
           <Card className="p-6 text-center space-y-3">
@@ -154,4 +191,23 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
 function toSeconds(ts: string) {
   const p = ts.split(":").map(Number);
   return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : (p[0] ?? 0) * 60 + (p[1] ?? 0);
+}
+
+/** Library source control: "Add & review" adds the video and starts its review — it does not, by itself, let anyone watch it. */
+function LibraryControl({ videoId, addedDirectly, channelApproved }: { videoId: string; addedDirectly: boolean; channelApproved: boolean }) {
+  if (channelApproved && !addedDirectly) return <span className="shrink-0 text-xs text-muted text-right">In your library<br />via an approved channel</span>;
+  return (
+    <form action={addAndReview} className="shrink-0 text-right">
+      <input type="hidden" name="videoId" value={videoId} />
+      {addedDirectly ? (
+        <>
+          <input type="hidden" name="remove" value="1" />
+          <span className="block text-xs text-muted">In your library</span>
+          <button type="submit" className="text-xs font-bold text-muted hover:text-bad">Remove</button>
+        </>
+      ) : (
+        <Button type="submit">Add &amp; review</Button>
+      )}
+    </form>
+  );
 }

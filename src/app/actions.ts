@@ -14,11 +14,15 @@ import { askForMoreTime, grantBonusMinutes } from "@/lib/screentime";
 import { CONCERN_TAGS, FORMATS, type ConcernTag, type ConfirmationVerdict, type FamilyMode, type TagVote, type VideoFormat } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
-import { createPairingCode, DEVICE_COOKIE, PROFILE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice } from "@/lib/family";
+import { assignDevice, createPairingCode, DEVICE_COOKIE, devicePinLock, PROFILE_COOKIE, recordDevicePinAttempt, redeemPairingCode, resolveViewer, revokeDevice, setDeviceActiveProfile } from "@/lib/family";
+import { addVideoToLibrary, allowForChild, approveRequest, decideForChild, GrantError, recordOpenClearance, resolveLegacy } from "@/lib/grants";
+import { hashPin, pinIsSet, verifyPin } from "@/lib/pin";
+import { nextAuthorized, reviewEligibility } from "@/lib/gate";
+import { timeState } from "@/lib/screentime";
 import { DEFAULT_PROFILE } from "@/lib/db/store";
 import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
-import { checksToday, createRequest, finishCheck, logCheck, logWatch, logWatchEnd, resolveRequest } from "@/lib/activity";
-import { aiPasses, canPlay, getKidScreen, getLibrary } from "@/lib/queries";
+import { checksToday, createRequest, finishCheck, getRequest, logCheck, logWatch, logWatchEnd, resolveRequest } from "@/lib/activity";
+import { authorize, childSettings, getKidScreen, getLibrary, playableFor, screen } from "@/lib/queries";
 import { BudgetExceededError, reviewVideo } from "@/lib/reviewer";
 import { pushToFamily, removeSubscription, saveSubscription } from "@/lib/push";
 import { runPipeline, seedChannelReviews } from "@/lib/pipeline";
@@ -48,10 +52,20 @@ export async function addByUrl(_prev: AddResult | null, form: FormData): Promise
   const parsed = parseYouTubeUrl(input);
   try {
     if (parsed.kind === "video") {
+      // "Add & review": the video joins the library and gets reviewed. It does NOT play until the review
+      // clears each child's rules — or a parent uses "Allow for <child>".
       const v = await ingestVideo(input);
-      await db.addToWhitelist({ familyId: fid, kind: "video", targetId: v.id });
+      await addVideoToLibrary(db, fid, v.id);
+      const reviewed = reviewEligibility(await db.getCard(v.id)).eligible;
+      if (!reviewed && process.env.GEMINI_API_KEY) {
+        after(async () => {
+          try { await db.upsertCard(await reviewVideo(v.id, { durationSeconds: v.durationSeconds })); }
+          catch (e) { console.error("add & review failed", v.id, (e as Error).message); }
+          revalidatePath("/parent"); revalidatePath("/watch");
+        });
+      }
       revalidatePath("/parent");
-      return { ok: true, message: `Added "${v.title}" to the approved list.` };
+      return { ok: true, message: reviewed ? `Added "${v.title}". It plays for each child whose rules it passes.` : `Added "${v.title}" and started its review. It won't play until the review clears.` };
     }
     if (parsed.kind === "channel") {
       const { channelId, videos } = await ingestChannel(input, 20, 10);
@@ -92,13 +106,15 @@ export async function parentSearch(_prev: ParentSearchResult | null, form: FormD
   }
 }
 
+/** Family content sources only (channel / video). Per-child decisions go through the grant helpers. */
 export async function toggleWhitelist(form: FormData) {
   const fid = await requireParent();
-  const kind = form.get("kind") as "channel" | "video";
+  const kind = form.get("kind");
+  if (kind !== "channel" && kind !== "video") throw new Error("Unsupported");
   const targetId = String(form.get("targetId"));
   const on = form.get("on") === "1";
-  if (on) await db.addToWhitelist({ familyId: fid, kind, targetId });
-  else await db.removeFromWhitelist(fid, kind, targetId);
+  if (on) await db.addToWhitelist({ familyId: fid, kind, targetId, profileId: null });
+  else await db.removeFromWhitelist(fid, kind, targetId, null);
   revalidatePath("/parent");
   revalidatePath(`/parent/video/${targetId}`);
 }
@@ -156,11 +172,11 @@ export async function saveSettings(form: FormData) {
   try {
     await db.saveSettings({
     ...current,
-    pinHash: /^\d{4}$/.test(pin) ? pin : current.pinHash,
+    pinHash: /^\d{4}$/.test(pin) ? hashPin(pin) : current.pinHash,
     kidAge: Number(form.get("kidAge") ?? current.kidAge) || current.kidAge,
     blockedTags,
     blockedFormats,
-    hideUnreviewed: form.get("hideUnreviewed") === "on",
+    hideUnreviewed: true, // no longer a choice: the gate never plays unreviewed videos automatically
     mode: (["locked", "open", "open_ask"].includes(String(form.get("mode"))) ? String(form.get("mode")) : current.mode) as FamilyMode,
     dailyCheckLimit: Number(form.get("dailyCheckLimit") ?? current.dailyCheckLimit) || current.dailyCheckLimit,
     kidsOnlySearch: form.get("kidsOnlySearch") === "on",
@@ -193,7 +209,7 @@ export async function unlock(_prev: UnlockResult, form: FormData): Promise<Unloc
   const v = await resolveViewer();
   if (!v.familyId) redirect("/login");
   const settings = await db.getSettings(v.familyId);
-  if (pin !== settings.pinHash) return { error: "Wrong PIN" };
+  if (!verifyPin(pin, settings.pinHash)) return { error: "Wrong PIN" };
   const c = await cookies();
   c.set(PARENT_COOKIE, "1", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 12 });
   redirect(next.startsWith("/") ? next : "/parent");
@@ -279,9 +295,10 @@ export async function askGrownUp(form: FormData): Promise<void> {
   const v = await resolveViewer();
   if (!v.familyId) redirect("/pair");
   const videoId = String(form.get("videoId"));
-  // Only videos the family has already approved at the channel level can be asked for.
-  const screen = await getKidScreen(v.familyId, v.profileId);
-  const video = screen.askable.find((x) => x.id === videoId);
+  if (!v.profileId) redirect("/watch/who"); // no child picked on a shared screen: fail closed
+  // Only videos already in this child's library can be asked for.
+  const kidScreen = await getKidScreen(v.familyId, v.profileId);
+  const video = kidScreen.askable.find((x) => x.id === videoId);
   if (!video) return;
   await createRequest(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, undefined, v.profileId);
   // No card yet? Review it now so the parent sees a card, not a blank.
@@ -301,10 +318,19 @@ export async function askGrownUp(form: FormData): Promise<void> {
 export async function resolveWatchRequest(form: FormData) {
   const fid = await requireParent();
   const requestId = String(form.get("requestId"));
-  const videoId = String(form.get("videoId"));
   const approve = form.get("decision") === "approve";
+  const req = await getRequest(fid, requestId);
+  if (!req) redirect("/parent");
+  if (approve) {
+    try {
+      // Allowed for the child who asked. Old requests with no child need the parent to pick one.
+      await approveRequest(db, fid, req, String(form.get("profileId") ?? "") || null);
+    } catch (e) {
+      if (e instanceof GrantError) redirect(`/parent/review?error=${encodeURIComponent(e.message)}`);
+      throw e;
+    }
+  }
   await resolveRequest(fid, requestId, approve ? "approved" : "denied");
-  if (approve) await db.addToWhitelist({ familyId: fid, kind: "override", targetId: videoId });
   revalidatePath("/parent");
   revalidatePath("/parent/review");
   revalidatePath("/watch");
@@ -328,13 +354,17 @@ export async function recordWatch(videoId: string, completed: boolean) {
 export async function decideVideo(form: FormData) {
   const fid = await requireParent();
   const videoId = String(form.get("videoId") ?? "");
-  const decision = String(form.get("decision") ?? "");
+  const profileId = String(form.get("profileId") ?? "");
+  const d = String(form.get("decision") ?? "");
+  const decision = d === "allow" || d === "hide" || d === "never" || d === "undo" ? d : null;
   const next = String(form.get("next") ?? "/parent/review");
-  if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) redirect(next);
-  for (const k of ["override", "block", "dismissed"] as const) await db.removeFromWhitelist(fid, k, videoId);
-  if (decision === "allow") await db.addToWhitelist({ familyId: fid, kind: "override", targetId: videoId });
-  else if (decision === "never") await db.addToWhitelist({ familyId: fid, kind: "block", targetId: videoId });
-  else if (decision === "hide") await db.addToWhitelist({ familyId: fid, kind: "dismissed", targetId: videoId });
+  if (!decision) redirect(next);
+  try {
+    await decideForChild(db, fid, profileId, videoId, decision);
+  } catch (e) {
+    if (e instanceof GrantError) redirect(`/parent/review?error=${encodeURIComponent(e.message)}`);
+    throw e;
+  }
   revalidatePath("/parent"); revalidatePath("/parent/review"); revalidatePath(`/parent/video/${videoId}`); revalidatePath("/watch");
   redirect(next.startsWith("/") ? next : "/parent/review");
 }
@@ -495,16 +525,144 @@ export async function moveChannel(form: FormData) {
 // ---- Kid profiles -------------------------------------------------------------
 
 /** Kid picks who's watching (or parent picks which kid to look at). */
-export async function selectProfile(form: FormData) {
+export type PickResult = { error: string } | null;
+
+/**
+ * Choose who's watching.
+ *  - Parent (signed in): picks freely; stored in their own cookie.
+ *  - Personal device (assigned to a child): can't switch.
+ *  - Single-child family: that child, no PIN.
+ *  - Shared screen: needs the family PIN (rate-limited per device), and a PIN must have been set.
+ *    The choice is stored on the device row, server-side — not in a cookie the screen controls.
+ */
+export async function selectProfile(_prev: PickResult, form: FormData): Promise<PickResult> {
   const v = await resolveViewer();
   if (!v.familyId) redirect("/pair");
   const id = String(form.get("profileId") ?? "");
   const p = await db.getProfile(id);
-  if (!p || p.familyId !== v.familyId) redirect("/watch/who");
-  const c = await cookies();
-  c.set(PROFILE_COOKIE, p.id, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
+  if (!p || p.familyId !== v.familyId) return { error: "That isn't one of this family's kids." };
   const next = String(form.get("next") ?? "/watch");
-  redirect(next.startsWith("/") ? next : "/watch");
+  const go = () => redirect(next.startsWith("/") && !next.startsWith("//") ? next : "/watch");
+  const c = await cookies();
+
+  if (v.role === "parent") {
+    c.set(PROFILE_COOKIE, p.id, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
+    go();
+  }
+  if (v.role !== "device") redirect("/pair");
+  if (v.assignedProfileId) return { error: "This screen belongs to one child. A grown-up can change that under Devices." };
+
+  if (v.shared) {
+    const fam = await db.getSettings(v.familyId, p.id);
+    if (!pinIsSet(fam.pinHash)) return { error: "A grown-up needs to set a PIN first (Settings → PIN)." };
+    const pin = String(form.get("pin") ?? "");
+    if (v.deviceId !== "local") {
+      const lock = await devicePinLock(v.deviceId);
+      if (lock.secondsLeft) return { error: `Too many tries. Wait ${Math.ceil(lock.secondsLeft / 60)} min.` };
+    }
+    const ok = verifyPin(pin, fam.pinHash);
+    if (v.deviceId !== "local") await recordDevicePinAttempt(v.deviceId, ok);
+    if (!ok) return { error: "That PIN isn't right." };
+  }
+
+  if (v.deviceId === "local") c.set(PROFILE_COOKIE, p.id, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
+  else await setDeviceActiveProfile(v.familyId, v.deviceId, p.id);
+  revalidatePath("/watch");
+  go();
+  return null;
+}
+
+/** Parent: make a screen a child's personal device, or shared (PIN to switch). */
+export async function assignDeviceAction(form: FormData) {
+  const fid = await requireParent();
+  const deviceId = String(form.get("deviceId") ?? "");
+  const profileId = String(form.get("profileId") ?? "") || null;
+  if (profileId) {
+    const p = await db.getProfile(profileId);
+    if (!p || p.familyId !== fid) redirect("/parent/devices?error=child");
+  }
+  await assignDevice(fid, deviceId, profileId);
+  revalidatePath("/parent/devices");
+  redirect("/parent/devices?saved=1");
+}
+
+/** Parent: "Add & review" from a video page — library source + start the review. Not authorization. */
+export async function addAndReview(form: FormData) {
+  const fid = await requireParent();
+  await requirePaid(fid);
+  const videoId = String(form.get("videoId") ?? "");
+  const remove = form.get("remove") === "1";
+  try {
+    if (remove) await db.removeFromWhitelist(fid, "video", videoId, null);
+    else {
+      await addVideoToLibrary(db, fid, videoId);
+      const video = await db.getVideo(videoId);
+      if (video && !reviewEligibility(await db.getCard(videoId)).eligible && process.env.GEMINI_API_KEY) {
+        after(async () => {
+          try { await db.upsertCard(await reviewVideo(videoId, { durationSeconds: video.durationSeconds })); }
+          catch (e) { console.error("add & review failed", videoId, (e as Error).message); }
+          revalidatePath(`/parent/video/${videoId}`); revalidatePath("/watch");
+        });
+      }
+    }
+  } catch (e) {
+    if (e instanceof GrantError) redirect(`/parent/video/${videoId}?error=${encodeURIComponent(e.message)}`);
+    throw e;
+  }
+  revalidatePath(`/parent/video/${videoId}`); revalidatePath("/parent");
+  redirect(`/parent/video/${videoId}${remove ? "" : "?reviewing=1"}`);
+}
+
+/** Parent: allow one specific video for one child (the explicit approval). Unreviewed videos need a confirm step. */
+export async function allowVideoForChild(form: FormData) {
+  const fid = await requireParent();
+  const videoId = String(form.get("videoId") ?? "");
+  const profileId = String(form.get("profileId") ?? "");
+  const undo = form.get("undo") === "1";
+  try {
+    if (undo) await decideForChild(db, fid, profileId, videoId, "undo");
+    else {
+      const reviewed = reviewEligibility(await db.getCard(videoId)).eligible;
+      if (!reviewed && form.get("confirm") !== "1") redirect(`/parent/video/${videoId}?confirm=${encodeURIComponent(profileId)}`);
+      await allowForChild(db, fid, profileId, videoId);
+    }
+  } catch (e) {
+    if (e instanceof GrantError) redirect(`/parent/video/${videoId}?error=${encodeURIComponent(e.message)}`);
+    throw e;
+  }
+  revalidatePath(`/parent/video/${videoId}`); revalidatePath("/parent"); revalidatePath("/watch");
+  redirect(`/parent/video/${videoId}?allowed=${encodeURIComponent(profileId)}${undo ? "&undone=1" : ""}`);
+}
+
+/** Parent: re-assign or dismiss an approval from before approvals were per-child. */
+export async function resolveLegacyAction(form: FormData) {
+  const fid = await requireParent();
+  const id = String(form.get("legacyId") ?? "");
+  const allowFor = String(form.get("allowFor") ?? "");
+  try {
+    await resolveLegacy(db, fid, id, allowFor ? { allowFor } : "dismiss");
+  } catch (e) {
+    if (e instanceof GrantError) redirect(`/parent/review?error=${encodeURIComponent(e.message)}`);
+    throw e;
+  }
+  revalidatePath("/parent/review"); revalidatePath("/watch");
+  redirect("/parent/review");
+}
+
+/**
+ * The player asks what's next. Re-derived from a FRESH authorization of this child's library (and
+ * today's time limits), so a stale client playlist can't play something a parent just restricted.
+ */
+export async function nextVideo(currentId: string, order: string[]): Promise<{ id: string; title: string } | null> {
+  const v = await resolveViewer();
+  if (!v.familyId || !v.profileId) return null;
+  const settings = await childSettings(v.familyId, v.profileId);
+  if (!settings) return null;
+  const family = await db.getFamily(v.familyId);
+  if (!(await timeState(v.familyId, settings, family.timezone)).allowed) return null;
+  const fresh = playableFor(await getLibrary(v.familyId, v.profileId), settings);
+  const n = nextAuthorized(fresh, currentId, order.slice(0, 500));
+  return n ? { id: n.id, title: n.title } : null;
 }
 
 export type ProfileResult = { ok: true } | { error: string } | null;
@@ -552,18 +710,21 @@ export type CheckResult =
 
 /** Given a video that now has a card: play it, or send it to the parent. */
 async function settleCheck(familyId: string, videoId: string, deviceId: string | undefined, checkId: string | null, profileId?: string): Promise<CheckResult> {
-  const settings = await db.getSettings(familyId, profileId);
-  const lib = await getLibrary(familyId);
+  const settings = await childSettings(familyId, profileId);
+  if (!profileId || !settings) { await finishCheck(checkId, "failed"); return { status: "error", message: "Pick who's watching first" }; }
+  const lib = await getLibrary(familyId, profileId);
   const row = lib.find((x) => x.id === videoId);
   if (!row) throw new Error("Video vanished");
-  if (canPlay(row, settings)) {
-    if (!row.whitelisted) await db.addToWhitelist({ familyId, kind: "auto", targetId: videoId });
+  const decision = authorize(row, settings);
+  if (decision.allow) {
+    // A record for THIS child only; it grants nothing once they're out of Open mode (authorize ignores it).
+    if (decision.basis === "open") await recordOpenClearance(db, familyId, profileId, videoId);
     await finishCheck(checkId, "passed");
     revalidatePath("/watch");
     revalidatePath("/watch/search");
     return { status: "playing", videoId };
   }
-  const { reasons } = aiPasses(row, settings);
+  const { reasons } = screen(row, settings);
   await createRequest(familyId, videoId, deviceId, reasons[0], profileId);
   await finishCheck(checkId, settings.mode === "open_ask" && reasons.length === 0 ? "needs_parent" : "blocked");
   revalidatePath("/watch");
@@ -584,8 +745,9 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
   const videoId = String(form.get("videoId") ?? "").trim();
   if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return { status: "error", message: "Bad video id" };
   const profileId = v.profileId;
+  const settings = await childSettings(familyId, profileId);
+  if (!profileId || !settings) return { status: "error", message: "Pick who's watching first" };
   if (!(await familyStatus(familyId)).status.ok) return { status: "error", message: "Ask a grown-up to renew Sift" };
-  const settings = await db.getSettings(familyId, profileId);
   if (settings.mode === "locked") return { status: "error", message: "Search is off" };
   const deviceId = v.role === "device" ? v.deviceId : undefined;
   if ((await checksToday(familyId, profileId)) >= settings.dailyCheckLimit) return { status: "limit" };

@@ -57,16 +57,17 @@ export function SearchAdd({ approvedChannels, approvedVideos }: { approvedChanne
   );
 }
 
-function ApproveButton({ target, label, approved }: { target: string; label: string; approved: boolean }) {
+function ApproveButton({ target, label, approved, doneLabel = "✓ Added" }: { target: string; label: string; approved: boolean; doneLabel?: string }) {
   const [state, action, pending] = useActionState<AddResult | null, FormData>(addByUrl, null);
   const done = approved || state?.ok;
   return (
     <form action={action} className="shrink-0 text-right">
       <input type="hidden" name="url" value={target} />
       <Button type="submit" disabled={pending || !!done} variant={done ? "ghost" : "primary"} className="text-xs px-3 py-1.5">
-        {pending ? "Adding…" : done ? "✓ Approved" : label}
+        {pending ? "Adding…" : done ? doneLabel : label}
       </Button>
       {state && !state.ok && <p className="mt-1 max-w-[12rem] text-xs font-bold text-bad">{state.error}</p>}
+      {state?.ok && <p className="mt-1 max-w-[14rem] text-xs text-muted">{state.message}</p>}
     </form>
   );
 }
@@ -84,7 +85,7 @@ function ChannelRow({ c, approved }: { c: ChannelHit; approved: boolean }) {
         </p>
         {c.description && <p className="text-xs text-muted line-clamp-1">{c.description}</p>}
       </div>
-      <ApproveButton target={c.id} label="Approve channel" approved={approved} />
+      <ApproveButton target={c.id} label="Add channel" approved={approved} />
     </li>
   );
 }
@@ -98,7 +99,7 @@ function VideoRow({ v, approved }: { v: VideoMeta; approved: boolean }) {
         <p className="text-xs text-muted truncate">{v.channelTitle}{v.durationSeconds ? ` · ${fmtDur(v.durationSeconds)}` : ""}</p>
         {approved && <Link href={`/parent/video/${v.id}`} className="text-xs font-bold text-accent hover:underline">View card</Link>}
       </div>
-      <ApproveButton target={v.id} label="Approve video" approved={approved} />
+      <ApproveButton target={v.id} label="Add & review" approved={approved} doneLabel="✓ In library" />
     </li>
   );
 }

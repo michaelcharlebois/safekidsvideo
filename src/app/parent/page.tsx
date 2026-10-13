@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
-import { blockedReasons, getLibrary } from "@/lib/queries";
+import { blockedReasons, canPlay, getLibrary } from "@/lib/queries";
+import { hasRealReview, needsDecision } from "@/lib/gate";
 import { MODE_LABELS, type VideoWithCard } from "@/lib/types";
 import { Button, Card } from "@/components/ui";
 import { approvePack, grantMoreTime, moveChannel, resolveWatchRequest, reviewNextBatch, toggleWhitelist } from "@/app/actions";
@@ -39,7 +40,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const kidId = (typeof sp.kid === "string" && profiles.some((p) => p.id === sp.kid) ? sp.kid : undefined) ?? viewer.profileId ?? profiles[0]?.id;
   const kid = profiles.find((p) => p.id === kidId);
   const [lib, settings, channels, requests, wl, recent, events] = await Promise.all([
-    getLibrary(fid), db.getSettings(fid, kidId), db.listChannels(), listPendingRequests(fid), db.listWhitelist(fid), recentWatchIds(fid, 6, kidId),
+    getLibrary(fid, kidId), db.getSettings(fid, kidId), db.listChannels(), listPendingRequests(fid), db.listWhitelist(fid), recentWatchIds(fid, 6, kidId),
     watchEventsSince(fid, new Date(Date.now() - 30 * 86_400_000).toISOString()), // eslint-disable-line react-hooks/purity -- server component
   ]);
   const approvedChannels = new Set(wl.filter((w) => w.kind === "channel").map((w) => w.targetId));
@@ -50,10 +51,10 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const byId = new Map(lib.map((v) => [v.id, v]));
 
   const mine = lib.filter((v) => v.whitelisted);
-  const reviewed = (v: VideoWithCard) => !!v.card && v.card.reviewer.model !== "sample";
-  const status = (v: VideoWithCard): View => (!reviewed(v) ? "unreviewed" : blockedReasons(v, settings).length ? "hidden" : "visible");
+  const reviewed = (v: VideoWithCard) => hasRealReview(v.card);
+  const status = (v: VideoWithCard): View => (canPlay(v, settings) ? "visible" : !reviewed(v) ? "unreviewed" : "hidden");
   const visible = mine.filter((v) => status(v) === "visible");
-  const undecided = mine.filter((v) => status(v) === "hidden" && !v.dismissed && !v.overridden);
+  const undecided = mine.filter((v) => needsDecision(v, settings));
   const backlog = mine.filter((v) => status(v) === "unreviewed" && (v.durationSeconds ?? 0) <= 20 * 60).length;
   const needsYou = requests.length + undecided.length + (moreAsk ? 1 : 0);
 
@@ -141,8 +142,12 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                     </div>
                   </div>
                   <form action={resolveWatchRequest} className="flex gap-2 border-t border-line px-3 py-2">
-                    <input type="hidden" name="requestId" value={r.id} /><input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="next" value="/parent" />
-                    <Button type="submit" name="decision" value="approve" className="px-4">Allow</Button>
+                    <input type="hidden" name="requestId" value={r.id} /><input type="hidden" name="next" value="/parent" />
+                    {who ? (
+                      <Button type="submit" name="decision" value="approve" className="px-4">Allow for {who.name}</Button>
+                    ) : (
+                      <Link href="/parent/review" className="self-center rounded-full bg-ink px-4 py-2 text-sm font-bold text-bg">Choose a child</Link>
+                    )}
                     <Button type="submit" name="decision" value="deny" variant="ghost">Not now</Button>
                     <Link href={`/parent/review`} className="ml-auto self-center text-xs font-bold text-muted hover:text-ink">See the card</Link>
                   </form>

@@ -8,7 +8,8 @@ import { blockedReasons, getLibrary } from "@/lib/queries";
 import { listPendingRequests } from "@/lib/activity";
 import { CONCERN_LABELS } from "@/lib/types";
 import { Button, Card, ConcernPill, PacePill, Pill, Stars, TopBar } from "@/components/ui";
-import { decideVideo, resolveWatchRequest } from "@/app/actions";
+import { decideVideo, resolveLegacyAction, resolveWatchRequest } from "@/app/actions";
+import { needsDecision } from "@/lib/gate";
 
 export const dynamic = "force-dynamic";
 
@@ -24,15 +25,19 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
   const profiles = await db.listProfiles(fid);
   const kidId = (typeof sp.kid === "string" && profiles.some((p) => p.id === sp.kid) ? sp.kid : undefined) ?? v.profileId ?? profiles[0]?.id;
   const kid = profiles.find((p) => p.id === kidId);
-  const [lib, settings, requests] = await Promise.all([getLibrary(fid), db.getSettings(fid, kidId), listPendingRequests(fid)]);
+  const [lib, settings, allRequests, legacy] = await Promise.all([getLibrary(fid, kidId), db.getSettings(fid, kidId), listPendingRequests(fid), db.listLegacyGrants(fid)]);
   const byId = new Map(lib.map((x) => [x.id, x]));
+  const videosById = new Map((await Promise.all(legacy.map((g) => db.getVideo(g.targetId)))).filter(Boolean).map((x) => [x!.id, x!]));
+  // This child's requests, plus old requests that never recorded which child asked (the parent picks).
+  const requests = allRequests.filter((r) => r.profileId === kidId || !r.profileId);
+  const error = typeof sp.error === "string" ? sp.error : null;
 
   const queue = [
-    ...requests.map((r) => ({ kind: "request" as const, v: byId.get(r.videoId)!, requestId: r.id })).filter((x) => x.v),
+    ...requests.map((r) => ({ kind: "request" as const, v: byId.get(r.videoId)!, requestId: r.id, requester: r.profileId })).filter((x) => x.v),
     ...lib
-      .filter((x) => x.whitelisted && x.card && x.card.reviewer.model !== "sample" && !x.dismissed && !x.overridden && blockedReasons(x, settings).length > 0 && !requests.some((r) => r.videoId === x.id))
+      .filter((x) => needsDecision(x, settings) && !requests.some((r) => r.videoId === x.id))
       .sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""))
-      .map((x) => ({ kind: "hidden" as const, v: x, requestId: undefined })),
+      .map((x) => ({ kind: "hidden" as const, v: x, requestId: undefined, requester: undefined })),
   ];
   const skip = typeof sp.skip === "string" ? sp.skip.split(",").filter(Boolean) : [];
   const remaining = queue.filter((q) => !skip.includes(q.v.id));
@@ -52,6 +57,32 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
           </div>
           <span className="text-muted">{remaining.length} left{done ? ` · ${done} skipped` : ""}</span>
         </div>
+        {error && <Card className="p-3 border-bad/40 bg-bad/5 text-sm font-bold text-bad">{error}</Card>}
+
+        {legacy.length > 0 && (
+          <Card className="p-4 space-y-3">
+            <div>
+              <h2 className="font-extrabold">Approvals from before per-child permissions</h2>
+              <p className="text-sm text-muted">Approvals are now made for one child at a time. We couldn&apos;t tell which child these were for, so they&apos;re paused — nothing here plays until you choose.</p>
+            </div>
+            <ul className="divide-y divide-line">
+              {legacy.map((g) => {
+                const vid = videosById.get(g.targetId);
+                const cands = profiles.filter((p) => g.candidateProfileIds.includes(p.id));
+                return (
+                  <li key={g.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
+                    <Link href={`/parent/video/${g.targetId}`} className="min-w-0 flex-1 font-bold hover:underline line-clamp-1">{vid?.title ?? g.targetId}</Link>
+                    <span className="text-xs text-muted">{g.kind === "override" ? "you approved it" : "a search check cleared it"}</span>
+                    {(cands.length ? cands : profiles).map((p) => (
+                      <form key={p.id} action={resolveLegacyAction}><input type="hidden" name="legacyId" value={g.id} /><input type="hidden" name="allowFor" value={p.id} /><Button type="submit" variant="ghost" className="text-xs px-2.5 py-1">Allow for {p.name}</Button></form>
+                    ))}
+                    <form action={resolveLegacyAction}><input type="hidden" name="legacyId" value={g.id} /><button type="submit" className="text-xs font-bold text-muted hover:text-ink">Dismiss</button></form>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        )}
 
         {!item ? (
           <Card className="p-8 text-center space-y-2">
@@ -61,16 +92,16 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
             <Link href="/parent" className="inline-block pt-2"><Button variant="ghost">Back to dashboard</Button></Link>
           </Card>
         ) : (
-          <QueueCard item={item} kidName={kid?.name ?? "your kid"} reasons={blockedReasons(item.v, settings)} nextSkip={[...skip, item.v.id].join(",")} kidId={kidId} />
+          <QueueCard item={item} kidName={kid?.name ?? "your kid"} reasons={blockedReasons(item.v, settings)} nextSkip={[...skip, item.v.id].join(",")} kidId={kidId} profiles={profiles.map((p) => ({ id: p.id, name: p.name }))} />
         )}
       </main>
     </>
   );
 }
 
-type Item = { kind: "request" | "hidden"; v: NonNullable<Awaited<ReturnType<typeof getLibrary>>[number]>; requestId?: string };
+type Item = { kind: "request" | "hidden"; v: NonNullable<Awaited<ReturnType<typeof getLibrary>>[number]>; requestId?: string; requester?: string };
 
-function QueueCard({ item, kidName, reasons, nextSkip, kidId }: { item: Item; kidName: string; reasons: string[]; nextSkip: string; kidId?: string }) {
+function QueueCard({ item, kidName, reasons, nextSkip, kidId, profiles }: { item: Item; kidName: string; reasons: string[]; nextSkip: string; kidId?: string; profiles: { id: string; name: string }[] }) {
   const { v } = item;
   const c = v.card;
   const present = c?.concerns.filter((x) => x.present) ?? [];
@@ -106,17 +137,28 @@ function QueueCard({ item, kidName, reasons, nextSkip, kidId }: { item: Item; ki
 
         <div className="flex flex-wrap items-center gap-2 pt-1">
           {item.kind === "request" ? (
-            <form action={resolveWatchRequest} className="flex gap-2">
-              <input type="hidden" name="requestId" value={item.requestId} /><input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="next" value={next} />
-              <Button type="submit" name="decision" value="approve">✓ Allow for {kidName}</Button>
+            <form action={resolveWatchRequest} className="flex flex-wrap items-center gap-2">
+              <input type="hidden" name="requestId" value={item.requestId} /><input type="hidden" name="next" value={next} />
+              {item.requester ? (
+                <Button type="submit" name="decision" value="approve">✓ Allow for {kidName}</Button>
+              ) : (
+                <>
+                  {/* An old request that didn't record which child asked: the parent chooses; never "everyone". */}
+                  <select name="profileId" required defaultValue="" className="rounded-full border border-line bg-bg px-3 py-2 text-sm">
+                    <option value="" disabled>Which child?</option>
+                    {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <Button type="submit" name="decision" value="approve">✓ Allow</Button>
+                </>
+              )}
               <Button type="submit" name="decision" value="deny" variant="ghost">Not now</Button>
             </form>
           ) : (
             <form action={decideVideo} className="flex flex-wrap gap-2">
-              <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="next" value={next} />
+              <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={kidId ?? ""} /><input type="hidden" name="next" value={next} />
               <Button type="submit" name="decision" value="allow">✓ Allow for {kidName}</Button>
               <Button type="submit" name="decision" value="hide" variant="ghost">Keep hidden</Button>
-              <Button type="submit" name="decision" value="never" variant="danger">Never</Button>
+              <Button type="submit" name="decision" value="never" variant="danger">Never for {kidName}</Button>
             </form>
           )}
           <span className="ml-auto flex gap-3 text-xs font-bold text-muted">

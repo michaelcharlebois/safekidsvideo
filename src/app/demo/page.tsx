@@ -28,7 +28,7 @@ export default async function DemoPage(props: PageProps<"/demo">) {
         </a>
       </div>
       <div className="rounded-2xl bg-surface border border-line p-4 text-sm text-muted space-y-1">
-        <p><b className="text-ink">Tips.</b> Use two windows side by side: kid screen in one, parent in the other. On the kid screen, Maya can search and &ldquo;Ask a grown-up&rdquo; — the request shows up on the parent dashboard. To get from the kid screen to the parent side, use the Parent door on this page rather than the ⚙ (that asks for a real sign-in).</p>
+        <p><b className="text-ink">Tips.</b> Use two windows side by side: kid screen in one, parent in the other. On the kid screen, Maya can search and &ldquo;Ask a grown-up&rdquo; — the request shows up on the parent dashboard. The kid screen is a shared screen, so picking or switching kids asks for the parent PIN: <b className="text-ink">1234</b>. To get from the kid screen to the parent side, use the Parent door on this page rather than the ⚙ (that asks for a real sign-in).</p>
         <p><a href={`/demo/parent?${q}&reset=1`} className="font-bold underline">Reset the demo family</a> to start fresh.</p>
       </div>
     </main>

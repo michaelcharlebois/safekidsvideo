@@ -8,6 +8,7 @@ import { Button, Card, TopBar } from "@/components/ui";
 import { grantMoreTime, saveSettings } from "@/app/actions";
 import { minutesUsedToday } from "@/lib/screentime";
 import { localDay } from "@/lib/checkin";
+import { pinIsSet } from "@/lib/pin";
 
 export const dynamic = "force-dynamic";
 
@@ -71,10 +72,7 @@ export default async function SettingsPage(props: PageProps<"/parent/settings">)
                 </label>
               ))}
             </div>
-            <label className="flex items-center gap-2 text-sm pt-1">
-              <input type="checkbox" name="hideUnreviewed" defaultChecked={settings.hideUnreviewed} className="accent-accent" />
-              Hide videos until they have a content card
-            </label>
+            <p className="text-xs text-muted pt-1">Videos never play until they&apos;ve been reviewed — unless you use &ldquo;Allow for {kid?.name ?? "this child"}&rdquo; on a specific video.</p>
             <p className="text-xs text-muted pt-1">Hide these kinds of videos entirely:</p>
             <div className="grid grid-cols-1 gap-1">
               {FORMATS.filter((f) => f !== "other").map((f) => (
@@ -124,8 +122,10 @@ export default async function SettingsPage(props: PageProps<"/parent/settings">)
               <label className="flex items-center justify-between gap-2">Wait (minutes)<input type="number" name="skipCooldownMin" min={1} max={15} defaultValue={Math.round((settings.skipCooldownSec ?? 120) / 60)} className="w-16 rounded-lg border border-line px-2 py-1" /></label>
               <label className="flex items-center justify-between gap-2">Free peek (seconds)<input type="number" name="freePeekSec" min={0} max={120} step={5} defaultValue={settings.freePeekSec ?? 30} className="w-16 rounded-lg border border-line px-2 py-1" /></label>
             </div>
+            <h2 className="font-extrabold pt-2">Family PIN</h2>
+            <p className="text-xs text-muted">Used to pick or switch kids on a shared screen{pinIsSet(settings.pinHash) ? "." : " — shared screens stay locked until you set one."}</p>
             <label className="flex items-center justify-between text-sm gap-2">
-              New PIN
+              {pinIsSet(settings.pinHash) ? "Change PIN" : "Set a PIN"}
               <input type="password" name="pin" inputMode="numeric" pattern="\d{4}" maxLength={4} placeholder="••••" className="w-20 rounded-lg border border-line px-2 py-1" />
             </label>
             <Button type="submit" className="w-full">Save</Button>

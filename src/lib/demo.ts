@@ -4,6 +4,9 @@ import { supabaseAdmin, supabaseEnabled } from "@/lib/supabase/server";
 import { db } from "@/lib/db";
 import { DEFAULT_PROFILE } from "@/lib/db/store";
 import { familyForUser } from "@/lib/family";
+import { hashPin } from "@/lib/pin";
+
+export const DEMO_PIN = "1234";
 
 /*
  * Demo access: a secret link that signs a reviewer into a separate, pre-filled demo family —
@@ -61,6 +64,8 @@ export async function ensureDemoFamily(userId: string, reset = false): Promise<s
     await sb.from("profiles").delete().eq("family_id", fid);
   }
   await db.updateFamily(fid, { onboardedAt: new Date().toISOString(), plan: "free" });
+  // Shared demo screens need a PIN to pick a kid; the demo page tells reviewers it's 1234.
+  await sb.from("families").update({ pin_hash: hashPin(DEMO_PIN) }).eq("id", fid);
 
   const profiles = await db.listProfiles(fid);
   if (profiles.length < 2) {
@@ -113,8 +118,7 @@ export async function seedDemoActivity(fid: string, days = 30) {
   if ((count ?? 0) > 0) return;
   await sb.from("families").update({ timezone: "America/Los_Angeles" }).eq("id", fid);
 
-  const { getLibrary, blockedReasons } = await import("@/lib/queries");
-  const lib = await getLibrary(fid);
+  const { getLibrary, canPlay, needsDecision } = await import("@/lib/queries");
   const profiles = await db.listProfiles(fid);
   const rand = rng(20261013);
   const pick = <T,>(xs: T[]) => xs[Math.floor(rand() * xs.length)];
@@ -123,7 +127,8 @@ export async function seedDemoActivity(fid: string, days = 30) {
 
   for (const [pi, p] of profiles.entries()) {
     const settings = await db.getSettings(fid, p.id);
-    const playable = lib.filter((v) => v.whitelisted && v.card && v.card.reviewer.model !== "sample" && !blockedReasons(v, settings).length);
+    const lib = await getLibrary(fid, p.id);
+    const playable = lib.filter((v) => canPlay(v, settings));
     if (!playable.length) continue;
     // Each kid gets 2–3 favourite channels that take most of their time, and a few favourite videos they rewatch.
     const channels = [...new Set(playable.map((v) => v.channelId))].sort(() => rand() - 0.5);
@@ -175,7 +180,7 @@ export async function seedDemoActivity(fid: string, days = 30) {
 
     // A couple of pending "ask a grown-up" requests from the older kid, on videos their filters hide.
     if (pi === 0) {
-      const hidden = lib.filter((v) => v.whitelisted && v.card && blockedReasons(v, settings).length > 0).slice(0, 2);
+      const hidden = lib.filter((v) => needsDecision(v, settings)).slice(0, 2);
       for (const v of hidden) await sb.from("watch_requests").insert({ family_id: fid, video_id: v.id, profile_id: p.id });
     }
   }
