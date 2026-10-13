@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/parent", label: "Home", icon: "⌂", match: (p: string) => p === "/parent" || p.startsWith("/parent/video") || p.startsWith("/parent/channel") },
   { href: "/parent/review", label: "Review", icon: "✓", match: (p: string) => p.startsWith("/parent/review") },
-  { href: "/parent/kids", label: "Kids", icon: "☺", match: (p: string) => p.startsWith("/parent/kids") || p.startsWith("/parent/settings") || p.startsWith("/parent/checkin") || p.startsWith("/parent/insights") },
+  { href: "/parent/kids", label: "Kids", icon: "☺", match: (p: string) => p.startsWith("/parent/kids") || p.startsWith("/parent/settings") || p.startsWith("/parent/checkin") || p.startsWith("/parent/insights") || p.startsWith("/parent/stats") },
   { href: "/parent/account", label: "Account", icon: "⚙", match: (p: string) => p.startsWith("/parent/account") || p.startsWith("/parent/devices") || p.startsWith("/parent/billing") || p.startsWith("/parent/reviewer") },
 ];
 

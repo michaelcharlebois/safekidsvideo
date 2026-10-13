@@ -100,6 +100,10 @@ New families land on `/start` (five steps: how it works → kids → trusted cha
 
 30-day free trial from first sign-in, then a subscription via Stripe Checkout. Env-gated: with `STRIPE_SECRET_KEY` + `STRIPE_PRICE_ID` unset nobody is locked out. Point a Stripe webhook at `/api/stripe/webhook` (`checkout.session.completed`, `customer.subscription.*`) with `STRIPE_WEBHOOK_SECRET`. When a trial lapses the kid screen keeps playing already-approved videos; searching, checking and new approvals pause until the parent subscribes at `/parent/billing`. Remaining trial days carry into the subscription so nobody is charged early.
 
+## Viewing stats
+
+`/parent/stats?kid=&range=7|30`: minutes (estimated from watch events), trend vs. the previous window, by day, by channel, by kind of video, pace mix, time of day, and the most-repeated videos. Per family only. A cross-family "what kids this age watch" view is a later rollup: it needs an optional gender field, a minimum cohort size, and a privacy write-up first.
+
 ## Daily check-in and insights
 
 Evening cron `/api/cron/evening` (02:30 UTC ≈ 7:30pm Pacific; per-timezone scheduling needs an hourly cron on Pro) pushes "How was Ollie today?" to families whose kids watched. `/parent/checkin` is one tap per kid (😤 😐 🙂 😄 + note) and shows what they watched; rows live in `kid_days` (migration `0013_checkins.sql`, which also adds `families.timezone`, learned from the parent's browser). `/parent/insights` compares average mood on days with vs. without each format, concern tag, >60 minutes, >20 frenetic minutes and no-video days, reporting only patterns with ≥3 days on each side and a ≥0.4 difference.

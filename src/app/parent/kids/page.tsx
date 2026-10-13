@@ -29,7 +29,8 @@ export default async function KidsPage(props: PageProps<"/parent/kids">) {
                   <p className="font-extrabold">{p.name}{p.age ? <span className="text-muted font-bold"> · {p.age}</span> : null}</p>
                   <p className="text-xs text-muted truncate">{MODE_LABELS[p.mode].title}{p.interests.length ? ` · likes ${p.interests.join(", ")}` : ""}</p>
                 </div>
-                <Link href={`/parent?kid=${p.id}`} className="text-sm font-bold text-muted hover:text-ink">Filters</Link>
+                <Link href={`/parent/stats?kid=${p.id}`} className="text-sm font-bold text-muted hover:text-ink">Stats</Link>
+                <Link href={`/parent/settings?kid=${p.id}`} className="text-sm font-bold text-muted hover:text-ink">Settings</Link>
                 <Link href={`/parent/kids?edit=${p.id}`} className="text-sm font-bold text-accent hover:underline">Edit</Link>
               </Card>
             </li>

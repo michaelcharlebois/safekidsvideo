@@ -48,6 +48,7 @@ export default async function AccountPage(props: PageProps<"/parent/account">) {
         <Row href="/parent/devices" title="Screens" sub={supabaseEnabled ? `${active} connected` : "Local mode"} />
         <Row href="/parent/billing" title="Plan" sub={planLine} />
         <Row href="/parent/reviewer" title="The reviewer" sub="How accurate it's been, and what it's learned from parents" />
+        <Row href="/parent/stats" title="Viewing stats" sub="How much, of what, and when" />
         <Row href="/parent/insights" title="Insights" sub="Mood vs. what they watched" />
         <div className="pt-4 flex items-center justify-between text-sm">
           <span className="text-muted">{v.email ?? "Local mode"}</span>
