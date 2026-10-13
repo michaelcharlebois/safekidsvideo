@@ -15,6 +15,7 @@ import { reviewNextBatch, sendTestPush } from "@/app/actions";
 import { AddForm } from "./add-form";
 import { SearchAdd } from "./search-add";
 import { PACKS } from "@/lib/packs";
+import { billingStatus } from "@/lib/billing";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // background batch reviews run within this budget
@@ -29,6 +30,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const fid = viewer.familyId;
   const family = await db.getFamily(fid);
   if (!family.onboardedAt) redirect("/start");
+  const billing = billingStatus(family);
   const profiles = await db.listProfiles(fid);
   const kidParam = typeof sp.kid === "string" && profiles.some((p) => p.id === sp.kid) ? sp.kid : undefined;
   const kidId = kidParam ?? viewer.profileId ?? profiles[0]?.id;
@@ -61,6 +63,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
             <Link href="/watch" className="text-sm font-bold text-muted hover:text-ink">Preview kid mode →</Link>
             {supabaseEnabled ? (
               <>
+                <Link href="/parent/billing" className="text-sm font-bold text-muted hover:text-ink">{billing.state === "trial" ? `Trial · ${billing.daysLeft}d` : "Billing"}</Link>
                 <Link href="/parent/kids" className="text-sm font-bold text-muted hover:text-ink">Kids</Link>
                 <Link href="/parent/devices" className="text-sm font-bold text-muted hover:text-ink">Devices</Link>
                 <Link href="/parent/reviewer" className="text-sm font-bold text-muted hover:text-ink">Reviewer</Link>
@@ -74,6 +77,14 @@ export default async function ParentPage(props: PageProps<"/parent">) {
       />
       <main className="mx-auto w-full max-w-5xl px-4 py-6 grid gap-6 lg:grid-cols-[1fr_320px]">
         <section className="space-y-4">
+          {!billing.ok && (
+            <Card className="p-3 border-bad/40 bg-bad/5 text-sm">
+              <b className="text-bad">{billing.state === "past_due" ? "There's a payment problem." : "Your free trial has ended."}</b> The kid screen keeps playing what&apos;s already approved; new approvals and searches are paused. <Link href="/parent/billing" className="font-bold underline">Subscribe →</Link>
+            </Card>
+          )}
+          {billing.ok && billing.state === "trial" && (billing.daysLeft ?? 99) <= 7 && (
+            <Card className="p-3 border-sun/60 bg-sun/20 text-sm"><b>{billing.daysLeft} day{billing.daysLeft === 1 ? "" : "s"} left in your trial.</b> <Link href="/parent/billing" className="font-bold underline">Keep Sift going →</Link></Card>
+          )}
           {error && <Card className="p-3 border-bad/40 bg-bad/5 text-sm"><b className="text-bad">Couldn&apos;t save:</b> {error}</Card>}
           {saved && <Card className="p-3 border-ok/40 bg-ok/5 text-sm font-bold text-ok">Settings saved.</Card>}
           {requests.length > 0 && (

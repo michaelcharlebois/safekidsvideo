@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { ingestChannel, ingestVideo } from "@/lib/ingest";
 import { fetchChannelMeta, parseYouTubeUrl, searchForParent, type ParentSearch } from "@/lib/youtube";
 import { packById } from "@/lib/packs";
+import { billingEnabled, createCheckoutUrl, createPortalUrl, familyStatus } from "@/lib/billing";
 import { CONCERN_TAGS, FORMATS, type ConcernTag, type ConfirmationVerdict, type FamilyMode, type TagVote, type VideoFormat } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
@@ -38,6 +39,7 @@ export type AddResult = { ok: true; message: string } | { ok: false; error: stri
 
 export async function addByUrl(_prev: AddResult | null, form: FormData): Promise<AddResult> {
   const fid = await requireParent();
+  await requirePaid(fid);
   const input = String(form.get("url") ?? "").trim();
   const parsed = parseYouTubeUrl(input);
   try {
@@ -300,11 +302,39 @@ export async function recordWatch(videoId: string, completed: boolean) {
   await logWatch(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, completed, v.profileId);
 }
 
+// ---- Billing -------------------------------------------------------------------
+
+async function requestOrigin() {
+  const h = await headers();
+  return h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host")}`;
+}
+
+export async function startCheckout() {
+  const v = await resolveViewer();
+  if (v.role !== "parent") redirect("/login?next=/parent/billing");
+  if (!billingEnabled) redirect("/parent/billing");
+  redirect(await createCheckoutUrl(v.familyId, v.email, await requestOrigin()));
+}
+
+export async function openPortal() {
+  const v = await resolveViewer();
+  if (v.role !== "parent") redirect("/login?next=/parent/billing");
+  const url = billingEnabled ? await createPortalUrl(v.familyId, await requestOrigin()) : null;
+  redirect(url ?? "/parent/billing");
+}
+
+/** Throws the caller to the billing page when the family's trial/subscription doesn't cover new activity. */
+async function requirePaid(familyId: string) {
+  const { status } = await familyStatus(familyId);
+  if (!status.ok) redirect("/parent/billing");
+}
+
 // ---- Starter packs + onboarding ---------------------------------------------------
 
 /** Approve every channel in a starter pack: whitelist now, pull + review in the background. */
 export async function approvePack(form: FormData) {
   const fid = await requireParent();
+  await requirePaid(fid);
   const pack = packById(String(form.get("pack") ?? ""));
   const next = String(form.get("next") ?? "/parent");
   if (!pack) redirect(next);
@@ -444,6 +474,7 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
   const videoId = String(form.get("videoId") ?? "").trim();
   if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return { status: "error", message: "Bad video id" };
   const profileId = v.profileId;
+  if (!(await familyStatus(familyId)).status.ok) return { status: "error", message: "Ask a grown-up to renew Sift" };
   const settings = await db.getSettings(familyId, profileId);
   if (settings.mode === "locked") return { status: "error", message: "Search is off" };
   const deviceId = v.role === "device" ? v.deviceId : undefined;

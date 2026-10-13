@@ -92,6 +92,10 @@ Each kid (`profiles` table, migration `0011_profiles.sql`) has their own viewing
 
 New families land on `/start` (five steps: how it works → kids → trusted channels → how each kid watches → pairing code) until `families.onboarded_at` is set (migration `0012_onboarding_billing.sql`). `data/packs.json` defines starter packs — one tap approves the set; channels are pulled and seed-reviewed in the background. Packs also appear on the dashboard's Approve card.
 
+## Billing
+
+30-day free trial from first sign-in, then a subscription via Stripe Checkout. Env-gated: with `STRIPE_SECRET_KEY` + `STRIPE_PRICE_ID` unset nobody is locked out. Point a Stripe webhook at `/api/stripe/webhook` (`checkout.session.completed`, `customer.subscription.*`) with `STRIPE_WEBHOOK_SECRET`. When a trial lapses the kid screen keeps playing already-approved videos; searching, checking and new approvals pause until the parent subscribes at `/parent/billing`. Remaining trial days carry into the subscription so nobody is charged early.
+
 ## Layout
 
 ```
