@@ -108,6 +108,8 @@ export type ContentCard = {
   /** 0–1 model confidence */
   confidence: number;
   reviewer: { model: string; reviewedAt: string; version: string; revisions?: number; notesVersion?: number };
+  /** Token usage and estimated cost of the review that produced this card. */
+  usage?: { inputTokens: number; outputTokens: number; costUsd: number };
 };
 
 export type TagVote = "agree" | "overcall" | "missed";

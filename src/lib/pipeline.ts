@@ -117,18 +117,19 @@ export async function seedChannelReviews(videos: Video[], opts: { max?: number; 
 // ---- nightly discovery: keep a curated set of popular kids channels reviewed for everyone ----
 
 
-export type DiscoveryResult = { channels: number; newVideos: number; reviewed: number; failed: number; seconds: number };
+export type DiscoveryResult = { channels: number; newVideos: number; reviewed: number; failed: number; seconds: number; costUsd: number };
 
 /**
  * For each curated channel: make sure it exists with its top videos, pull the newest few
  * uploads, then review the unreviewed backlog newest-first until `max` or the time budget
  * runs out. Cards are global, so every family's Search gets these as instant "Play".
  */
-export async function runDiscovery(opts: { max?: number; budgetMs?: number; concurrency?: number; log?: (s: string) => void } = {}): Promise<DiscoveryResult> {
+export async function runDiscovery(opts: { max?: number; budgetMs?: number; budgetUsd?: number; concurrency?: number; log?: (s: string) => void } = {}): Promise<DiscoveryResult> {
   const log = opts.log ?? (() => {});
   const max = opts.max ?? 25, budgetMs = opts.budgetMs ?? 240_000, concurrency = opts.concurrency ?? 2;
+  const budgetUsd = opts.budgetUsd ?? Number(process.env.DISCOVERY_BUDGET_USD ?? 2);
   const started = Date.now();
-  const result: DiscoveryResult = { channels: 0, newVideos: 0, reviewed: 0, failed: 0, seconds: 0 };
+  const result: DiscoveryResult = { channels: 0, newVideos: 0, reviewed: 0, failed: 0, seconds: 0, costUsd: 0 };
   const handles: string[] = (discovery as { channels: string[] }).channels;
 
   const channelIds: string[] = [];
@@ -161,11 +162,13 @@ export async function runDiscovery(opts: { max?: number; budgetMs?: number; conc
 
   const worker = async () => {
     for (let v = queue.shift(); v; v = queue.shift()) {
-      if (Date.now() - started > budgetMs) return;
+      if (Date.now() - started > budgetMs || result.costUsd >= budgetUsd) return;
       try {
         log(`reviewing: ${v.title}`);
-        await db.upsertCard(await reviewVideo(v.id, { durationSeconds: v.durationSeconds }));
+        const card = await reviewVideo(v.id, { durationSeconds: v.durationSeconds });
+        await db.upsertCard(card);
         result.reviewed++;
+        result.costUsd = Math.round((result.costUsd + (card.usage?.costUsd ?? 0)) * 1e4) / 1e4;
       } catch (e) {
         result.failed++;
         log(`failed: ${v.title} — ${(e as Error).message}`);

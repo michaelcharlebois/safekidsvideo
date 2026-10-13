@@ -78,7 +78,7 @@ On every content card a parent can say the card is accurate, too strict or too l
 2. **Calibration notes, nightly** — `learnFromFeedback()` distils recent disputes into ≤15 general guidelines (versioned in `reviewer_notes`) that are appended to the reviewer's system prompt. Parents can edit them by hand at `/parent/reviewer`.
 3. **Re-review** — disputed cards get a second look with the dispute as context (max two revisions per card, so it can't ping-pong).
 
-`/parent/reviewer` shows agreement rates per tag, the current notes, and recent disputes. Run migration `0009_feedback.sql`.
+`/parent/reviewer` shows agreement rates per tag, the current notes, and recent disputes. Run migrations `0009_feedback.sql` and `0010_usage.sql` (token usage + cost per card; the Reviewer page shows spend, and nightly discovery stops at `DISCOVERY_BUDGET_USD`).
 
 ## Reviewer evals
 

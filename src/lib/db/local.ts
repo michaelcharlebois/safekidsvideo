@@ -87,6 +87,9 @@ export const localStore: Store = {
     const set = new Set(videoIds);
     return (await load()).cards.filter((c) => set.has(c.videoId));
   },
+  async listCardsSince(sinceIso) {
+    return (await load()).cards.filter((c) => c.reviewer.reviewedAt >= sinceIso);
+  },
   async upsertCard(card) {
     const db = await load();
     upsertBy(db.cards, card, (x) => x.videoId);

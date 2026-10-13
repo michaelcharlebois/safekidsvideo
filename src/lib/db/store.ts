@@ -28,6 +28,7 @@ export interface Store {
 
   getCard(videoId: string): Promise<ContentCard | undefined>;
   listCards(videoIds: string[]): Promise<ContentCard[]>;
+  listCardsSince(sinceIso: string): Promise<ContentCard[]>;
   upsertCard(card: ContentCard): Promise<void>;
 
   listConfirmations(videoIds: string[]): Promise<Confirmation[]>;

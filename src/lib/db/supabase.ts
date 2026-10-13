@@ -28,6 +28,7 @@ const toCard = (r: any): ContentCard => ({
   pace: r.pace, educationalValue: Number(r.educational_value), rating: Number(r.rating),
   parentRecommendation: r.parent_recommendation, confidence: Number(r.confidence),
   reviewer: { model: r.reviewer_model, version: r.reviewer_version, reviewedAt: r.reviewed_at, revisions: r.revisions ?? 0, notesVersion: r.notes_version ?? undefined },
+  usage: r.input_tokens != null ? { inputTokens: r.input_tokens, outputTokens: r.output_tokens ?? 0, costUsd: Number(r.cost_usd ?? 0) } : undefined,
 });
 const toNotes = (r: any): ReviewerNotes => ({ version: r.version, notes: r.notes, stats: r.stats ?? undefined, source: r.source, createdAt: r.created_at });
 const toConfirmation = (r: any): Confirmation => ({
@@ -79,12 +80,16 @@ export const supabaseStore: Store = {
     if (!videoIds.length) return [];
     return must(await client().from("content_cards").select("*").in("video_id", videoIds)).map(toCard);
   },
+  async listCardsSince(sinceIso) {
+    return must(await client().from("content_cards").select("*").gte("reviewed_at", sinceIso).limit(5000)).map(toCard);
+  },
   async upsertCard(c) {
     must(await client().from("content_cards").upsert({
       video_id: c.videoId, synopsis: c.synopsis, format: c.format, age_min: c.ageFit.min, age_max: c.ageFit.max, concerns: c.concerns,
       pace: c.pace, educational_value: c.educationalValue, rating: c.rating, parent_recommendation: c.parentRecommendation,
       confidence: c.confidence, reviewer_model: c.reviewer.model, reviewer_version: c.reviewer.version,
       reviewed_at: c.reviewer.reviewedAt, revisions: c.reviewer.revisions ?? 0, notes_version: c.reviewer.notesVersion ?? null,
+      input_tokens: c.usage?.inputTokens ?? null, output_tokens: c.usage?.outputTokens ?? null, cost_usd: c.usage?.costUsd ?? null,
     }));
   },
 

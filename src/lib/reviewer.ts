@@ -7,6 +7,12 @@ import { CONCERN_TAGS, FORMATS, type ContentCard } from "@/lib/types";
 import { videoUrl } from "@/lib/youtube";
 
 export const REVIEWER_VERSION = "1";
+
+/** $ per million tokens. Override with GEMINI_PRICE_IN_PER_M / GEMINI_PRICE_OUT_PER_M as pricing changes. */
+const PRICE_IN = Number(process.env.GEMINI_PRICE_IN_PER_M ?? 0.3);
+const PRICE_OUT = Number(process.env.GEMINI_PRICE_OUT_PER_M ?? 2.5);
+export const estimateCost = (inputTokens: number, outputTokens: number) =>
+  Math.round(((inputTokens * PRICE_IN + outputTokens * PRICE_OUT) / 1e6) * 1e5) / 1e5;
 export const DEFAULT_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
 
 const FindingSchema = z.object({
@@ -125,6 +131,9 @@ export async function reviewVideo(videoId: string, opts: ReviewOpts = {}): Promi
 
   const text = res.text;
   if (!text) throw new Error(`Empty response from ${model} for ${videoId}`);
+  const u = res.usageMetadata;
+  const inputTokens = u?.promptTokenCount ?? 0, outputTokens = (u?.candidatesTokenCount ?? 0) + (u?.thoughtsTokenCount ?? 0);
+  const usage = { inputTokens, outputTokens, costUsd: estimateCost(inputTokens, outputTokens) };
   const parsed = CardSchema.parse(JSON.parse(text));
 
   // Guarantee one finding per tag, in taxonomy order.
@@ -152,6 +161,7 @@ export async function reviewVideo(videoId: string, opts: ReviewOpts = {}): Promi
       revisions: (opts.previous?.reviewer.revisions ?? 0) + (opts.feedback ? 1 : 0),
       notesVersion: notes?.version,
     },
+    usage,
   };
 }
 
