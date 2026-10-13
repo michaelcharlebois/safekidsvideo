@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { runPipeline } from "@/lib/pipeline";
+import { runDiscovery, runPipeline } from "@/lib/pipeline";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 
 export const dynamic = "force-dynamic";
@@ -11,10 +11,13 @@ export async function GET(req: NextRequest) {
   if (secret && req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const result = await runPipeline({ maxReviews: 15, uploadsPerChannel: 10 });
+  const started = Date.now();
+  const result = await runPipeline({ maxReviews: 10, uploadsPerChannel: 10 });
+  // Shared library next, with whatever time is left (Hobby plan allows two daily crons; the other is the evening check-in).
+  const discovery = await runDiscovery({ max: 25, budgetMs: Math.max(30_000, 230_000 - (Date.now() - started)) });
   // Then learn from whatever parents said since last night, and give disputed cards a second look.
   let learned: number | null = null, rereviewed = { reviewed: 0, failed: 0 };
   try { learned = (await learnFromFeedback({ minDisagreements: 1 }))?.version ?? null; } catch (e) { console.error("learn failed", e); }
   try { rereviewed = await rereviewDisputed({ max: 3 }); } catch (e) { console.error("re-review failed", e); }
-  return NextResponse.json({ ...result, notesVersion: learned, rereviewed });
+  return NextResponse.json({ ...result, discovery, notesVersion: learned, rereviewed });
 }

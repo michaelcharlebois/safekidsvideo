@@ -64,6 +64,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
             {supabaseEnabled ? (
               <>
                 <Link href="/parent/billing" className="text-sm font-bold text-muted hover:text-ink">{billing.state === "trial" ? `Trial · ${billing.daysLeft}d` : "Billing"}</Link>
+                <Link href="/parent/checkin" className="text-sm font-bold text-muted hover:text-ink">Check-in</Link>
                 <Link href="/parent/kids" className="text-sm font-bold text-muted hover:text-ink">Kids</Link>
                 <Link href="/parent/devices" className="text-sm font-bold text-muted hover:text-ink">Devices</Link>
                 <Link href="/parent/reviewer" className="text-sm font-bold text-muted hover:text-ink">Reviewer</Link>

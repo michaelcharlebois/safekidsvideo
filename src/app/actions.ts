@@ -9,6 +9,7 @@ import { ingestChannel, ingestVideo } from "@/lib/ingest";
 import { fetchChannelMeta, parseYouTubeUrl, searchForParent, type ParentSearch } from "@/lib/youtube";
 import { packById } from "@/lib/packs";
 import { billingEnabled, createCheckoutUrl, createPortalUrl, familyStatus } from "@/lib/billing";
+import { saveKidDay, saveTimezone } from "@/lib/checkin";
 import { CONCERN_TAGS, FORMATS, type ConcernTag, type ConfirmationVerdict, type FamilyMode, type TagVote, type VideoFormat } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
@@ -300,6 +301,26 @@ export async function recordWatch(videoId: string, completed: boolean) {
   const v = await resolveViewer();
   if (!v.familyId) return;
   await logWatch(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, completed, v.profileId);
+}
+
+// ---- Daily check-in -------------------------------------------------------------
+
+export async function saveCheckin(form: FormData) {
+  const fid = await requireParent();
+  const profileId = String(form.get("profileId") ?? "");
+  const day = String(form.get("day") ?? "");
+  const mood = Number(form.get("mood"));
+  const note = String(form.get("note") ?? "").trim().slice(0, 280) || undefined;
+  const p = await db.getProfile(profileId);
+  if (!p || p.familyId !== fid || !/^\d{4}-\d{2}-\d{2}$/.test(day) || !(mood >= 1 && mood <= 4)) redirect("/parent/checkin");
+  await saveKidDay(fid, { profileId, day, mood, note });
+  revalidatePath("/parent/checkin"); revalidatePath("/parent/insights");
+  redirect(`/parent/checkin?day=${day}&saved=1`);
+}
+
+export async function rememberTimezone(tz: string) {
+  const v = await resolveViewer();
+  if (v.role === "parent") await saveTimezone(v.familyId, tz);
 }
 
 // ---- Billing -------------------------------------------------------------------

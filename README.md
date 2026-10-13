@@ -68,7 +68,7 @@ dashboard has a "Review next 5 now" button; `npm run pipeline` does the same fro
 
 ## Nightly discovery
 
-`data/discovery.json` lists well-known kids channels. `/api/cron/discover` (daily, 11:00 UTC) refreshes their newest uploads and reviews up to 25 short videos within a 4-minute budget, so every family's Search gets them as instant "Play". Run by hand with `npm run pipeline -- --discover [--max 25]`. Edit the list freely — unknown handles are skipped.
+`data/discovery.json` lists well-known kids channels. Discovery runs inside `/api/cron/sync` after the family refresh (two daily crons is the Hobby-plan cap; the other is the evening check-in) refreshes their newest uploads and reviews up to 25 short videos within a 4-minute budget, so every family's Search gets them as instant "Play". Run by hand with `npm run pipeline -- --discover [--max 25]`. Edit the list freely — unknown handles are skipped.
 
 ## The feedback loop
 
@@ -95,6 +95,10 @@ New families land on `/start` (five steps: how it works → kids → trusted cha
 ## Billing
 
 30-day free trial from first sign-in, then a subscription via Stripe Checkout. Env-gated: with `STRIPE_SECRET_KEY` + `STRIPE_PRICE_ID` unset nobody is locked out. Point a Stripe webhook at `/api/stripe/webhook` (`checkout.session.completed`, `customer.subscription.*`) with `STRIPE_WEBHOOK_SECRET`. When a trial lapses the kid screen keeps playing already-approved videos; searching, checking and new approvals pause until the parent subscribes at `/parent/billing`. Remaining trial days carry into the subscription so nobody is charged early.
+
+## Daily check-in and insights
+
+Evening cron `/api/cron/evening` (02:30 UTC ≈ 7:30pm Pacific; per-timezone scheduling needs an hourly cron on Pro) pushes "How was Ollie today?" to families whose kids watched. `/parent/checkin` is one tap per kid (😤 😐 🙂 😄 + note) and shows what they watched; rows live in `kid_days` (migration `0013_checkins.sql`, which also adds `families.timezone`, learned from the parent's browser). `/parent/insights` compares average mood on days with vs. without each format, concern tag, >60 minutes, >20 frenetic minutes and no-video days, reporting only patterns with ≥3 days on each side and a ≥0.4 difference.
 
 ## Layout
 
