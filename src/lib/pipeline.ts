@@ -78,3 +78,36 @@ export async function runPipeline(opts: { familyId?: string; maxReviews?: number
   }
   return result;
 }
+
+/**
+ * Seed reviews for a just-approved channel: the given videos (top-viewed first), short
+ * ones only, a couple at a time, up to `max`. Meant to run via after() so the parent's
+ * request returns immediately and the kid screen fills in over the next few minutes.
+ */
+export async function seedChannelReviews(videos: Video[], opts: { max?: number; concurrency?: number; log?: (s: string) => void } = {}) {
+  const log = opts.log ?? (() => {});
+  const max = opts.max ?? 8, concurrency = opts.concurrency ?? 2;
+  const queue: Video[] = [];
+  for (const v of videos) {
+    if ((v.durationSeconds ?? 0) > MAX_PIPELINE_SECONDS) continue;
+    const card = await db.getCard(v.id);
+    if (card && card.reviewer.model !== "sample") continue;
+    queue.push(v);
+    if (queue.length >= max) break;
+  }
+  let reviewed = 0, failed = 0;
+  const worker = async () => {
+    for (let v = queue.shift(); v; v = queue.shift()) {
+      try {
+        log(`reviewing: ${v.title}`);
+        await db.upsertCard(await reviewVideo(v.id, { durationSeconds: v.durationSeconds }));
+        reviewed++;
+      } catch (e) {
+        failed++;
+        log(`failed: ${v.title} — ${(e as Error).message}`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  return { reviewed, failed };
+}

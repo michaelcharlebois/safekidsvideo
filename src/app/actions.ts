@@ -15,7 +15,7 @@ import { checksToday, createRequest, finishCheck, logCheck, logWatch, resolveReq
 import { aiPasses, canPlay, getKidScreen, getLibrary } from "@/lib/queries";
 import { reviewVideo } from "@/lib/reviewer";
 import { pushToFamily, removeSubscription, saveSubscription } from "@/lib/push";
-import { runPipeline } from "@/lib/pipeline";
+import { runPipeline, seedChannelReviews } from "@/lib/pipeline";
 
 /** Resolve the signed-in parent's family, or bounce to sign-in / unlock. */
 async function requireParent(): Promise<string> {
@@ -38,13 +38,20 @@ export async function addByUrl(_prev: AddResult | null, form: FormData): Promise
       return { ok: true, message: `Added "${v.title}" to the approved list.` };
     }
     if (parsed.kind === "channel") {
-      const { channelId, videos } = await ingestChannel(input, 20);
+      const { channelId, videos } = await ingestChannel(input, 20, 10);
       await db.addToWhitelist({ familyId: fid, kind: "channel", targetId: channelId });
       revalidatePath("/parent");
+      // Seed the kid screen: review the most-viewed + newest short videos right away, in the background.
+      if (videos.length && process.env.GEMINI_API_KEY) {
+        after(async () => {
+          await seedChannelReviews(videos, { max: 8 });
+          revalidatePath("/parent");
+        });
+      }
       return {
         ok: true,
         message: videos.length
-          ? `Approved channel and pulled ${videos.length} recent videos.`
+          ? `Approved channel and pulled ${videos.length} videos (most-viewed + newest). Reviewing the first few now — they'll appear on the kid screen as they clear.`
           : `Approved channel. Add a YOUTUBE_API_KEY to pull its uploads automatically, or paste individual video links.`,
       };
     }

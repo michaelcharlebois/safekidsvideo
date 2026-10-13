@@ -111,6 +111,17 @@ export async function fetchChannelUploads(channelIdOrHandle: string, max = 10): 
   return dataApiVideos(ids, key);
 }
 
+/** A channel's most-viewed videos (Data API search, order=viewCount). */
+export async function fetchChannelTopVideos(channelId: string, max = 10): Promise<VideoMeta[]> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key || channelId.startsWith("@")) return [];
+  const u = new URL("https://www.googleapis.com/youtube/v3/search");
+  u.search = new URLSearchParams({ part: "id", type: "video", channelId, order: "viewCount", maxResults: String(max), videoEmbeddable: "true", key }).toString();
+  const j = await (await fetch(u)).json();
+  const ids: string[] = (j.items ?? []).map((i: { id: { videoId: string } }) => i.id.videoId).filter(Boolean);
+  return ids.length ? dataApiVideos(ids, key) : [];
+}
+
 /** Batched metadata: up to 50 ids per request. Skips shorts-length? No — keeps everything embeddable. */
 async function dataApiVideos(ids: string[], key: string): Promise<VideoMeta[]> {
   const out: VideoMeta[] = [];

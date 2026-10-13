@@ -1,6 +1,6 @@
 // Shared "add a YouTube thing to the database" logic, used by the app and the reviewer CLI.
 import { db } from "@/lib/db/resolve";
-import { fetchChannelMeta, fetchChannelUploads, fetchVideoMeta, parseYouTubeUrl, type VideoMeta } from "@/lib/youtube";
+import { fetchChannelMeta, fetchChannelTopVideos, fetchChannelUploads, fetchVideoMeta, parseYouTubeUrl, type VideoMeta } from "@/lib/youtube";
 import type { Video } from "@/lib/types";
 
 async function saveMeta(m: VideoMeta): Promise<Video> {
@@ -30,8 +30,11 @@ export async function ingestVideo(input: string): Promise<Video> {
   return saveMeta(meta);
 }
 
-/** Add a channel (and, with a YouTube API key, its recent uploads). Returns stored videos. */
-export async function ingestChannel(input: string, maxVideos = 20): Promise<{ channelId: string; videos: Video[] }> {
+/**
+ * Add a channel and, with a YouTube API key, seed it with its most-viewed videos plus its
+ * newest uploads (top first, deduped) — the set a freshly approved channel should get reviewed.
+ */
+export async function ingestChannel(input: string, maxVideos = 20, maxTop = 10): Promise<{ channelId: string; videos: Video[] }> {
   const p = parseYouTubeUrl(input);
   if (p.kind !== "channel") throw new Error(`Not a YouTube channel URL or @handle: ${input}`);
   const meta = await fetchChannelMeta(p.id);
@@ -43,8 +46,13 @@ export async function ingestChannel(input: string, maxVideos = 20): Promise<{ ch
   if (legacyId && legacyId !== meta.id) {
     for (const v of await db.listVideos({ channelId: legacyId })) await db.upsertVideo({ ...v, channelId: meta.id });
   }
-  const uploads = await fetchChannelUploads(meta.id, maxVideos);
+  const [top, uploads] = await Promise.all([fetchChannelTopVideos(meta.id, maxTop), fetchChannelUploads(meta.id, maxVideos)]);
+  const seen = new Set<string>();
   const videos: Video[] = [];
-  for (const u of uploads) videos.push(await saveMeta({ ...u, channelId: meta.id }));
+  for (const u of [...top, ...uploads]) {
+    if (seen.has(u.id)) continue;
+    seen.add(u.id);
+    videos.push(await saveMeta({ ...u, channelId: meta.id }));
+  }
   return { channelId: meta.id, videos };
 }
