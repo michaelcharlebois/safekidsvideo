@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Channel, Confirmation, ContentCard, Family, FamilySettings, Profile, ReviewerNotes, Video, WhitelistEntry } from "@/lib/types";
+import type { Channel, Confirmation, ContentCard, Family, FamilySettings, LegacyGrant, Profile, ReviewerNotes, Video, WhitelistEntry } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SETTINGS, mergeSettings, type Store } from "./store";
 
 type Db = {
@@ -14,9 +14,15 @@ type Db = {
   settings: FamilySettings[];
   profiles?: Profile[];
   families?: Family[];
+  /** child-scope migration (mirrors supabase 0018) */
+  schema?: number;
+  whitelistPre0018?: WhitelistEntry[];
+  legacyGrants?: LegacyGrant[];
 };
 
-const DB_PATH = path.join(process.cwd(), "data", "db.json");
+/** Overridable for tests. */
+const dbPath = () => process.env.SIFT_LOCAL_DB ?? path.join(process.cwd(), "data", "db.json");
+export function __resetLocalStoreCache() { cache = null; }
 const SEED_PATH = path.join(process.cwd(), "data", "seed.json");
 
 const empty = (): Db => ({ channels: [], videos: [], cards: [], confirmations: [], whitelist: [], settings: [] });
@@ -28,7 +34,7 @@ async function load(): Promise<Db> {
   if (cache) return cache;
   let db: Db;
   try {
-    db = { ...empty(), ...JSON.parse(await fs.readFile(DB_PATH, "utf8")) };
+    db = { ...empty(), ...JSON.parse(await fs.readFile(dbPath(), "utf8")) };
   } catch {
     // First run: start from the seed file if present.
     try {
@@ -38,14 +44,40 @@ async function load(): Promise<Db> {
     }
     await persist(db);
   }
+  if (migrateLocalToChildScope(db)) await persist(db);
   cache = db;
   return db;
 }
 
+/**
+ * Local-store twin of supabase/migrations/0018_child_scope.sql. The local store has no request or
+ * check history, so a legacy override/auto row is attributed only when its family has exactly one
+ * child; otherwise it moves to legacyGrants (granting nothing). Blocks/dismissals stay family-wide.
+ * Keeps whitelistPre0018 so it can be undone. Returns true if it changed anything.
+ */
+export function migrateLocalToChildScope(db: Db): boolean {
+  if ((db.schema ?? 0) >= 18) return false;
+  db.whitelistPre0018 = db.whitelist.map((w) => ({ ...w }));
+  db.legacyGrants ??= [];
+  const kids = (fid: string) => (db.profiles ?? []).filter((p) => p.familyId === fid).sort((a, b) => a.sort - b.sort);
+  const keep: WhitelistEntry[] = [];
+  for (const w of db.whitelist) {
+    if ((w.kind === "override" || w.kind === "auto") && w.profileId == null) {
+      const k = kids(w.familyId);
+      if (k.length === 1) keep.push({ ...w, profileId: k[0].id });
+      else db.legacyGrants.push({ id: randomUUID(), familyId: w.familyId, kind: w.kind, targetId: w.targetId, createdAt: w.createdAt, candidateProfileIds: k.map((p) => p.id) });
+    } else keep.push(w);
+  }
+  db.whitelist = keep;
+  for (const p of db.profiles ?? []) if (p.age == null) p.age = db.settings.find((s) => s.familyId === p.familyId)?.kidAge ?? 6;
+  db.schema = 18;
+  return true;
+}
+
 async function persist(db: Db) {
   writing = writing.then(async () => {
-    await fs.mkdir(path.dirname(DB_PATH), { recursive: true });
-    await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2));
+    await fs.mkdir(path.dirname(dbPath()), { recursive: true });
+    await fs.writeFile(dbPath(), JSON.stringify(db, null, 2));
   });
   return writing;
 }
@@ -186,6 +218,7 @@ export const localStore: Store = {
   async deleteProfile(id) {
     const db = await load();
     db.profiles = (db.profiles ?? []).filter((p) => p.id !== id);
+    db.whitelist = db.whitelist.filter((w) => w.profileId !== id); // mirrors ON DELETE CASCADE
     await persist(db);
   },
   async listWhitelist(familyId) {
@@ -193,14 +226,31 @@ export const localStore: Store = {
   },
   async addToWhitelist(e) {
     const db = await load();
-    if (!db.whitelist.some((w) => w.familyId === e.familyId && w.kind === e.kind && w.targetId === e.targetId)) {
-      db.whitelist.push({ ...e, createdAt: new Date().toISOString() });
+    const profileId = e.profileId ?? null;
+    if (profileId && !(db.profiles ?? []).some((p) => p.id === profileId && p.familyId === e.familyId)) {
+      throw new Error("That child isn't in this family");
+    }
+    if ((e.kind === "override" || e.kind === "auto") && !profileId) throw new Error(`${e.kind} needs a child`);
+    if (!db.whitelist.some((w) => w.familyId === e.familyId && w.kind === e.kind && w.targetId === e.targetId && (w.profileId ?? null) === profileId)) {
+      db.whitelist.push({ familyId: e.familyId, kind: e.kind, targetId: e.targetId, profileId, createdAt: new Date().toISOString() });
       await persist(db);
     }
   },
-  async removeFromWhitelist(familyId, kind, targetId) {
+  async removeFromWhitelist(familyId, kind, targetId, profileId = null) {
     const db = await load();
-    db.whitelist = db.whitelist.filter((w) => !(w.familyId === familyId && w.kind === kind && w.targetId === targetId));
+    db.whitelist = db.whitelist.filter((w) => !(w.familyId === familyId && w.kind === kind && w.targetId === targetId && (w.profileId ?? null) === (profileId ?? null)));
     await persist(db);
+  },
+  async listLegacyGrants(familyId) {
+    return ((await load()).legacyGrants ?? []).filter((g) => g.familyId === familyId && !g.resolvedAt);
+  },
+  async resolveLegacyGrant(familyId, id, resolution) {
+    const db = await load();
+    const g = (db.legacyGrants ?? []).find((x) => x.id === id && x.familyId === familyId);
+    if (!g) return undefined;
+    g.resolvedAt = new Date().toISOString();
+    g.resolution = resolution;
+    await persist(db);
+    return g;
   },
 };

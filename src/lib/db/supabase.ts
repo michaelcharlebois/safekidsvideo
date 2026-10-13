@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Channel, Confirmation, ContentCard, Profile, ReviewerNotes, Video } from "@/lib/types";
+import type { Channel, Confirmation, ContentCard, LegacyGrant, Profile, ReviewerNotes, Video } from "@/lib/types";
 import { DEFAULT_PROFILE, mergeSettings, type Store } from "./store";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -46,6 +46,10 @@ const fromProfile = (p: Omit<Profile, "createdAt"> & { createdAt?: string }) => 
   bonus_minutes: p.bonusMinutes ?? 0, bonus_day: p.bonusDay ?? null,
   skip_limit: p.skipLimit ?? null, skip_regen: p.skipRegen ?? 1, skip_cooldown_sec: p.skipCooldownSec ?? 120, free_peek_sec: p.freePeekSec ?? 30,
   channel_order: p.channelOrder ?? [], boosts: p.boosts ?? {}, sort: p.sort,
+});
+const toLegacy = (r: any): LegacyGrant => ({
+  id: r.id, familyId: r.family_id, kind: r.kind, targetId: r.target_id, createdAt: r.created_at,
+  candidateProfileIds: r.candidate_profile_ids ?? [], resolvedAt: r.resolved_at ?? undefined, resolution: r.resolution ?? undefined,
 });
 const toNotes = (r: any): ReviewerNotes => ({ version: r.version, notes: r.notes, stats: r.stats ?? undefined, source: r.source, createdAt: r.created_at });
 const toConfirmation = (r: any): Confirmation => ({
@@ -190,13 +194,27 @@ export const supabaseStore: Store = {
   },
   async listWhitelist(familyId) {
     return must(await client().from("whitelist").select("*").eq("family_id", familyId)).map((r: any) => ({
-      familyId: r.family_id, kind: r.kind, targetId: r.target_id, createdAt: r.created_at,
+      familyId: r.family_id, profileId: r.profile_id ?? null, kind: r.kind, targetId: r.target_id, createdAt: r.created_at,
     }));
   },
   async addToWhitelist(e) {
-    must(await client().from("whitelist").upsert({ family_id: e.familyId, kind: e.kind, target_id: e.targetId }));
+    // Unique (family_id, kind, target_id, profile_id) NULLS NOT DISTINCT; the composite FK rejects a child from another family.
+    must(await client().from("whitelist").upsert(
+      { family_id: e.familyId, kind: e.kind, target_id: e.targetId, profile_id: e.profileId ?? null },
+      { onConflict: "family_id,kind,target_id,profile_id", ignoreDuplicates: true },
+    ));
   },
-  async removeFromWhitelist(familyId, kind, targetId) {
-    must(await client().from("whitelist").delete().match({ family_id: familyId, kind, target_id: targetId }));
+  async removeFromWhitelist(familyId, kind, targetId, profileId = null) {
+    let q = client().from("whitelist").delete().match({ family_id: familyId, kind, target_id: targetId });
+    q = profileId ? q.eq("profile_id", profileId) : q.is("profile_id", null);
+    must(await q);
+  },
+  async listLegacyGrants(familyId) {
+    return must(await client().from("legacy_grants").select("*").eq("family_id", familyId).is("resolved_at", null).order("created_at")).map(toLegacy);
+  },
+  async resolveLegacyGrant(familyId, id, resolution) {
+    const d = must<any>(await client().from("legacy_grants").update({ resolved_at: new Date().toISOString(), resolution })
+      .eq("id", id).eq("family_id", familyId).select("*").maybeSingle());
+    return d ? toLegacy(d) : undefined;
   },
 };

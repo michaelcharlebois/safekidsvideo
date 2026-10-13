@@ -43,9 +43,15 @@ export async function listPendingRequests(familyId: string): Promise<WatchReques
   return ((data ?? []) as Row[]).map(toReq);
 }
 
-/** Video ids this family's kid has asked for and are still pending. */
-export async function pendingVideoIds(familyId: string): Promise<Set<string>> {
-  return new Set((await listPendingRequests(familyId)).map((r) => r.videoId));
+/** Video ids this child has asked for that are still pending (all children if no child given). */
+export async function pendingVideoIds(familyId: string, profileId?: string): Promise<Set<string>> {
+  return new Set((await listPendingRequests(familyId)).filter((r) => !profileId || r.profileId === profileId).map((r) => r.videoId));
+}
+
+export async function getRequest(familyId: string, requestId: string): Promise<WatchRequest | undefined> {
+  if (!on()) return undefined;
+  const { data } = await supabaseAdmin().from("watch_requests").select("*").match({ id: requestId, family_id: familyId }).maybeSingle();
+  return data ? toReq(data as Row) : undefined;
 }
 
 export async function resolveRequest(familyId: string, requestId: string, status: "approved" | "denied") {
@@ -107,28 +113,32 @@ export async function finishCheck(checkId: string | null, outcome: Exclude<Check
 }
 
 /** Video ids with a check still running (started in the last 10 minutes). */
-export async function pendingCheckIds(familyId: string): Promise<Set<string>> {
+export async function pendingCheckIds(familyId: string, profileId?: string): Promise<Set<string>> {
   if (!on()) return new Set();
   const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-  const { data } = await supabaseAdmin()
+  let q = supabaseAdmin()
     .from("kid_checks")
     .select("video_id")
     .eq("family_id", familyId)
     .eq("outcome", "pending")
     .gte("created_at", since);
+  if (profileId) q = q.eq("profile_id", profileId);
+  const { data } = await q;
   return new Set((data ?? []).map((r: { video_id: string }) => r.video_id));
 }
 
 /** Requests a parent approved in the last 24h — so the kid screen can celebrate them. */
-export async function recentlyApprovedIds(familyId: string): Promise<Set<string>> {
+export async function recentlyApprovedIds(familyId: string, profileId?: string): Promise<Set<string>> {
   if (!on()) return new Set();
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { data } = await supabaseAdmin()
+  let q = supabaseAdmin()
     .from("watch_requests")
     .select("video_id")
     .eq("family_id", familyId)
     .eq("status", "approved")
     .gte("resolved_at", since);
+  if (profileId) q = q.eq("profile_id", profileId);
+  const { data } = await q;
   return new Set((data ?? []).map((r: { video_id: string }) => r.video_id));
 }
 

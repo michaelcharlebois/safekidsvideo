@@ -5,6 +5,7 @@ import type {
   Family,
   ContentCard,
   FamilySettings,
+  LegacyGrant,
   Profile,
   ReviewerNotes,
   Video,
@@ -54,8 +55,13 @@ export interface Store {
   upsertProfile(p: Omit<Profile, "createdAt"> & { createdAt?: string }): Promise<Profile>;
   deleteProfile(id: string): Promise<void>;
   listWhitelist(familyId: string): Promise<WhitelistEntry[]>;
+  /** Idempotent. profileId null/undefined = a family-wide row; otherwise the child MUST belong to the family. */
   addToWhitelist(e: Omit<WhitelistEntry, "createdAt">): Promise<void>;
-  removeFromWhitelist(familyId: string, kind: WhitelistKind, targetId: string): Promise<void>;
+  /** Removes exactly one scope: the family-wide row (profileId null/undefined) or that child's row. */
+  removeFromWhitelist(familyId: string, kind: WhitelistKind, targetId: string, profileId?: string | null): Promise<void>;
+  /** Pre-0018 approvals that couldn't be attributed to one child (unresolved only). Grant nothing. */
+  listLegacyGrants(familyId: string): Promise<LegacyGrant[]>;
+  resolveLegacyGrant(familyId: string, id: string, resolution: string): Promise<LegacyGrant | undefined>;
 }
 
 export const DEFAULT_PROFILE = (familyId: string, name = "My kid", age?: number): Omit<Profile, "id" | "createdAt"> => ({
