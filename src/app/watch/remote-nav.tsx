@@ -89,11 +89,12 @@ export function RemoteNav({ home = "/watch" }: { home?: string }) {
     const onPlayer = PLAYER_PATH.test(pathname);
     const zeros: number[] = [];
     const onKey = (e: KeyboardEvent) => {
-      // Press 0 three times quickly → toggle the debug HUD (works anywhere in kid mode).
+      // Press 0 three times quickly → toggle the debug HUD; five times → hard reload (TVs make restarting apps a chore).
       if (e.key === "0" || e.keyCode === 48) {
         zeros.push(Date.now());
-        while (zeros.length && Date.now() - zeros[0] > 1500) zeros.shift();
-        if (zeros.length >= 3) { zeros.length = 0; setDebug((d) => !d); }
+        while (zeros.length && Date.now() - zeros[0] > 2500) zeros.shift();
+        if (zeros.length === 3) setDebug((d) => !d);
+        if (zeros.length >= 5) { zeros.length = 0; location.href = location.pathname + "?debug&r=" + Date.now(); }
       }
       const items = navigables();
       const report = (what: string) =>
