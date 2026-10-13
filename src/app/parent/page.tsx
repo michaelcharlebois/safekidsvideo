@@ -244,7 +244,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                 const on = approvedChannels.has(c.id);
                 return (
                   <li key={c.id} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="truncate font-semibold">{c.title}</span>
+                    <Link href={`/parent/channel/${c.id}`} className="truncate font-semibold hover:underline">{c.title}</Link>
                     <form action={toggleWhitelist}>
                       <input type="hidden" name="kind" value="channel" />
                       <input type="hidden" name="targetId" value={c.id} />

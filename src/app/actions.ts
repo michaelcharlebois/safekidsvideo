@@ -304,6 +304,18 @@ export async function recordWatch(videoId: string, completed: boolean) {
   await logWatch(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, completed, v.profileId);
 }
 
+export async function reviewChannelNow(form: FormData) {
+  const fid = await requireParent();
+  const channelId = String(form.get("channelId") ?? "");
+  const videos = (await db.listVideos({ channelId })).sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
+  after(async () => {
+    await seedChannelReviews(videos, { max: 5 });
+    revalidatePath(`/parent/channel/${channelId}`); revalidatePath("/parent"); revalidatePath("/watch");
+  });
+  void fid;
+  redirect(`/parent/channel/${channelId}?reviewing=1`);
+}
+
 // ---- Screen time ----------------------------------------------------------------
 
 export async function askMoreTime() {

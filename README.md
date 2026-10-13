@@ -104,6 +104,10 @@ Evening cron `/api/cron/evening` (02:30 UTC ≈ 7:30pm Pacific; per-timezone sch
 
 Per kid: minutes per day and a "done for the day" time (dashboard → kid tab → Screen time). Usage is estimated from watch events (completed → full length, else ~60%). When time's up the viewer shows a gentle "That's all for today" wall with one button — *Ask a grown-up for more* — which pushes to the parent's phone; the dashboard offers +15 / +30 / +60 for today (migration `0014_time_limits.sql`). The player shows a countdown chip in the last five minutes and returns home at zero.
 
+## Channel report cards
+
+`/parent/channel/[id]`: everything we know about a channel — reviewed count, typical age range, rating, pace mix, what comes up (tag frequency at mild vs. moderate+), best picks, the one to watch out for, every video with its status for the selected kid, and "Review next 5". `/c/[handle]` is the same report, public and indexable (hourly cache, SEO metadata, no family data) with a sign-up CTA — the growth loop.
+
 ## Layout
 
 ```

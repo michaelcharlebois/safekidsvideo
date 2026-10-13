@@ -46,7 +46,7 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
         <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-extrabold leading-tight">{v.title}</h1>
-            <p className="text-sm text-muted">{v.channel?.title ?? v.channelId}</p>
+            <p className="text-sm text-muted"><Link href={`/parent/channel/${v.channelId}`} className="hover:underline">{v.channel?.title ?? v.channelId}</Link></p>
           </div>
           <form action={toggleWhitelist}>
             <input type="hidden" name="kind" value="video" />
