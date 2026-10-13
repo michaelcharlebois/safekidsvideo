@@ -84,6 +84,10 @@ On every content card a parent can say the card is accurate, too strict or too l
 
 `npm run eval -- --pin` freezes every parent-confirmed verdict into `data/eval.json` (commit it — it's the golden set). `npm run eval` re-reviews those videos with the current calibration notes and scores tag precision/recall, format, age and the gate decision; `--notes none` is the baseline, `--notes 3` a specific version, `--compare a.json b.json` diffs two reports. Run it before trusting a new notes version.
 
+## Parent workflow
+
+The dashboard is a home, not a list: **Needs you** (TV requests, hidden-but-undecided videos for the selected kid, unreviewed count with a one-tap "Review next 10"), then the **Library** grouped by channel with Visible / Hidden / Unreviewed views and a title search, then **Add**. Decisions happen in `/parent/review`, one card at a time — Allow for <kid> / Keep hidden / Never — with requests first and unreviewed videos never shown (the pipeline handles those). "Never" stores a `block` whitelist row, "Keep hidden" a `dismissed` row (migration `0015_decisions.sql`). Per-kid settings moved to `/parent/settings`.
+
 ## Kid profiles
 
 Each kid (`profiles` table, migration `0011_profiles.sql`) has their own viewing mode, filters, daily check limit and screen-time settings; the family shares the PIN and crowd threshold. The dashboard's filter card has a tab per kid; `/parent/kids` adds and edits them. On a shared TV the viewer shows "Who's watching?" when there's more than one kid and remembers the pick in a cookie; the avatar in the header switches. Watch history, checks and requests are tagged with the profile. Pairing codes are now 8 digits.

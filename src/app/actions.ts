@@ -167,11 +167,11 @@ export async function saveSettings(form: FormData) {
     bedtime: /^\d{2}:\d{2}$/.test(String(form.get("bedtime") ?? "")) ? String(form.get("bedtime")) : undefined,
     });
   } catch (e) {
-    redirect(`/parent?kid=${profileId ?? ""}&error=${encodeURIComponent((e as Error).message)}`);
+    redirect(`/parent/settings?kid=${profileId ?? ""}&error=${encodeURIComponent((e as Error).message)}`);
   }
   revalidatePath("/parent");
   revalidatePath("/watch");
-  redirect(`/parent?kid=${profileId ?? ""}&saved=1`);
+  redirect(`/parent/settings?kid=${profileId ?? ""}&saved=1`);
 }
 
 export type UnlockResult = { error: string } | null;
@@ -295,13 +295,31 @@ export async function resolveWatchRequest(form: FormData) {
   await resolveRequest(fid, requestId, approve ? "approved" : "denied");
   if (approve) await db.addToWhitelist({ familyId: fid, kind: "override", targetId: videoId });
   revalidatePath("/parent");
+  revalidatePath("/parent/review");
   revalidatePath("/watch");
+  const next = String(form.get("next") ?? "");
+  if (next.startsWith("/")) redirect(next);
 }
 
 export async function recordWatch(videoId: string, completed: boolean) {
   const v = await resolveViewer();
   if (!v.familyId) return;
   await logWatch(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, completed, v.profileId);
+}
+
+/** Review queue: one decision per video. allow = override filters; hide = dismissed (stays hidden, stops asking); never = block. */
+export async function decideVideo(form: FormData) {
+  const fid = await requireParent();
+  const videoId = String(form.get("videoId") ?? "");
+  const decision = String(form.get("decision") ?? "");
+  const next = String(form.get("next") ?? "/parent/review");
+  if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) redirect(next);
+  for (const k of ["override", "block", "dismissed"] as const) await db.removeFromWhitelist(fid, k, videoId);
+  if (decision === "allow") await db.addToWhitelist({ familyId: fid, kind: "override", targetId: videoId });
+  else if (decision === "never") await db.addToWhitelist({ familyId: fid, kind: "block", targetId: videoId });
+  else if (decision === "hide") await db.addToWhitelist({ familyId: fid, kind: "dismissed", targetId: videoId });
+  revalidatePath("/parent"); revalidatePath("/parent/review"); revalidatePath(`/parent/video/${videoId}`); revalidatePath("/watch");
+  redirect(next.startsWith("/") ? next : "/parent/review");
 }
 
 export async function reviewChannelNow(form: FormData) {
@@ -333,10 +351,10 @@ export async function grantMoreTime(form: FormData) {
   if (p && p.familyId === fid && [15, 30, 60, -1000].includes(minutes)) {
     const tz = (await db.getFamily(fid)).timezone;
     await grantBonusMinutes(profileId, minutes, tz);
-    if (minutes > 0) await pushToFamily(fid, { title: `+${minutes} minutes for ${p.name}`, body: "Added for today.", url: `/parent?kid=${profileId}`, tag: `more-time-${profileId}` });
+    if (minutes > 0) await pushToFamily(fid, { title: `+${minutes} minutes for ${p.name}`, body: "Added for today.", url: `/parent/settings?kid=${profileId}`, tag: `more-time-${profileId}` });
   }
-  revalidatePath("/parent"); revalidatePath("/watch");
-  redirect(`/parent?kid=${profileId}`);
+  revalidatePath("/parent"); revalidatePath("/parent/settings"); revalidatePath("/watch");
+  redirect(`/parent/settings?kid=${profileId}`);
 }
 
 // ---- Daily check-in -------------------------------------------------------------
@@ -604,14 +622,16 @@ export async function sendTestPush() {
 }
 
 /** Dashboard: review the next few unreviewed videos from this family's approved channels, in the background. */
-export async function reviewNextBatch() {
+export async function reviewNextBatch(form?: FormData) {
+  const n = Math.min(20, Math.max(1, Number(form?.get("n")) || 10));
   const fid = await requireParent();
   after(async () => {
     try {
-      await runPipeline({ familyId: fid, maxReviews: 5, uploadsPerChannel: 10 });
+      await runPipeline({ familyId: fid, maxReviews: n, uploadsPerChannel: 10 });
+      revalidatePath("/parent"); revalidatePath("/watch");
     } catch (e) {
       console.error("batch review failed", (e as Error).message);
     }
   });
-  redirect("/parent?batch=1");
+  redirect(`/parent?batch=${n}`);
 }

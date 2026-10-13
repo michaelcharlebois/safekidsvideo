@@ -16,6 +16,8 @@ export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
   const wlChannels = new Set(whitelist.filter((w) => w.kind === "channel").map((w) => w.targetId));
   const overrides = new Set(whitelist.filter((w) => w.kind === "override").map((w) => w.targetId));
   const autos = new Set(whitelist.filter((w) => w.kind === "auto").map((w) => w.targetId));
+  const blocks = new Set(whitelist.filter((w) => w.kind === "block").map((w) => w.targetId));
+  const dismissed = new Set(whitelist.filter((w) => w.kind === "dismissed").map((w) => w.targetId));
 
   const tallies = new Map<string, VideoWithCard["confirmations"]>();
   const blank = (): VideoWithCard["confirmations"] => ({ agree: 0, flag: 0, flaggedTags: {}, overcalledTags: {} });
@@ -36,7 +38,9 @@ export async function getLibrary(familyId: string): Promise<VideoWithCard[]> {
     channel: channelById.get(v.channelId),
     card: cardById.get(v.id),
     confirmations: tallies.get(v.id) ?? blank(),
-    whitelisted: wlVideos.has(v.id) || wlChannels.has(v.channelId) || overrides.has(v.id) || autos.has(v.id),
+    whitelisted: !blocks.has(v.id) && (wlVideos.has(v.id) || wlChannels.has(v.channelId) || overrides.has(v.id) || autos.has(v.id)),
+    blockedByParent: blocks.has(v.id),
+    dismissed: dismissed.has(v.id),
     overridden: overrides.has(v.id),
     autoApproved: autos.has(v.id),
   }));
@@ -81,6 +85,7 @@ export function aiPasses(v: VideoWithCard, s: FamilySettings): { pass: boolean; 
 
 /** The single play gate for kid mode. */
 export function canPlay(v: VideoWithCard, s: FamilySettings): boolean {
+  if (v.blockedByParent) return false;
   if (v.whitelisted) return blockedReasons(v, s).length === 0;
   return s.mode === "open" && aiPasses(v, s).pass;
 }

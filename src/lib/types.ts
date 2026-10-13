@@ -151,7 +151,7 @@ export type FeedbackStats = {
   since: string;
 };
 
-export type WhitelistKind = "channel" | "video" | "override" | "auto";
+export type WhitelistKind = "channel" | "video" | "override" | "auto" | "block" | "dismissed";
 
 /**
  * locked:   approved channels/videos only
@@ -240,6 +240,10 @@ export type VideoWithCard = Video & {
   card?: ContentCard;
   confirmations: { agree: number; flag: number; flaggedTags: Partial<Record<ConcernTag, number>>; overcalledTags: Partial<Record<ConcernTag, number>> };
   whitelisted: boolean;
+  /** parent said never, for this video */
+  blockedByParent: boolean;
+  /** parent looked at the hidden video and chose to leave it hidden */
+  dismissed: boolean;
   /** parent explicitly approved this video over their filters */
   overridden: boolean;
   /** added by a kid-triggered AI check that passed */

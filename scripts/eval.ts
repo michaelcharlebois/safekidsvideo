@@ -44,7 +44,7 @@ const has = (f: string) => args.includes(f);
 
 const settings = DEFAULT_SETTINGS("eval");
 const gateOk = (card: ContentCard) => {
-  const v = { id: card.videoId, card, confirmations: { agree: 0, flag: 0, flaggedTags: {}, overcalledTags: {} }, whitelisted: true } as unknown as VideoWithCard;
+  const v = { id: card.videoId, card, confirmations: { agree: 0, flag: 0, flaggedTags: {}, overcalledTags: {} }, whitelisted: true, blockedByParent: false, dismissed: false } as unknown as VideoWithCard;
   return blockedReasons(v, settings).length === 0;
 };
 const presentTags = (card: ContentCard) => card.concerns.filter((c) => c.present && c.intensity >= 1).map((c) => c.tag);

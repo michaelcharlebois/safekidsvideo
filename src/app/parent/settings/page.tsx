@@ -1,0 +1,127 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { db } from "@/lib/db";
+import { resolveViewer } from "@/lib/family";
+import { supabaseEnabled } from "@/lib/supabase/server";
+import { CONCERN_LABELS, CONCERN_TAGS, FORMATS, FORMAT_LABELS, MODE_LABELS, type FamilyMode } from "@/lib/types";
+import { Button, Card, TopBar } from "@/components/ui";
+import { grantMoreTime, saveSettings } from "@/app/actions";
+import { minutesUsedToday } from "@/lib/screentime";
+import { localDay } from "@/lib/checkin";
+
+export const dynamic = "force-dynamic";
+
+/** Per-kid settings: what they can reach, filters, screen time; plus the family PIN. */
+export default async function SettingsPage(props: PageProps<"/parent/settings">) {
+  const sp = await props.searchParams;
+  const error = typeof sp.error === "string" ? sp.error : null;
+  const saved = sp.saved === "1";
+  const viewer = await resolveViewer();
+  if (viewer.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent/settings" : "/unlock?next=/parent/settings");
+  const fid = viewer.familyId;
+  const [family, profiles] = await Promise.all([db.getFamily(fid), db.listProfiles(fid)]);
+  const kidParam = typeof sp.kid === "string" && profiles.some((p) => p.id === sp.kid) ? sp.kid : undefined;
+  const kidId = kidParam ?? viewer.profileId ?? profiles[0]?.id;
+  const settings = await db.getSettings(fid, kidId);
+  const kid = profiles.find((p) => p.id === kidId);
+  const usedToday = kid ? await minutesUsedToday(fid, kid.id, family.timezone) : 0;
+  const bonusToday = kid && settings.bonusDay === localDay(family.timezone) ? settings.bonusMinutes ?? 0 : 0;
+
+  return (
+    <>
+      <TopBar title="Settings" right={<Link href="/parent" className="text-sm font-bold text-muted hover:text-ink">← Dashboard</Link>} />
+      <main className="mx-auto w-full max-w-xl px-4 py-6 space-y-4">
+        {error && <Card className="p-3 border-bad/40 bg-bad/5 text-sm"><b className="text-bad">Couldn&apos;t save:</b> {error}</Card>}
+        {saved && <Card className="p-3 border-ok/40 bg-ok/5 text-sm font-bold text-ok">Settings saved.</Card>}
+          <Card className="p-4">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {profiles.map((p) => (
+              <Link key={p.id} href={`/parent/settings?kid=${p.id}`} className={`rounded-full px-3 py-1 text-sm font-bold border ${p.id === kidId ? "bg-ink text-bg border-ink" : "border-line hover:bg-surface"}`}>
+                {p.avatar} {p.name}
+              </Link>
+            ))}
+            <Link href="/parent/kids" className="rounded-full px-3 py-1 text-sm font-bold border border-dashed border-line text-muted hover:bg-surface">+ Add a kid</Link>
+          </div>
+          <form action={saveSettings} className="mt-3 space-y-3">
+            <input type="hidden" name="profileId" value={kidId ?? ""} />
+            <h2 className="font-extrabold">What can {kid?.name ?? "the kid"} reach?</h2>
+            <div className="space-y-1.5">
+              {(Object.keys(MODE_LABELS) as FamilyMode[]).map((m) => (
+                <label key={m} className="flex items-start gap-2 text-sm">
+                  <input type="radio" name="mode" value={m} defaultChecked={settings.mode === m} className="mt-1 accent-accent" />
+                  <span><b>{MODE_LABELS[m].title}</b> — <span className="text-muted">{MODE_LABELS[m].blurb}</span></span>
+                </label>
+              ))}
+            </div>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" name="kidsOnlySearch" defaultChecked={settings.kidsOnlySearch} className="mt-1 accent-accent" />
+              <span>Only show YouTube&apos;s &quot;made for kids&quot; videos in search <span className="text-muted">(narrower — hides MrBeast, cooking channels, etc. The AI check still screens everything either way.)</span></span>
+            </label>
+            <label className="flex items-center justify-between text-sm gap-2">
+              Kid-triggered AI checks per day
+              <input type="number" name="dailyCheckLimit" min={0} max={200} defaultValue={settings.dailyCheckLimit} className="w-16 rounded-lg border border-line px-2 py-1" />
+            </label>
+            <h2 className="font-extrabold pt-2">Filters</h2>
+            <p className="text-xs text-muted">Hide any approved video where the AI found one of these at moderate strength or more, or where enough parents flagged it.</p>
+            <div className="grid grid-cols-1 gap-1">
+              {CONCERN_TAGS.map((t) => (
+                <label key={t} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name={`block:${t}`} defaultChecked={settings.blockedTags.includes(t)} className="accent-accent" />
+                  {CONCERN_LABELS[t]}
+                </label>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 text-sm pt-1">
+              <input type="checkbox" name="hideUnreviewed" defaultChecked={settings.hideUnreviewed} className="accent-accent" />
+              Hide videos until they have a content card
+            </label>
+            <p className="text-xs text-muted pt-1">Hide these kinds of videos entirely:</p>
+            <div className="grid grid-cols-1 gap-1">
+              {FORMATS.filter((f) => f !== "other").map((f) => (
+                <label key={f} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name={`blockfmt:${f}`} defaultChecked={settings.blockedFormats.includes(f)} className="accent-accent" />
+                  {FORMAT_LABELS[f]}
+                </label>
+              ))}
+            </div>
+            <label className="flex items-center justify-between text-sm gap-2">
+              Parent flags to hide
+              <input type="number" name="flagThreshold" min={1} max={50} defaultValue={settings.flagThreshold} className="w-16 rounded-lg border border-line px-2 py-1" />
+            </label>
+            <label className="flex items-center justify-between text-sm gap-2">
+              {kid?.name ?? "Kid"}&apos;s age
+              <input type="number" name="kidAge" min={1} max={17} defaultValue={settings.kidAge} className="w-16 rounded-lg border border-line px-2 py-1" />
+            </label>
+            <h2 className="font-extrabold pt-2">Screen time</h2>
+            <p className="text-xs text-muted">Today: ~{usedToday} min{settings.dailyMinutes ? ` of ${settings.dailyMinutes + bonusToday}` : ""}{bonusToday ? ` (incl. +${bonusToday} bonus)` : ""}.</p>
+            <label className="flex items-center justify-between text-sm gap-2">
+              Minutes per day <span className="text-muted text-xs ml-auto mr-2">blank = no limit</span>
+              <input type="number" name="dailyMinutes" min={5} max={600} step={5} defaultValue={settings.dailyMinutes ?? ""} className="w-20 rounded-lg border border-line px-2 py-1" />
+            </label>
+            <label className="flex items-center justify-between text-sm gap-2">
+              Done for the day at <span className="text-muted text-xs ml-auto mr-2">TV&apos;s local time</span>
+              <input type="time" name="bedtime" defaultValue={settings.bedtime ?? ""} className="rounded-lg border border-line px-2 py-1" />
+            </label>
+            <label className="flex items-center justify-between text-sm gap-2">
+              New PIN
+              <input type="password" name="pin" inputMode="numeric" pattern="\d{4}" maxLength={4} placeholder="••••" className="w-20 rounded-lg border border-line px-2 py-1" />
+            </label>
+            <Button type="submit" className="w-full">Save</Button>
+            {saved && <p className="text-center text-sm font-bold text-ok">✓ Settings saved</p>}
+            {error && <p className="text-sm font-bold text-bad">Couldn&apos;t save: {error}</p>}
+          </form>
+          {kid && settings.dailyMinutes ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-xs">
+              <span className="font-bold text-muted">Give {kid.name} extra today:</span>
+              {[15, 30].map((m) => (
+                <form key={m} action={grantMoreTime}><input type="hidden" name="profileId" value={kid.id} /><input type="hidden" name="minutes" value={m} /><Button type="submit" variant="ghost" className="text-xs px-3 py-1">+{m} min</Button></form>
+              ))}
+              {bonusToday > 0 && <form action={grantMoreTime}><input type="hidden" name="profileId" value={kid.id} /><input type="hidden" name="minutes" value={-1000} /><button type="submit" className="font-bold text-muted hover:text-ink">clear bonus</button></form>}
+            </div>
+          ) : null}
+        </Card>
+
+      </main>
+    </>
+  );
+}

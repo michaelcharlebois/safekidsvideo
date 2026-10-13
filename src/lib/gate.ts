@@ -8,6 +8,7 @@ import { CONCERN_LABELS, FORMAT_LABELS, type FamilySettings, type VideoWithCard 
  */
 export function blockedReasons(v: VideoWithCard, s: FamilySettings): string[] {
   const out: string[] = [];
+  if (v.blockedByParent) return ["Blocked by a parent"];
   if (v.overridden) return out;
   if (!v.card && s.hideUnreviewed) return ["Not reviewed yet"];
   if (v.card?.format && s.blockedFormats.includes(v.card.format)) out.push(FORMAT_LABELS[v.card.format]);
