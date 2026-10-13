@@ -1,20 +1,34 @@
 import Link from "next/link";
-import { UnreviewedConfirm } from "@/app/parent/unreviewed-confirm";
 import { notFound, redirect } from "next/navigation";
+import type { ReactNode } from "react";
 import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { videoForChildren } from "@/lib/queries";
 import { reviewEligibility } from "@/lib/gate";
-import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS } from "@/lib/types";
-import { Button, Card, ConcernPill, PacePill, Pill, Stars, TopBar } from "@/components/ui";
-import { addAndReview, allowVideoForChild, decideVideo, manageFamilyBlock, runReview, unhideForFamily } from "@/app/actions";
-import { FeedbackForm } from "./feedback-form";
+import { playStatus } from "@/lib/status";
 import { VERDICT_LABELS } from "@/lib/types";
+import type { AuthDecision } from "@/lib/gate";
+import { Button, buttonClass, Card, Notice, StatusBadge } from "@/components/ui";
+import { IconChevron, IconKids, IconReview, IconShield } from "@/components/icons";
+import { addAndReview, allowVideoForChild, decideVideo, manageFamilyBlock, runReview, unhideForFamily } from "@/app/actions";
+import { UnreviewedConfirm } from "@/app/parent/unreviewed-confirm";
+import { Assessment, eligibilityNote } from "@/app/parent/assessment";
+import { FeedbackForm } from "./feedback-form";
+import { VideoPreview } from "./preview";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // parent-triggered reviews run in the background within this budget
 
+/**
+ * One video. Three separate things, kept visually separate:
+ *   Who can watch this — each child's status from the gate, and whether it comes from the AI review
+ *                         passing their settings or from a parent's explicit decision (with the actions).
+ *   AI review           — the assessment itself, with its uncertainty.
+ *   Other parents       — their feedback; and, apart from it, your own feedback on the review.
+ * Phone: decision first; the player loads only when tapped; the review follows.
+ * Desktop: the decision column sits beside the review.
+ */
 export default async function VideoPage(props: PageProps<"/parent/video/[id]">) {
   const { id } = await props.params;
   const sp = await props.searchParams;
@@ -29,225 +43,234 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
   const c = v.card;
   const reviewed = reviewEligibility(c).eligible;
   const confirmFor = typeof sp.confirm === "string" ? view.perChild.find((k) => k.profile.id === sp.confirm) : undefined;
+  const allowedFor = typeof sp.allowed === "string" ? view.perChild.find((k) => k.profile.id === sp.allowed)?.profile : undefined;
   const error = typeof sp.error === "string" ? sp.error : null;
   const mine = confirmations.find((x) => x.familyId === fid);
+  const others = confirmations.filter((x) => x.familyId !== fid);
   const concerns = Array.isArray(c?.concerns) ? c.concerns : []; // a malformed card must not crash the page
   const present = concerns.filter((x) => x.present);
   const absent = concerns.filter((x) => !x.present);
+  const othersAgree = others.filter((x) => x.verdict === "agree").length;
 
-  return (
-    <>
-      <TopBar title="Content card" right={<Link href="/parent" className="text-sm font-bold text-muted hover:text-ink">← Library</Link>} />
-      <main className="mx-auto w-full max-w-3xl px-4 py-6 space-y-4">
-        <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
-          <iframe
-            className="h-full w-full"
-            src={`https://www.youtube-nocookie.com/embed/${v.id}?rel=0&modestbranding=1`}
-            title={v.title}
-            allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
+  const who = (
+    <Card as="section" raised className="overflow-hidden" >
+      <div className="border-b border-sand px-5 py-4">
+        <h2 className="flex items-center gap-2 text-lg"><IconKids size={20} />Who can watch this</h2>
+        <p className="mt-0.5 text-sm text-muted">Each child separately. A video plays when its AI review passes that child&apos;s settings, or when you allow it for them.</p>
+      </div>
+
+      {view.familyBlocked && (
+        <div className="border-b border-sand bg-bad-soft/60 px-5 py-4 text-sm space-y-2">
+          <p><b className="text-bad">Blocked for every child.</b> This block was set before permissions were per child, so no single child&apos;s &ldquo;Allow&rdquo; can get past it. It also applies to any child you add later, until you change it.</p>
+          {unblockAll ? (
+            <div className="space-y-2">
+              <p className="font-bold">Unblocking for everyone means:</p>
+              <ul className="space-y-0.5">
+                {view.perChild.map(({ profile, ifUnblocked }) => (
+                  <li key={profile.id}>{profile.avatar} {profile.name}: {ifUnblocked?.allow ? <b className="text-bad">it would play</b> : <>still not playing ({ifUnblocked?.reasons.join(", ")})</>}</li>
+                ))}
+              </ul>
+              <div className="flex flex-wrap gap-2">
+                <form action={manageFamilyBlock}><input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="op" value="remove" /><input type="hidden" name="confirm" value="1" /><Button type="submit" variant="danger" size="sm">Unblock for everyone</Button></form>
+                <Link href={`/parent/video/${v.id}`} className={buttonClass("quiet", "sm")}>Cancel</Link>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                <form action={manageFamilyBlock}><input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="op" value="split" /><Button type="submit" variant="secondary" size="sm">Block each child separately</Button></form>
+                <form action={manageFamilyBlock}><input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="op" value="remove" /><Button type="submit" variant="quiet" size="sm">Unblock for everyone…</Button></form>
+              </div>
+              <p className="text-xs text-muted">&ldquo;Block each child separately&rdquo; keeps it blocked for every child you have now, then lets you change one child at a time. Children you add later won&apos;t be blocked by it.</p>
+            </>
+          )}
         </div>
+      )}
 
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-extrabold leading-tight">{v.title}</h1>
-            <p className="text-sm text-muted"><Link href={`/parent/channel/${v.channelId}`} className="hover:underline">{v.channel?.title ?? v.channelId}</Link></p>
-          </div>
-          <LibraryControl videoId={v.id} addedDirectly={view.addedDirectly} channelApproved={view.channelApproved} />
-        </div>
-
-        {error && <Card className="p-3 border-bad/40 bg-bad/5 text-sm font-bold text-bad">{error}</Card>}
-
-        {confirmFor && !reviewed && (
-          <UnreviewedConfirm
-            childName={confirmFor.profile.name} reason={reviewEligibility(c).reason} action={allowVideoForChild}
-            fields={{ videoId: v.id, profileId: confirmFor.profile.id }} cancelHref={`/parent/video/${v.id}`}
-          />
-        )}
-
-        <Card className="p-4">
-          <h2 className="font-extrabold">Who can watch this</h2>
-          {view.familyBlocked && (
-            <div className="mt-2 rounded-xl border border-bad/30 bg-bad/5 p-3 text-sm space-y-2">
-              <p><b>Blocked for every child.</b> This block was set before permissions were per child, so no single child&apos;s &ldquo;Allow&rdquo; can get past it.</p>
-              {unblockAll ? (
-                <div className="space-y-2">
-                  <p className="font-bold">Unblocking for everyone means:</p>
-                  <ul className="space-y-0.5">
-                    {view.perChild.map(({ profile, ifUnblocked }) => (
-                      <li key={profile.id}>{profile.avatar} {profile.name}: {ifUnblocked?.allow ? <b className="text-bad">it would play</b> : <>still hidden ({ifUnblocked?.reasons.join(", ")})</>}</li>
-                    ))}
-                  </ul>
-                  <div className="flex flex-wrap gap-2">
-                    <form action={manageFamilyBlock}><input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="op" value="remove" /><input type="hidden" name="confirm" value="1" /><Button type="submit" variant="danger" className="text-xs px-3 py-1">Unblock for everyone</Button></form>
-                    <Link href={`/parent/video/${v.id}`}><Button variant="ghost" className="text-xs px-3 py-1">Cancel</Button></Link>
-                  </div>
-                </div>
-              ) : (
+      <ul className="divide-y divide-sand">
+        {view.perChild.map(({ profile, settings: s, v: kv, decision, childBlocked }) => {
+          const st = playStatus(kv, s).status;
+          return (
+            <li key={profile.id} className="space-y-2 px-5 py-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-surface text-xl ring-1 ring-sand" aria-hidden>{profile.avatar}</span>
+                <span className="font-bold text-forest">{profile.name}</span>
+                <span className="ml-auto"><StatusBadge status={st} /></span>
+              </div>
+              <p className="text-sm text-ink">{explain(profile.name, decision, view.familyBlocked, childBlocked, kv.dismissed)}</p>
+              {!view.familyBlocked && (
                 <div className="flex flex-wrap gap-2">
-                  <form action={manageFamilyBlock}><input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="op" value="split" /><Button type="submit" variant="ghost" className="text-xs px-3 py-1">Block each child separately</Button></form>
-                  <form action={manageFamilyBlock}><input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="op" value="remove" /><Button type="submit" variant="ghost" className="text-xs px-3 py-1">Unblock for everyone…</Button></form>
+                  {kv.overridden ? (
+                    <form action={allowVideoForChild}>
+                      <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} /><input type="hidden" name="undo" value="1" />
+                      <Button type="submit" variant="secondary" size="sm">Undo allow</Button>
+                    </form>
+                  ) : (
+                    <>
+                      {!decision.allow && (
+                        <form action={allowVideoForChild}>
+                          <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} />
+                          <Button type="submit" size="sm">Allow for {profile.name}{reviewed ? "" : " (not reviewed)"}</Button>
+                        </form>
+                      )}
+                      {(kv.dismissed || childBlocked) && (
+                        <form action={decideVideo}>
+                          <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} /><input type="hidden" name="decision" value="undo" />
+                          <input type="hidden" name="next" value={`/parent/video/${v.id}`} />
+                          <Button type="submit" variant="secondary" size="sm">{childBlocked ? `Undo Never for ${profile.name}` : "Stop keeping hidden"}</Button>
+                        </form>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
-              {!unblockAll && <p className="text-xs text-muted">&ldquo;Block each child separately&rdquo; keeps it blocked for every child you have now, then lets you change one child at a time. Children you add later won&apos;t be blocked automatically.</p>}
+            </li>
+          );
+        })}
+      </ul>
+      {v.dismissed && (
+        <form action={unhideForFamily} className="flex flex-wrap items-center gap-2 border-t border-sand px-5 py-3 text-xs text-muted">
+          <input type="hidden" name="videoId" value={v.id} />
+          <span>Kept hidden for every child (decided before per-child permissions).</span>
+          <button type="submit" className="font-bold text-forest underline">Stop keeping hidden for everyone</button>
+        </form>
+      )}
+      <div className="border-t border-sand bg-sand-soft/60 px-5 py-3 text-xs text-muted">
+        <p><b className="text-forest">Passes the AI review</b> means the review exists, is confident, and nothing in it conflicts with that child&apos;s settings. <b className="text-forest">Allowed by you</b> is your decision for one child, and plays even if the review or settings would hold it back.</p>
+      </div>
+    </Card>
+  );
+
+  return (
+    <main className="mx-auto w-full max-w-[76rem] px-4 pb-10 pt-5 sm:px-6 lg:px-10 lg:pt-8">
+      <Link href="/parent" className="inline-flex items-center gap-1 text-sm font-bold text-muted hover:text-forest"><IconChevron size={16} className="rotate-180" />Home</Link>
+
+      {/* ---- title + library source ---- */}
+      <header className="mt-2 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl leading-tight sm:text-title">{v.title}</h1>
+          <p className="text-sm text-muted"><Link href={`/parent/channel/${v.channelId}`} className="hover:underline">{v.channel?.title ?? v.channelId}</Link></p>
+        </div>
+        <LibraryControl videoId={v.id} addedDirectly={view.addedDirectly} channelApproved={view.channelApproved} />
+      </header>
+
+      <div className="mt-4 space-y-3">
+        {error && <Notice tone="bad">{error}</Notice>}
+        {allowedFor && <Notice tone="ok">{sp.undone === "1" ? `Undone. ${allowedFor.name} is back to the normal rules for this video.` : `Allowed for ${allowedFor.name}.`}</Notice>}
+        {confirmFor && !reviewed && (
+          <UnreviewedConfirm childName={confirmFor.profile.name} reason={reviewEligibility(c).reason} action={allowVideoForChild}
+            fields={{ videoId: v.id, profileId: confirmFor.profile.id }} cancelHref={`/parent/video/${v.id}`} />
+        )}
+      </div>
+
+      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_26rem] lg:items-start lg:gap-8">
+        {/* Decision column: first on a phone, right-hand and sticky on desktop. */}
+        <aside className="lg:order-2 lg:sticky lg:top-6">{who}</aside>
+
+        <div className="min-w-0 space-y-6 lg:order-1">
+          <VideoPreview id={v.id} title={v.title} thumbnailUrl={v.thumbnailUrl} duration={v.durationSeconds} />
+
+          {/* ---- AI review ---- */}
+          <Card as="section" className="p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-lg"><IconReview size={20} />AI review</h2>
+              {c?.reviewer?.model && c.reviewer.model !== "sample" && (
+                <p className="text-xs text-muted">Reviewed {c.reviewer.reviewedAt?.slice(0, 10)}{c.reviewer.revisions ? `, revised ${c.reviewer.revisions}× after parent feedback` : ""}</p>
+              )}
             </div>
-          )}
-          <ul className="mt-2 divide-y divide-line">
-            {view.perChild.map(({ profile, v: kv, decision, childBlocked }) => (
-              <li key={profile.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
-                <span className="text-xl">{profile.avatar}</span>
-                <span className="font-bold">{profile.name}</span>
-                <span className={`min-w-0 basis-full sm:basis-0 sm:flex-1 order-last sm:order-none ${decision.allow ? "text-ok" : "text-muted"}`}>
-                  {decision.allow
-                    ? decision.basis === "explicit" ? "Plays — you allowed it" : decision.basis === "open" ? "Plays — passes the review (Open mode)" : "Plays — reviewed and passes their rules"
-                    : view.familyBlocked ? "Doesn't play: blocked for every child"
-                    : childBlocked ? `Doesn't play: you chose Never for ${profile.name}`
-                    : `Doesn't play: ${decision.reasons.join(", ")}`}
-                </span>
-                {view.familyBlocked ? null : kv.overridden ? (
-                  <form action={allowVideoForChild}>
-                    <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} /><input type="hidden" name="undo" value="1" />
-                    <Button type="submit" variant="ghost" className="text-xs px-3 py-1">Undo allow</Button>
-                  </form>
-                ) : (
-                  <>
-                  {(kv.dismissed || childBlocked) && (
-                    <form action={decideVideo}>
-                      <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} /><input type="hidden" name="decision" value="undo" />
-                      <input type="hidden" name="next" value={`/parent/video/${v.id}`} />
-                      <Button type="submit" variant="ghost" className="text-xs px-3 py-1">{childBlocked ? "Undo Never" : "Stop keeping hidden"}</Button>
+            <p className="mt-0.5 text-sm text-muted">What an AI found watching the whole video. It&apos;s an assessment, not a guarantee.</p>
+            <div className="mt-4">
+              {!c ? (
+                <div className="space-y-3 text-sm">
+                  <Notice tone="warn">{eligibilityNote(undefined)}</Notice>
+                  {reviewing ? (
+                    <p className="text-muted">Reviewing now{v.durationSeconds ? ` (${Math.round(v.durationSeconds / 60)} minutes of video)` : ""}. This can take a few minutes; refresh to check.</p>
+                  ) : (
+                    <form action={runReview} className="flex flex-wrap items-center gap-3">
+                      <input type="hidden" name="videoId" value={v.id} />
+                      <Button type="submit">Run the AI review</Button>
+                      {v.durationSeconds && v.durationSeconds > 30 * 60 ? <span className="text-muted">It&apos;s {Math.round(v.durationSeconds / 60)} minutes long, too long for a kid-triggered check.</span> : null}
                     </form>
                   )}
-                  {!decision.allow && (
-                  <form action={allowVideoForChild}>
-                    <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} />
-                    <Button type="submit" variant="ghost" className="text-xs px-3 py-1">Allow for {profile.name}{!reviewed ? " (unreviewed)" : ""}</Button>
-                  </form>
+                </div>
+              ) : (
+                <>
+                  <Assessment v={v} />
+                  {!reviewed && !reviewing && (
+                    <form action={runReview} className="mt-3"><input type="hidden" name="videoId" value={v.id} /><Button type="submit" variant="secondary" size="sm">Run the AI review again</Button></form>
                   )}
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-          {v.dismissed && (
-            <form action={unhideForFamily} className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-              <input type="hidden" name="videoId" value={v.id} />
-              <span>Kept hidden for every child (decided before per-child permissions).</span>
-              <button type="submit" className="font-bold text-ink hover:underline">Stop keeping hidden for everyone</button>
-            </form>
-          )}
-          <p className="mt-2 text-xs text-muted">&ldquo;Allow for&rdquo; is just for that child, and overrides the review and their filters for this one video. &ldquo;Keep hidden&rdquo; holds until you change it, even if the review or the filters change later.</p>
-        </Card>
+                </>
+              )}
+            </div>
+          </Card>
 
-        {!c ? (
-          <Card className="p-6 text-center space-y-3">
-            {reviewing ? (
-              <>
-                <p className="font-bold">Reviewing now…</p>
-                <p className="text-sm text-muted">
-                  {v.durationSeconds ? `${Math.round(v.durationSeconds / 60)} minutes of video; ` : ""}this can take a few minutes. Refresh to check.
-                </p>
-              </>
+          {/* ---- other parents ---- */}
+          <Card as="section" className="p-5">
+            <h2 className="text-lg">Other parents</h2>
+            {others.length === 0 ? (
+              <p className="mt-1 text-sm text-muted">No other families have given feedback on this review yet.</p>
             ) : (
               <>
-                <p className="font-bold">No content card yet.</p>
-                {v.durationSeconds && v.durationSeconds > 30 * 60 ? (
-                  <p className="text-sm text-muted">This one is {Math.round(v.durationSeconds / 60)} minutes long — too long for a kid-triggered check, but you can run it.</p>
-                ) : null}
-                <form action={runReview}>
-                  <input type="hidden" name="videoId" value={v.id} />
-                  <Button type="submit">Run AI review</Button>
-                </form>
+                <p className="mt-1 text-sm text-muted">{othersAgree} of {others.length} found the review accurate. Parents can only make a review stricter, never clear something the AI found.</p>
+                {others.some((x) => x.note) && (
+                  <ul className="mt-3 space-y-2">
+                    {others.filter((x) => x.note).map((x) => (
+                      <li key={x.id} className="rounded-xl bg-sand-soft px-3 py-2 text-sm">
+                        <span className={`font-bold ${x.verdict === "agree" ? "text-ok" : "text-warn"}`}>{VERDICT_LABELS[x.verdict]}. </span>
+                        {x.note} {x.kidAge ? <span className="text-muted">(parent of a {x.kidAge}-year-old)</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </>
             )}
           </Card>
-        ) : (
-          <>
-            <Card className="p-4 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Stars value={c.rating} />
-                <span className="font-bold">{c.rating}/5</span>
-                <Pill className="bg-sky">ages {c.ageFit.min}–{c.ageFit.max}</Pill>
-                <PacePill pace={c.pace} />
-                <Pill className="bg-line">{FORMAT_LABELS[c.format ?? "other"]}</Pill>
-                <Pill className="bg-line">educational {c.educationalValue}/5</Pill>
-                {c.reviewer.model === "sample"
-                  ? <Pill className="bg-warn/20 text-warn">sample card — not a real review</Pill>
-                  : <Pill className="bg-line">AI · {c.reviewer.model} · {Math.round(c.confidence * 100)}% confident</Pill>}
-              </div>
-              <p>{c.synopsis}</p>
-              <p className="font-bold">Parent take: <span className="font-semibold">{c.parentRecommendation}</span></p>
-            </Card>
 
-            <Card className="p-4 space-y-3">
-              <h2 className="font-extrabold">What&apos;s in it</h2>
-              {present.length === 0 && <p className="text-sm text-ok font-bold">Nothing flagged across all {CONCERN_TAGS.length} concern types.</p>}
-              <ul className="space-y-2">
-                {present.map((f) => (
-                  <li key={f.tag} className="text-sm">
-                    <ConcernPill f={f} flaggedBy={v.confirmations.flaggedTags[f.tag]} />
-                    {f.evidence && <span className="ml-2 text-muted">{f.evidence}</span>}
-                    {f.timestamp && (
-                      <a className="ml-2 text-accent font-bold" href={`https://www.youtube.com/watch?v=${v.id}&t=${toSeconds(f.timestamp)}s`} target="_blank" rel="noreferrer">
-                        jump to {f.timestamp} ↗
-                      </a>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {absent.length > 0 && (
-                <p className="text-xs text-muted">Not found: {absent.map((f) => CONCERN_LABELS[f.tag]).join(" · ")}</p>
-              )}
-            </Card>
-          </>
-        )}
-
-        <Card className="p-4">
-          <h2 className="font-extrabold">Parents say</h2>
-          <p className="text-sm text-muted">
-            {v.confirmations.agree} agree with the card · {v.confirmations.flag} disputed it
-            {mine && <> · <b className="text-ink">you: {VERDICT_LABELS[mine.verdict].toLowerCase()}</b></>}
-            {c?.reviewer.revisions ? <> · revised {c.reviewer.revisions}× after feedback</> : null}
-            {" · "}<Link href="/parent/reviewer" className="underline">how the reviewer learns</Link>
-          </p>
-          {sp.thanks === "1" && <p className="mt-2 rounded-xl bg-grass p-2 text-sm font-bold">Thanks — saved. Disputed cards get a second look overnight, and the pattern feeds the reviewer&apos;s calibration notes.</p>}
-          <FeedbackForm videoId={v.id} present={present} absent={absent} ageFit={c?.ageFit} mine={mine} kidAge={settings.kidAge} />
-          {confirmations.filter((x) => x.note).length > 0 && (
-            <ul className="mt-4 space-y-2 border-t border-line pt-3">
-              {confirmations.filter((x) => x.note).map((x) => (
-                <li key={x.id} className="text-sm">
-                  <span className={`font-bold ${x.verdict === "agree" ? "text-ok" : "text-bad"}`}>{x.verdict === "agree" ? "👍" : "⚠"}</span>{" "}
-                  {x.note} {x.kidAge ? <span className="text-muted">— parent of a {x.kidAge}-year-old</span> : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      </main>
-    </>
+          {/* ---- your feedback (only once there's a review to give feedback on) ---- */}
+          {c && <Card as="section" className="p-5">
+            <h2 className="text-lg">Your feedback on the review</h2>
+            <p className="mt-1 text-sm text-muted">
+              {mine ? <>You said: <b className="text-ink">{VERDICT_LABELS[mine.verdict].toLowerCase()}</b>. Change it any time. </> : null}
+              Disputed reviews get a second look overnight. <Link href="/parent/reviewer" className="font-bold text-forest underline">How the reviewer learns</Link>
+            </p>
+            {sp.thanks === "1" && <Notice tone="ok" className="mt-3">Saved. Thanks for helping the reviewer get better.</Notice>}
+            <FeedbackForm videoId={v.id} present={present} absent={absent} ageFit={c?.ageFit} mine={mine} kidAge={settings.kidAge} />
+          </Card>}
+        </div>
+      </div>
+    </main>
   );
 }
 
-function toSeconds(ts: string) {
-  const p = ts.split(":").map(Number);
-  return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : (p[0] ?? 0) * 60 + (p[1] ?? 0);
+/** One sentence per child: what's deciding it, in the words the parent uses (no "safe"). */
+function explain(name: string, d: AuthDecision, familyBlocked: boolean, childBlocked: boolean, keptHidden: boolean): ReactNode {
+  if (familyBlocked) return "Blocked for every child.";
+  if (d.allow) {
+    if (d.basis === "explicit") return <>You allowed it for {name}. <span className="text-muted">This overrides the AI review and {name}&apos;s settings for this one video.</span></>;
+    if (d.basis === "open") return <>Passes the AI review against {name}&apos;s settings. <span className="text-muted">Plays because {name} is in Open mode.</span></>;
+    return <>Passes the AI review against {name}&apos;s settings. <span className="text-muted">It&apos;s in your library.</span></>;
+  }
+  if (childBlocked) return `You chose Never for ${name}.`;
+  if (keptHidden) return `You chose to keep it hidden from ${name}. That holds even if the review or settings change.`;
+  return <>Doesn&apos;t play for {name}: <span className="text-muted">{d.reasons.join(", ")}.</span></>;
 }
 
 /** Library source control: "Add & review" adds the video and starts its review — it does not, by itself, let anyone watch it. */
 function LibraryControl({ videoId, addedDirectly, channelApproved }: { videoId: string; addedDirectly: boolean; channelApproved: boolean }) {
-  if (channelApproved && !addedDirectly) return <span className="shrink-0 text-xs text-muted text-right">In your library<br />via an approved channel</span>;
+  if (channelApproved && !addedDirectly) {
+    return <span className="inline-flex items-center gap-1.5 rounded-full bg-sage-soft px-3 py-1.5 text-xs font-bold text-forest"><IconShield size={14} />In your library through its channel</span>;
+  }
   return (
-    <form action={addAndReview} className="shrink-0 text-right">
+    <form action={addAndReview} className="flex items-center gap-2">
       <input type="hidden" name="videoId" value={videoId} />
       {addedDirectly ? (
         <>
           <input type="hidden" name="remove" value="1" />
-          <span className="block text-xs text-muted">In your library</span>
-          <button type="submit" className="text-xs font-bold text-muted hover:text-bad">Remove</button>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-sage-soft px-3 py-1.5 text-xs font-bold text-forest"><IconShield size={14} />In your library</span>
+          <Button type="submit" variant="quiet" size="sm">Remove</Button>
         </>
       ) : (
-        <Button type="submit">Add &amp; review</Button>
+        <Button type="submit" variant="secondary" size="sm">Add &amp; review</Button>
       )}
     </form>
   );

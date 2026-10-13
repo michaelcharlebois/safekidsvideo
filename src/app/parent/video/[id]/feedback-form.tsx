@@ -16,9 +16,9 @@ export function FeedbackForm({
       <input type="hidden" name="videoId" value={videoId} />
 
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" name="verdict" value="agree" variant="primary">👍 Card is accurate</Button>
-        <Button type="submit" name="verdict" value="too_strict" variant="ghost">😌 Too strict</Button>
-        <Button type="submit" name="verdict" value="too_lenient" variant="danger">⚠ Too lenient</Button>
+        <Button type="submit" name="verdict" value="agree" variant="primary">The review is accurate</Button>
+        <Button type="submit" name="verdict" value="too_strict" variant="secondary">Too strict</Button>
+        <Button type="submit" name="verdict" value="too_lenient" variant="danger">Too lenient</Button>
       </div>
 
       <details className="rounded-xl border border-line p-3 text-sm" open={!!mine && mine.verdict !== "agree"}>
@@ -26,7 +26,7 @@ export function FeedbackForm({
         <div className="mt-3 space-y-3">
           {present.length > 0 && (
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-muted">It flagged these — fair?</p>
+              <p className="text-sm font-bold text-forest">It flagged these — fair?</p>
               <ul className="mt-1 divide-y divide-line">
                 {present.map((f) => (
                   <li key={f.tag} className="flex items-center justify-between gap-2 py-1.5">
@@ -42,7 +42,7 @@ export function FeedbackForm({
           )}
           {absent.length > 0 && (
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-muted">It missed any of these?</p>
+              <p className="text-sm font-bold text-forest">It missed any of these?</p>
               <div className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-3">
                 {absent.map((f) => (
                   <label key={f.tag} className="flex items-center gap-2">
@@ -55,7 +55,7 @@ export function FeedbackForm({
           )}
           {ageFit && (
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-muted">Age range ({ageFit.min}–{ageFit.max})</p>
+              <p className="text-sm font-bold text-forest">Age range ({ageFit.min}–{ageFit.max})</p>
               <div className="mt-1 flex flex-wrap gap-1">
                 <Radio name="ageVote" value="younger" current={mine?.ageVote} label="Fine for younger kids" />
                 <Radio name="ageVote" value="right" current={mine?.ageVote} label="About right" />
@@ -66,7 +66,7 @@ export function FeedbackForm({
         </div>
       </details>
 
-      <textarea name="note" rows={2} defaultValue={mine?.note} placeholder="Two lines for other parents (optional) — this also teaches the reviewer" className="w-full rounded-xl border border-line bg-bg px-3 py-2 text-sm outline-none focus:border-accent" />
+      <textarea name="note" rows={2} defaultValue={mine?.note} placeholder="Two lines for other parents (optional) — this also teaches the reviewer" className="w-full rounded-xl border border-sand bg-surface px-3 py-2 text-sm outline-none focus:border-forest" />
       <label className="flex items-center gap-2 text-sm text-muted">
         My kid is <input type="number" name="kidAge" min={1} max={14} defaultValue={mine?.kidAge ?? kidAge} className="w-14 rounded-lg border border-line px-2 py-1" />
       </label>
@@ -78,7 +78,7 @@ function Radio({ name, value, current, label }: { name: string; value: string; c
   return (
     <label className="cursor-pointer">
       <input type="radio" name={name} value={value} defaultChecked={current === value} className="peer sr-only" />
-      <span className="inline-block rounded-full border border-line px-2.5 py-1 text-xs font-bold peer-checked:border-ink peer-checked:bg-ink peer-checked:text-bg">{label}</span>
+      <span className="inline-block rounded-full border border-line px-2.5 py-1 text-xs font-bold peer-checked:border-forest peer-checked:bg-forest peer-checked:text-ivory peer-focus-visible:ring-2 peer-focus-visible:ring-forest">{label}</span>
     </label>
   );
 }

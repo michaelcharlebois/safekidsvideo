@@ -3,7 +3,7 @@ import { resolveViewer } from "@/lib/family";
 import { db } from "@/lib/db";
 import { listPendingRequests } from "@/lib/activity";
 import { getLibraries } from "@/lib/queries";
-import { pendingDecisions } from "@/lib/inbox";
+import { forChild, pendingDecisions } from "@/lib/inbox";
 import { ParentNav, type NavKid } from "./parent-nav";
 
 /**
@@ -21,8 +21,10 @@ export default async function ParentLayout({ children }: LayoutProps<"/parent">)
     const items = pendingDecisions({ requests, children, legacy });
     badge = items.length;
     defaultKidId = (v.profileId && children.some((c) => c.profile.id === v.profileId) ? v.profileId : undefined) ?? children[0]?.profile.id;
-    // Per child (sidebar): decisions that name that child. Unattributed requests and old records count only in the total.
-    kids = children.map(({ profile: p }) => ({ id: p.id, name: p.name, avatar: p.avatar, pending: items.filter((i) => (i.kind === "request" || i.kind === "held") && i.profileId === p.id).length }));
+    // Per child (sidebar): the same count as that child's filter on Review — everything that concerns them,
+    // including requests that didn't record a child and old records listing them. Shared items count for
+    // each child they concern, so per-child numbers can add up to more than the total.
+    kids = children.map(({ profile: p }) => ({ id: p.id, name: p.name, avatar: p.avatar, pending: forChild(items, p.id).length }));
   }
   return (
     <div className="flex flex-1 flex-col pb-20 md:pb-0 lg:flex-row lg:pb-0">

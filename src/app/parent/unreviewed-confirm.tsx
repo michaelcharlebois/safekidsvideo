@@ -17,8 +17,8 @@ export function UnreviewedConfirm({ childName, title, reason, action, fields, ca
     : reason === REASON.invalidReview ? "The review of this video came back incomplete."
     : "This video hasn't been reviewed yet.";
   return (
-    <Card className="p-4 border-warn bg-sun/30 space-y-2">
-      <p className="font-extrabold">{headline}</p>
+    <Card raised className="space-y-2 border-warn/40 bg-warn-soft p-4 sm:p-5">
+      <p className="font-extrabold text-forest">{headline}</p>
       {title && <p className="text-sm font-bold line-clamp-2">{title}</p>}
       <p className="text-sm">
         Allowing it means {childName} can watch it before anyone has checked what&apos;s in it — the AI review and your
