@@ -1,6 +1,8 @@
 import { db, STORE_KIND, DEFAULT_FAMILY_ID } from "@/lib/db/resolve";
 import { fetchChannelUploads } from "@/lib/youtube";
 import { reviewVideo } from "@/lib/reviewer";
+import { ingestChannel } from "@/lib/ingest";
+import discovery from "../../data/discovery.json";
 import type { Video } from "@/lib/types";
 
 /**
@@ -110,4 +112,67 @@ export async function seedChannelReviews(videos: Video[], opts: { max?: number; 
   };
   await Promise.all(Array.from({ length: concurrency }, worker));
   return { reviewed, failed };
+}
+
+// ---- nightly discovery: keep a curated set of popular kids channels reviewed for everyone ----
+
+
+export type DiscoveryResult = { channels: number; newVideos: number; reviewed: number; failed: number; seconds: number };
+
+/**
+ * For each curated channel: make sure it exists with its top videos, pull the newest few
+ * uploads, then review the unreviewed backlog newest-first until `max` or the time budget
+ * runs out. Cards are global, so every family's Search gets these as instant "Play".
+ */
+export async function runDiscovery(opts: { max?: number; budgetMs?: number; concurrency?: number; log?: (s: string) => void } = {}): Promise<DiscoveryResult> {
+  const log = opts.log ?? (() => {});
+  const max = opts.max ?? 25, budgetMs = opts.budgetMs ?? 240_000, concurrency = opts.concurrency ?? 3;
+  const started = Date.now();
+  const result: DiscoveryResult = { channels: 0, newVideos: 0, reviewed: 0, failed: 0, seconds: 0 };
+  const handles: string[] = (discovery as { channels: string[] }).channels;
+
+  const channelIds: string[] = [];
+  for (const h of handles) {
+    try {
+      const before = (await db.listVideos()).length;
+      // First time: top 10 + newest 5. After that: newest 5 only (search calls are the expensive quota).
+      const known = await db.listChannels();
+      const existing = known.find((c) => c.handle?.toLowerCase() === h.toLowerCase());
+      const { channelId } = await ingestChannel(existing?.id ?? h, 5, existing ? 0 : 10);
+      channelIds.push(channelId);
+      result.channels++;
+      result.newVideos += (await db.listVideos()).length - before;
+    } catch (e) {
+      log(`skip ${h}: ${(e as Error).message}`);
+    }
+  }
+
+  const set = new Set(channelIds);
+  const queue: Video[] = [];
+  for (const v of await db.listVideos()) {
+    if (!set.has(v.channelId)) continue;
+    if ((v.durationSeconds ?? 0) > MAX_PIPELINE_SECONDS) continue;
+    const card = await db.getCard(v.id);
+    if (card && card.reviewer.model !== "sample") continue;
+    queue.push(v);
+  }
+  queue.sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
+  queue.splice(max);
+
+  const worker = async () => {
+    for (let v = queue.shift(); v; v = queue.shift()) {
+      if (Date.now() - started > budgetMs) return;
+      try {
+        log(`reviewing: ${v.title}`);
+        await db.upsertCard(await reviewVideo(v.id, { durationSeconds: v.durationSeconds }));
+        result.reviewed++;
+      } catch (e) {
+        result.failed++;
+        log(`failed: ${v.title} — ${(e as Error).message}`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  result.seconds = Math.round((Date.now() - started) / 1000);
+  return result;
 }

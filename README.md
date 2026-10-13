@@ -66,6 +66,10 @@ job (`/api/cron/sync`, scheduled in `vercel.json`; set `CRON_SECRET`) refreshes 
 channel and pre-reviews up to 20 new videos, so new uploads arrive already carded. The parent
 dashboard has a "Review next 5 now" button; `npm run pipeline` does the same from a terminal.
 
+## Nightly discovery
+
+`data/discovery.json` lists well-known kids channels. `/api/cron/discover` (daily, 11:00 UTC) refreshes their newest uploads and reviews up to 25 short videos within a 4-minute budget, so every family's Search gets them as instant "Play". Run by hand with `npm run pipeline -- --discover [--max 25]`. Edit the list freely — unknown handles are skipped.
+
 ## Layout
 
 ```
