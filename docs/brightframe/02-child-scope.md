@@ -152,3 +152,33 @@ Kid-side indicators are also child-scoped now: pending requests, running checks,
 - **The demo family's PIN is now `2580`**, because `1234` no longer counts as a PIN. The demo page shows it.
 - **Local dev mode has no shared-screen lockout** (there's no device table). Supabase mode enforces it in the database.
 - **Kid requests and the database lockout weren't exercised in a browser**, because both need Supabase. Requests are covered by unit tests of `approveRequest` and the confirm flow; the lockout by real-Postgres tests. Both are on the staging checklist above.
+
+## Follow-up fixes (round 3)
+
+**The AI reviewer no longer fills in findings.**
+- `normalizeReview()` in `src/lib/reviewer.ts` accepts a response only if the model assessed every concern tag exactly once.
+- A missing tag, a duplicated tag, an unknown tag, a bad value, an unparseable response or an empty response throws `IncompleteReviewError`, and nothing is stored. The video stays "Being reviewed" and can't play.
+- An open-mode kid check that hits an incomplete review asks a parent instead.
+- The response schema now asks the model for exactly N findings.
+- Tests: `test/reviewer-normalize.test.ts`.
+
+**Existing reviews made before this fix:**
+- Cards from reviewer version "1" (before this change) may contain "absent" findings the code filled in.
+- Those can't be told apart from findings the model actually gave.
+- They stay valid, so nothing disappears from kids' screens overnight.
+- New cards are version "2".
+- `npm run review -- --upgrade-v1 --max 50` re-reviews version-1 cards, oldest first. It counts against the daily budget and keeps the old card if the re-review fails.
+- Recommendation: run it in batches after deploying.
+- Known gap: the tokens spent on a rejected (incomplete) response aren't counted by the cost meter, because the meter sums stored cards.
+
+**Family-wide blocks (pre-0018):**
+- `allowForChild()` now refuses with `FamilyBlockError` instead of writing an approval that would change nothing.
+- The video page says the video is blocked for every child, and offers two actions.
+  - **Block each child separately:**
+    - writes a block for each current child before removing the family-wide one, so nobody is unblocked at any point
+    - each child can then be allowed on their own
+    - children added later aren't covered
+  - **Unblock for everyone:**
+    - first shows what each child would then be able to watch, and asks for confirmation
+    - leaves each child's own blocks in place
+- Tests are in `test/grants.test.ts`.
