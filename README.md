@@ -124,6 +124,10 @@ Per kid: minutes per day and a "done for the day" time (dashboard → kid tab �
 
 `/parent/channel/[id]`: everything we know about a channel — reviewed count, typical age range, rating, pace mix, what comes up (tag frequency at mild vs. moderate+), best picks, the one to watch out for, every video with its status for the selected kid, and "Review next 5". `/c/[handle]` is the same report, public and indexable (hourly cache, SEO metadata, no family data) with a sign-up CTA — the growth loop.
 
+## Demo access
+
+Set `DEMO_KEY` (a long random string), `DEMO_PASSWORD` (another; never shared) and optionally `DEMO_EXPIRES` (ISO date), then send a reviewer `https://<site>/demo?key=<DEMO_KEY>`. They get two doors — Parent (signs in as `demo@siftkids.com`) and Kid screen (pairs that browser as a device) — into a separate demo family with two kids and the best-reviewed shared channels approved. No email or pairing codes. The demo family is never an admin and never sees billing; "Reset the demo family" wipes its choices. Unset `DEMO_KEY` (or let it expire) and every `/demo` URL 404s.
+
 ## Layout
 
 ```

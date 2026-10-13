@@ -72,7 +72,7 @@ export async function resolveViewer(): Promise<Viewer> {
 }
 
 /** The family a signed-in parent owns, created on first sign-in. */
-async function familyForUser(userId: string): Promise<string> {
+export async function familyForUser(userId: string): Promise<string> {
   const sb = supabaseAdmin();
   const { data } = await sb.from("families").select("id").eq("owner_user_id", userId).maybeSingle();
   if (data) return data.id;
@@ -96,6 +96,14 @@ export async function createPairingCode(familyId: string): Promise<{ code: strin
     if (!error) return { code, expiresAt };
   }
   throw new Error("Could not generate a pairing code; try again");
+}
+
+/** Mint a device directly (demo access only). Returns the raw token to set as the device cookie. */
+export async function createDeviceToken(familyId: string, name: string): Promise<string> {
+  const token = randomBytes(32).toString("base64url");
+  const { error } = await supabaseAdmin().from("devices").insert({ family_id: familyId, token_hash: sha(token), name });
+  if (error) throw new Error(error.message);
+  return token;
 }
 
 /** Redeem a code from the kid device. Returns the raw token to set as a cookie. */
