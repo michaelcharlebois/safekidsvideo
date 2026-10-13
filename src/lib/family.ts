@@ -8,9 +8,16 @@ import { PARENT_COOKIE } from "@/lib/auth";
 export const DEVICE_COOKIE = "skv_device";
 
 export type Viewer =
-  | { role: "parent"; familyId: string; email?: string }
+  | { role: "parent"; familyId: string; email?: string; admin: boolean }
   | { role: "device"; familyId: string; deviceId: string; deviceName: string }
   | { role: "none"; familyId: null };
+
+/** Global knobs (reviewer notes, learn-now) are limited to ADMIN_EMAILS — comma-separated. Unset = nobody. */
+export function isAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const list = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return list.includes(email.toLowerCase());
+}
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -26,7 +33,7 @@ export async function resolveViewer(): Promise<Viewer> {
   if (!supabaseEnabled || STORE_KIND === "local") {
     const isParent = c.get(PARENT_COOKIE)?.value === "1";
     return isParent
-      ? { role: "parent", familyId: DEFAULT_FAMILY_ID }
+      ? { role: "parent", familyId: DEFAULT_FAMILY_ID, admin: true } // single-family local mode: you're the admin
       : { role: "device", familyId: DEFAULT_FAMILY_ID, deviceId: "local", deviceName: "This device" };
   }
 
@@ -35,7 +42,7 @@ export async function resolveViewer(): Promise<Viewer> {
   const { data: { user } } = await sb.auth.getUser();
   if (user) {
     const familyId = await familyForUser(user.id);
-    return { role: "parent", familyId, email: user.email };
+    return { role: "parent", familyId, email: user.email, admin: isAdminEmail(user.email) };
   }
 
   // Paired device?

@@ -16,6 +16,7 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
   const sp = await props.searchParams;
   const v = await resolveViewer();
   if (v.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent/reviewer" : "/unlock?next=/parent/reviewer");
+  const admin = v.admin;
   const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString(); // eslint-disable-line react-hooks/purity -- server component
   const [stats, notes, history, recent] = await Promise.all([
     feedbackStats(90), db.getReviewerNotes(), db.listReviewerNotes(5), db.listAllConfirmations(monthAgo),
@@ -31,6 +32,7 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
       <main className="mx-auto w-full max-w-3xl px-4 py-6 space-y-4">
         {sp.learning === "1" && <Card className="p-3 bg-grass text-sm font-bold">Learning in the background — new notes and any re-reviews land within a few minutes. Refresh to see them.</Card>}
         {sp.saved === "1" && <Card className="p-3 bg-grass text-sm font-bold">Notes saved. Every review from now on uses them.</Card>}
+        {sp.error === "admin" && <Card className="p-3 border-bad/40 bg-bad/5 text-sm font-bold">Only a Sift admin can change the shared reviewer notes. Your feedback on individual cards still counts.</Card>}
 
         <Card className="p-4">
           <h2 className="font-extrabold">How parents rate the cards <span className="text-muted font-bold">· last 90 days</span></h2>
@@ -62,15 +64,19 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
               <h2 className="font-extrabold">Calibration notes {notes ? <span className="text-muted font-bold">· v{notes.version} · {notes.source === "learn" ? "learned" : "edited by a parent"}</span> : null}</h2>
               <p className="text-sm text-muted">Appended to the reviewer&apos;s instructions on every review. Rewritten nightly from new feedback; disputed cards get re-reviewed with the dispute in hand. Edit by hand if you know something it doesn&apos;t.</p>
             </div>
-            <form action={learnNow}><Button type="submit" variant="ghost">Learn now</Button></form>
+            {admin && <form action={learnNow}><Button type="submit" variant="ghost">Learn now</Button></form>}
           </div>
-          <form action={saveReviewerNotes} className="mt-3 space-y-2">
-            <textarea name="notes" rows={10} defaultValue={notes?.notes ?? ""} placeholder={"- Nothing learned yet. Dispute a few cards, then press Learn now — or write rules here, e.g.\n- Channel branding intros and outros are not commercialism."} className="w-full rounded-xl border border-line bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-accent" />
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted">{history.length > 1 ? `Previous versions: ${history.slice(1).map((h) => `v${h.version}`).join(", ")}` : ""}</span>
-              <Button type="submit">Save notes</Button>
-            </div>
-          </form>
+          {admin ? (
+            <form action={saveReviewerNotes} className="mt-3 space-y-2">
+              <textarea name="notes" rows={10} defaultValue={notes?.notes ?? ""} placeholder={"- Nothing learned yet. Dispute a few cards, then press Learn now — or write rules here, e.g.\n- Channel branding intros and outros are not commercialism."} className="w-full rounded-xl border border-line bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-accent" />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted">{history.length > 1 ? `Previous versions: ${history.slice(1).map((h) => `v${h.version}`).join(", ")}` : ""}</span>
+                <Button type="submit">Save notes</Button>
+              </div>
+            </form>
+          ) : (
+            <pre className="mt-3 whitespace-pre-wrap rounded-xl bg-surface p-3 font-mono text-xs">{notes?.notes ?? "Nothing learned yet."}</pre>
+          )}
         </Card>
 
         <Card className="p-4">

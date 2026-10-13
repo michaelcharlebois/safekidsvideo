@@ -25,6 +25,13 @@ async function requireParent(): Promise<string> {
   redirect(supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent");
 }
 
+/** Global, everyone-affecting actions need an admin (ADMIN_EMAILS). */
+async function requireAdmin(): Promise<void> {
+  const v = await resolveViewer();
+  if (v.role === "parent" && v.admin) return;
+  redirect("/parent/reviewer?error=admin");
+}
+
 export type AddResult = { ok: true; message: string } | { ok: false; error: string };
 
 export async function addByUrl(_prev: AddResult | null, form: FormData): Promise<AddResult> {
@@ -113,7 +120,7 @@ export async function confirmCard(form: FormData) {
 
 /** Reviewer page: distil recent feedback into new calibration notes and re-review disputed cards. */
 export async function learnNow() {
-  await requireParent();
+  await requireAdmin();
   after(async () => {
     try { await learnFromFeedback({ minDisagreements: 1 }); } catch (e) { console.error("learn failed", e); }
     try { await rereviewDisputed({ max: 3 }); } catch (e) { console.error("re-review failed", e); }
@@ -124,7 +131,7 @@ export async function learnNow() {
 
 /** Reviewer page: a parent edits the calibration notes by hand. */
 export async function saveReviewerNotes(form: FormData) {
-  await requireParent();
+  await requireAdmin();
   const notes = String(form.get("notes") ?? "").trim();
   if (notes) await db.saveReviewerNotes({ notes, source: "manual" });
   revalidatePath("/parent/reviewer");
