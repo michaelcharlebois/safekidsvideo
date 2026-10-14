@@ -36,10 +36,9 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
   const sp = await props.searchParams;
   // "Reviewing now" only with evidence: the add/run action stamps when it started a review job. After 15
   // minutes with no review stored, the job didn't finish, and the page says so instead of waiting forever.
-  const startedAt = typeof sp.reviewing === "string" ? Number(sp.reviewing) : NaN;
-  const sinceStart = Number.isFinite(startedAt) ? Date.now() - startedAt : Infinity; // eslint-disable-line react-hooks/purity -- server component
-  const reviewing = sinceStart < 15 * 60_000;
-  const stalled = Number.isFinite(startedAt) && !reviewing;
+  // There is no stored job state for an AI review, so the page never claims one is running or has failed.
+  // `?reviewing=1` only means this visit followed a request that started one.
+  const requested = sp.reviewing === "1";
   const unblockAll = sp.unblockAll === "1";
   const back = backLink(sp);
   const viewer = await resolveViewer();
@@ -168,7 +167,7 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
         {sp.added === "1" && (
           <Notice tone="ok">
             Added to your family&apos;s sources.{" "}
-            {reviewed ? "Each child's settings decide whether it plays: see Who can watch this." : reviewing ? "The AI review has started. Until it passes, it won't play for any child unless you allow it." : "It hasn't been reviewed, so it won't play for any child unless you allow it."}
+            {reviewed ? "Each child's settings decide whether it plays: see Who can watch this." : requested ? "An AI review was requested. Until a review is stored and passes, it won't play for any child unless you allow it." : "It hasn't been reviewed, so it won't play for any child unless you allow it."}
           </Notice>
         )}
         {sp.removed === "1" && <Notice tone="ok">Removed from your family&apos;s sources. A child you allowed it for can still watch it.</Notice>}
@@ -199,21 +198,18 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
               {!c ? (
                 <div className="space-y-3 text-sm">
                   <Notice tone="warn">{eligibilityNote(undefined)}</Notice>
-                  {stalled && <p className="text-muted">The review that started earlier didn&apos;t finish. You can run it again.</p>}
-                  {reviewing ? (
-                    <p className="text-muted">Reviewing now{v.durationSeconds ? ` (${Math.round(v.durationSeconds / 60)} minutes of video)` : ""}. This can take a few minutes; refresh to check.</p>
-                  ) : (
-                    <form action={runReview} className="flex flex-wrap items-center gap-3">
-                      <input type="hidden" name="videoId" value={v.id} />
-                      <Button type="submit">Run the AI review</Button>
-                      {v.durationSeconds && v.durationSeconds > 30 * 60 ? <span className="text-muted">It&apos;s {Math.round(v.durationSeconds / 60)} minutes long, too long for a kid-triggered check.</span> : null}
-                    </form>
-                  )}
+                  {requested && <p className="font-bold text-ink">Review requested. No completed review yet.</p>}
+                  {requested && <p className="text-muted">Reviews usually take a few minutes{v.durationSeconds ? ` (this video is ${Math.round(v.durationSeconds / 60)} minutes long)` : ""}. Refresh later to see whether one has been stored.</p>}
+                  <form action={runReview} className="flex flex-wrap items-center gap-3">
+                    <input type="hidden" name="videoId" value={v.id} />
+                    <Button type="submit" variant={requested ? "secondary" : "primary"} size={requested ? "sm" : "md"}>{requested ? "Request the review again" : "Run the AI review"}</Button>
+                    {v.durationSeconds && v.durationSeconds > 30 * 60 ? <span className="text-muted">It&apos;s {Math.round(v.durationSeconds / 60)} minutes long, too long for a kid-triggered check.</span> : null}
+                  </form>
                 </div>
               ) : (
                 <>
                   <Assessment v={v} />
-                  {!reviewed && !reviewing && (
+                  {!reviewed && (
                     <form action={runReview} className="mt-3"><input type="hidden" name="videoId" value={v.id} /><Button type="submit" variant="secondary" size="sm">Run the AI review again</Button></form>
                   )}
                 </>

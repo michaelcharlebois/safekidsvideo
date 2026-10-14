@@ -633,8 +633,8 @@ export async function addAndReview(form: FormData) {
     throw e;
   }
   revalidatePath(`/parent/video/${videoId}`); revalidatePath("/parent");
-  // `reviewing` carries when the job started, so the page stops saying "Reviewing now" if it never finished.
-  redirect(`/parent/video/${videoId}${remove ? "?removed=1" : `?added=1${started ? `&reviewing=${Date.now()}` : ""}`}`);
+  // `reviewing=1` only when a review was actually requested; the page says "requested", never "running".
+  redirect(`/parent/video/${videoId}${remove ? "?removed=1" : `?added=1${started ? "&reviewing=1" : ""}`}`);
 }
 
 /** Parent: allow one specific video for one child (the explicit approval). Unreviewed videos need a confirm step. */
@@ -860,7 +860,7 @@ export async function runReview(form: FormData) {
       console.error("review failed", video.id, (e as Error).message);
     }
   });
-  redirect(`/parent/video/${videoId}?reviewing=${Date.now()}`);
+  redirect(`/parent/video/${videoId}?reviewing=1`);
 }
 
 // ---- Push notifications -------------------------------------------------------

@@ -20,6 +20,7 @@ import { decideVideo, moveChannel, reviewNextBatch, toggleWhitelist } from "@/ap
 import { UnreviewedConfirm } from "@/app/parent/unreviewed-confirm";
 import { ChannelAvatar } from "@/app/watch/kid-ui";
 import { AddPanel } from "./sources";
+import { EvidenceList } from "@/app/parent/evidence";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // "Review 10 now" runs in the background within this budget
@@ -34,7 +35,7 @@ function filterNote(f: LibraryFilter, name: string): string | null {
   switch (f) {
     case "plays": return `These pass the AI review and ${name}'s settings, so they're on ${name}'s screen.`;
     case "allowed": return `You allowed these for ${name}. They play for ${name} even if the review or ${name}'s settings would hold them back.`;
-    case "held": return `${name}'s settings hold these back. That's Brightframe working as intended, so there's nothing you need to do. To make an exception, allow a video for ${name}.`;
+    case "held": return `${name}'s settings hold these back. That's Brightframe working as intended, so there's nothing you need to do. Each video lists what the review found; you can make an exception for ${name} after reading it.`;
     case "uncertain": return `These have an AI review that can't be relied on (not confident enough, or incomplete). They stay off ${name}'s screen unless you allow them.`;
     case "reviewing": return `No AI review is stored for these yet. They won't play for ${name} until a review passes, or until you allow one.`;
     case "hidden": return `You chose Keep hidden for these. Unlike a filter, it stays even if ${name}'s settings or the review change later. ${name} can still ask for them.`;
@@ -153,7 +154,7 @@ export default async function LibraryPage(props: PageProps<"/parent/library">) {
           </ScrollRow>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <form action="/parent/library" className="relative min-w-0 flex-1 sm:max-w-sm" role="search">
+            <form action="/parent/library" className="relative min-w-0 basis-full sm:max-w-sm sm:flex-1 sm:basis-auto" role="search">
               <input type="hidden" name="kid" value={kid.id} />
               {filter !== "all" && <input type="hidden" name="status" value={filter} />}
               {channelId && <input type="hidden" name="channel" value={channelId} />}
@@ -180,7 +181,7 @@ export default async function LibraryPage(props: PageProps<"/parent/library">) {
           {filter === "reviewing" && counts.reviewing > 0 && process.env.GEMINI_API_KEY && (
             <form action={reviewNextBatch} className="mt-2 text-sm text-muted">
               <input type="hidden" name="n" value={10} /><input type="hidden" name="next" value={here} />
-              {str("batch") ? <span className="font-bold text-ok">Started reviewing {str("batch")}. Check back in a few minutes.</span> : <button type="submit" className="font-bold text-forest underline">Review 10 now</button>}
+              {str("batch") ? <span><b className="text-ink">Review requested</b> for up to {str("batch")} videos. They show a new status here once a review is stored.</span> : <button type="submit" className="font-bold text-forest underline">Review 10 now</button>}
             </form>
           )}
 
@@ -207,7 +208,7 @@ export default async function LibraryPage(props: PageProps<"/parent/library">) {
                         <Link href={detailHref(`/parent/channel/${g.channelId}`, "library", kid.id)} className="shrink-0 text-sm font-bold text-forest underline decoration-sand underline-offset-4">Channel</Link>
                       </div>
                       <ul className="divide-y divide-sand">
-                        {rows.map((i) => <Row key={i.v.id} i={i} kid={kid} settings={settings} here={here} familyBlocked={familyBlocked} familyHidden={familyHidden} asked={asked} decided={decidedId === i.v.id ? decided : null} />)}
+                        {rows.map((i) => <Row key={i.v.id} i={i} kid={kid} settings={settings} here={here} familyBlocked={familyBlocked} familyHidden={familyHidden} asked={asked} decided={decidedId === i.v.id ? decided : null} openFindings={filter === "held"} />)}
                       </ul>
                       {g.items.length > rows.length && (
                         <Link href={href({ channel: g.channelId, group: "list" })} className="flex items-center justify-between gap-2 border-t border-sand px-4 py-3 text-sm font-bold text-forest hover:bg-sand-soft sm:px-5">
@@ -221,7 +222,7 @@ export default async function LibraryPage(props: PageProps<"/parent/library">) {
             ) : (
               <Card className="overflow-hidden">
                 <ul className="divide-y divide-sand">
-                  {shown.slice(0, limit).map((i) => <Row key={i.v.id} i={i} kid={kid} settings={settings} here={here} familyBlocked={familyBlocked} familyHidden={familyHidden} asked={asked} decided={decidedId === i.v.id ? decided : null} showChannel />)}
+                  {shown.slice(0, limit).map((i) => <Row key={i.v.id} i={i} kid={kid} settings={settings} here={here} familyBlocked={familyBlocked} familyHidden={familyHidden} asked={asked} decided={decidedId === i.v.id ? decided : null} showChannel openFindings={filter === "held"} />)}
                 </ul>
                 {shown.length > limit && (
                   <Link href={`${href({ n: String(limit + PAGE) })}`} className="flex justify-center border-t border-sand px-4 py-3 text-sm font-bold text-forest hover:bg-sand-soft">Show {Math.min(PAGE, shown.length - limit)} more of {shown.length - limit}</Link>
@@ -375,16 +376,19 @@ function Decide({ videoId, profileId, next, decision, children, variant = "secon
 }
 
 /** One video and what it means for this child, with the per-child choices that fit its status. */
-function Row({ i, kid, settings, here, familyBlocked, familyHidden, asked, decided, showChannel = false }: {
-  i: LibraryItem; kid: Profile; settings: FamilySettings; here: string; familyBlocked: Set<string>; familyHidden: Set<string>; asked: Set<string>; decided: string | null; showChannel?: boolean;
+function Row({ i, kid, settings, here, familyBlocked, familyHidden, asked, decided, showChannel = false, openFindings = false }: {
+  i: LibraryItem; kid: Profile; settings: FamilySettings; here: string; familyBlocked: Set<string>; familyHidden: Set<string>; asked: Set<string>; decided: string | null; showChannel?: boolean; openFindings?: boolean;
 }) {
   const { v, status } = i;
   const name = kid.name;
   const video = detailHref(`/parent/video/${v.id}`, "library", kid.id);
   const next = `${here}#v-${v.id}`;
   const familyWide = (status === "blocked" && familyBlocked.has(v.id)) || (status === "hidden" && familyHidden.has(v.id));
+  const hold = status === "held" || status === "uncertain" || status === "reviewing" ? holdExplanation(v, settings) : null;
+  // The findings behind an automatic hold (AI review, other parents, settings), to read before any exception.
+  const findings = status === "held" ? (hold?.evidence ?? []).filter((e) => e.source !== "review") : [];
   const why =
-    status === "held" || status === "uncertain" || status === "reviewing" ? holdExplanation(v, settings)?.summary
+    hold ? hold.summary
     : status === "allowed" ? `You allowed it for ${name}. It plays even if the review or ${name}'s settings would hold it back.`
     : status === "hidden" ? (familyWide ? "Kept hidden for every child (decided before per-child permissions)." : `You chose Keep hidden for ${name}. It stays off ${name}'s screen even if the settings or review change.`)
     : status === "blocked" ? (familyWide ? "Blocked for the whole family." : `You chose Never for ${name}.`)
@@ -430,10 +434,20 @@ function Row({ i, kid, settings, here, familyBlocked, familyHidden, asked, decid
         {/* Phone: reason and actions span the row under the thumbnail. */}
         {(status !== "plays" || decided) && <div className="col-span-2 space-y-2 sm:col-span-1 sm:col-start-2">
           {why && <p className="text-sm text-muted sm:hidden">{why}</p>}
+          {findings.length > 0 && (openFindings
+            ? <EvidenceList items={findings} videoId={v.id} />
+            : (
+              <details className="rounded-xl border border-sand">
+                <summary className="cursor-pointer px-3 py-2 text-sm font-bold text-forest">What the review found ({findings.length})</summary>
+                <div className="border-t border-sand p-2"><EvidenceList items={findings} videoId={v.id} /></div>
+              </details>
+            ))}
           {decided && <Notice tone="ok" className="py-2 text-sm">{decided}</Notice>}
           <div className="flex flex-wrap items-center gap-2 empty:hidden">
             {(status === "held" || status === "uncertain" || status === "reviewing") && <>
-              <Decide {...at} decision="allow" variant="primary">Allow for {name}</Decide>
+              {/* An exception is deliberate: secondary, after the findings, with the full review one tap away. */}
+              <Decide {...at} decision="allow">Allow exception for {name}</Decide>
+              <Link href={video} className={buttonClass("quiet", "sm")}>Full review</Link>
               {restrictions}
             </>}
             {status === "allowed" && <Decide {...at} decision="undo">Undo allow</Decide>}

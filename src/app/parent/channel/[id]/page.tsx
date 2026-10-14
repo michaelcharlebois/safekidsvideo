@@ -8,7 +8,7 @@ import { channelReport, channelSlug } from "@/lib/channel-report";
 import { blockedReasons, canPlay, getLibrary } from "@/lib/queries";
 import { backLink } from "@/lib/back";
 import { ChannelReportView } from "@/components/channel-report-view";
-import { Button, Card, Pill, TopBar } from "@/components/ui";
+import { Button, Card, Notice, Pill, TopBar } from "@/components/ui";
 import { reviewChannelNow, toggleWhitelist } from "@/app/actions";
 import { localDay, watchEventsSince, type WatchEvent } from "@/lib/checkin";
 import type { VideoWithCard } from "@/lib/types";
@@ -52,7 +52,7 @@ export default async function ChannelPage(props: PageProps<"/parent/channel/[id]
             <Button type="submit" variant={approved ? "ghost" : "primary"}>{approved ? "✓ Approved" : "Approve channel"}</Button>
           </form>
         </div>
-        {sp.reviewing === "1" && <Card className="p-3 bg-grass text-sm font-bold">Reviewing the next 5 in the background — refresh in a couple of minutes.</Card>}
+        {sp.reviewing === "1" && <Notice tone="info"><b>Review requested</b> for up to 5 videos without a completed review. Refresh later to see which have one.</Notice>}
 
         <Card className="p-4">
           <div className="flex flex-wrap items-center gap-2">
