@@ -420,8 +420,9 @@ export async function saveCheckin(form: FormData) {
   const p = await db.getProfile(profileId);
   if (!p || p.familyId !== fid || !/^\d{4}-\d{2}-\d{2}$/.test(day) || !(mood >= 1 && mood <= 4)) redirect("/parent/checkin");
   await saveKidDay(fid, { profileId, day, mood, note });
-  revalidatePath("/parent/checkin"); revalidatePath("/parent/insights");
-  redirect(`/parent/checkin?day=${day}&saved=1`);
+  revalidatePath("/parent/checkin"); revalidatePath("/parent/activity");
+  const nextRaw = String(form.get("next") ?? "");
+  redirect(isLocalPath(nextRaw) ? withParam(nextRaw, "saved", "1") : `/parent/checkin?day=${day}&saved=1`);
 }
 
 export async function rememberTimezone(tz: string) {

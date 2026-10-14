@@ -8,6 +8,8 @@ import { isFound } from "@/lib/gate";
 /* Daily mood check-in + the "what did the day look like" correlation. Supabase-only. */
 
 const on = () => supabaseEnabled && !!(process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY);
+/** Whether viewing and check-ins are recorded at all here (they need the family account's database). */
+export const historyRecorded = on;
 
 export const MOODS = [
   { value: 1, emoji: "😤", label: "Rough" },

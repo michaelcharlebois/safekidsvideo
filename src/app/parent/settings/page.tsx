@@ -285,7 +285,7 @@ export default async function ChildSettingsPage(props: PageProps<"/parent/settin
         {/* ---- profile ---- */}
         <Section id="profile" icon={<IconKids />} title="Profile" sub="Name, age and picture.">
           <KidForm key={kid.id} profile={kid} canDelete={facts.length > 1} />
-          <p className="mt-4 text-sm"><Link href={`/parent/stats?kid=${kid.id}`} className="font-bold text-forest underline">Viewing history and stats</Link></p>
+          <p className="mt-4 text-sm"><Link href={`/parent/activity?kid=${kid.id}`} className="font-bold text-forest underline">Viewing history and patterns in Activity</Link></p>
         </Section>
       </div>
     </main>

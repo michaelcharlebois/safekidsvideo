@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { localDay, watchEventsSince, type WatchEvent } from "@/lib/checkin";
-import { FORMAT_LABELS, type ContentCard, type Video, type VideoFormat } from "@/lib/types";
+import { FORMAT_LABELS, type Channel, type ContentCard, type Video, type VideoFormat } from "@/lib/types";
 
 /* Viewing stats for one kid over a window. Minutes are estimated: completed → full length, else ~60%. */
 
@@ -35,18 +35,23 @@ function localHour(tz: string | undefined, d: Date): number {
 
 export async function kidStats(familyId: string, profileId: string | undefined, days: number, tz?: string): Promise<KidStats> {
   const now = Date.now();
+  const events = await watchEventsSince(familyId, new Date(now - 2 * days * 86_400_000).toISOString());
+  const ids = [...new Set(events.map((e) => e.videoId))];
+  const [videos, cards, channels] = await Promise.all([Promise.all(ids.map((id) => db.getVideo(id))), db.listCards(ids), db.listChannels()]);
+  return computeKidStats({ events, videos: videos.filter((v): v is Video => !!v), cards, channels, profileId, days, tz, now });
+}
+
+/** The same numbers from data already in hand (pure apart from the clock passed in). */
+export function computeKidStats(input: { events: WatchEvent[]; videos: Video[]; cards: ContentCard[]; channels: Channel[]; profileId?: string; days: number; tz?: string; now: number }): KidStats {
+  const { profileId, days, tz, now, channels } = input;
   const since = new Date(now - days * 86_400_000);
-  const prevSince = new Date(now - 2 * days * 86_400_000);
-  const all = (await watchEventsSince(familyId, prevSince.toISOString())).filter((e) => !profileId || e.profileId === profileId || !e.profileId);
+  const all = input.events.filter((e) => !profileId || e.profileId === profileId || !e.profileId);
   const inWindow = all.filter((e) => Date.parse(e.startedAt) >= since.getTime());
   const cur = inWindow.filter((e) => !e.outcome); // plays
   const ends = inWindow.filter((e) => e.outcome);  // how plays ended
-  const prev = all.filter((e) => Date.parse(e.startedAt) < since.getTime() && !e.outcome);
-
-  const ids = [...new Set(all.map((e) => e.videoId))];
-  const [videos, cards, channels] = await Promise.all([Promise.all(ids.map((id) => db.getVideo(id))), db.listCards(ids), db.listChannels()]);
-  const videoById = new Map(videos.filter(Boolean).map((v) => [v!.id, v!]));
-  const cardById = new Map(cards.filter((c) => c.reviewer.model !== "sample").map((c) => [c.videoId, c]));
+  const prev = all.filter((e) => Date.parse(e.startedAt) < since.getTime() && Date.parse(e.startedAt) >= now - 2 * days * 86_400_000 && !e.outcome);
+  const videoById = new Map(input.videos.map((v) => [v.id, v]));
+  const cardById = new Map(input.cards.filter((c) => c.reviewer.model !== "sample").map((c) => [c.videoId, c]));
   const channelTitle = (id: string) => channels.find((c) => c.id === id)?.title ?? id;
 
   const s: KidStats = {

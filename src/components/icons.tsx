@@ -36,3 +36,6 @@ export const IconChannels = (p: P) => <Svg {...p}><rect x="3.5" y="5" width="17"
 export const IconArrowUp = (p: P) => <Svg {...p}><path d="m7 14 5-5 5 5" /></Svg>;
 export const IconArrowDown = (p: P) => <Svg {...p}><path d="m7 10 5 5 5-5" /></Svg>;
 export const IconSparkle = (p: P) => <Svg {...p}><path d="M12 4.5c.6 3.4 2.1 4.9 5.5 5.5-3.4.6-4.9 2.1-5.5 5.5-.6-3.4-2.1-4.9-5.5-5.5 3.4-.6 4.9-2.1 5.5-5.5z" /></Svg>;
+export const IconLibrary = (p: P) => <Svg {...p}><rect x="4" y="4.5" width="4" height="15" rx="1.2" /><rect x="10" y="4.5" width="4" height="15" rx="1.2" /><path d="m16.2 6.2 3.6-1 3 13.6-3.6 1z" transform="translate(-2.2 .3)" /></Svg>;
+export const IconActivity = (p: P) => <Svg {...p}><path d="M4 19.5h16" /><rect x="5.5" y="11" width="3" height="6" rx="1" /><rect x="10.5" y="6.5" width="3" height="10.5" rx="1" /><rect x="15.5" y="9" width="3" height="8" rx="1" /></Svg>;
+export const IconUser = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="10" r="2.8" /><path d="M6.8 18c1.1-1.9 3-3 5.2-3s4.1 1.1 5.2 3" /></Svg>;

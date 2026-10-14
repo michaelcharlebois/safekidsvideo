@@ -33,7 +33,7 @@ export function SectionNav({ sections }: { sections: { id: string; label: string
 
   const nudge = (dir: 1 | -1) => row.current?.scrollBy({ left: dir * 160, behavior: "smooth" });
   return (
-    <nav aria-label="Sections" className="sticky top-[57px] z-10 -mx-4 mt-5 bg-ivory/95 py-2 backdrop-blur lg:top-0 lg:mx-0">
+    <nav aria-label="Sections" className="sticky top-[65px] z-10 -mx-4 mt-5 bg-ivory/95 py-2 backdrop-blur lg:top-0 lg:mx-0">
       <div className="relative">
         <ul ref={row} className="flex snap-x scroll-px-4 gap-1.5 overflow-x-auto lg:scroll-px-0 whitespace-nowrap px-4 [scrollbar-width:none] lg:px-0 [&::-webkit-scrollbar]:hidden">
           {sections.map((x) => (
