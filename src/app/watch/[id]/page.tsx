@@ -4,6 +4,7 @@ import { childSettings, getLibrary, playableFor } from "@/lib/queries";
 import { db } from "@/lib/db";
 import { Player } from "./player";
 import { timeState } from "@/lib/screentime";
+import { kidUi } from "@/lib/kid-ui-server";
 
 export const dynamic = "force-dynamic";
 
@@ -24,5 +25,7 @@ export default async function PlayPage(props: PageProps<"/watch/[id]">) {
   const skip = settings.skipLimit
     ? { limit: settings.skipLimit, regen: settings.skipRegen ?? 1, cooldownSec: settings.skipCooldownSec ?? 120, freePeekSec: settings.freePeekSec ?? 30 }
     : undefined;
-  return <Player playlist={playlist} index={i} remainingMinutes={time.remainingMinutes} skip={skip} />;
+  const sp = await props.searchParams;
+  const ui = await kidUi(sp.ui);
+  return <Player playlist={playlist} index={i} remainingMinutes={time.remainingMinutes} skip={skip} ui={ui === "tv" ? "tv" : "touch"} fromSearch={sp.from === "search"} />;
 }

@@ -37,15 +37,24 @@ describe("0020 watch sessions (PGlite)", () => {
     expect(n.rows[0].n).toBe(2);
   });
 
+  it("end rows can carry watched_sec (playback time), within 0–6 hours", async () => {
+    const S2 = "eeeeeeee-0000-4000-8000-0000000000f2";
+    await db.exec(`insert into watch_events (family_id, profile_id, video_id, completed, outcome, ended_at_sec, watched_sec, session_id) values ('${F}', '${P}', 'vid00000001', false, 'left', 170, 35, '${S2}')`);
+    const r = await db.query<{ ended_at_sec: number; watched_sec: number }>(`select ended_at_sec, watched_sec from watch_events where session_id = '${S2}'`);
+    expect(r.rows[0]).toEqual({ ended_at_sec: 170, watched_sec: 35 });
+    await expect(db.exec(`insert into watch_events (family_id, profile_id, video_id, completed, watched_sec) values ('${F}', '${P}', 'vid00000001', false, -1)`)).rejects.toThrow(/check/i);
+    await expect(db.exec(`insert into watch_events (family_id, profile_id, video_id, completed, watched_sec) values ('${F}', '${P}', 'vid00000001', false, 99999)`)).rejects.toThrow(/check/i);
+  });
+
   it("older rows without a session id are unaffected", async () => {
     await db.exec(`insert into watch_events (family_id, profile_id, video_id, completed) values ('${F}', '${P}', 'vid00000001', false), ('${F}', '${P}', 'vid00000001', false)`);
-    const n = await db.query<{ n: number }>(`select count(*)::int n from watch_events where session_id is null`);
+    const n = await db.query<{ n: number }>(`select count(*)::int n from watch_events where session_id is null and video_id = 'vid00000001'`);
     expect(n.rows[0].n).toBe(2);
   });
 
   it("rolls back cleanly", async () => {
     await db.exec(rollbackSql("0020_watch_sessions.down.sql"));
-    const c = await db.query(`select 1 from information_schema.columns where table_name = 'watch_events' and column_name = 'session_id'`);
+    const c = await db.query(`select 1 from information_schema.columns where table_name = 'watch_events' and column_name in ('session_id', 'watched_sec')`);
     expect(c.rows).toHaveLength(0);
   });
 });

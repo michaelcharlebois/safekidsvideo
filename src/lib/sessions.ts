@@ -13,15 +13,19 @@
 //   - a start that arrives just after an end that had no start (inserts racing) joins that session.
 // A session with no end row (tab closed, power cut) is "unknown" and gets an estimate.
 //
-// Seconds watched: finished → the video's length; skipped / left → the reported position (capped at the
-// length); unknown → 60% of the length, at least 2 minutes, never more than the length. A video with no
-// known length counts as 5 minutes.
+// Seconds watched: when the player reported how long it actually PLAYED (watched_sec — playback time,
+// not where the playhead ended, so seeking ahead doesn't add time and rewatching does), that, capped at
+// six hours. Otherwise (older rows): finished → the video's length; skipped / left → the reported position
+// (capped at the length); unknown → 60% of the length, at least 2 minutes, never more than the length. A
+// video with no known length counts as 5 minutes.
 export type RawWatchEvent = {
   videoId: string; profileId?: string; startedAt: string; completed: boolean;
   outcome?: "skipped" | "finished" | "left"; endedAtSec?: number; sessionId?: string;
+  /** End rows from the current player: seconds of actual playback in this session (pauses and seeks excluded). */
+  watchedSec?: number;
 };
 export type SessionOutcome = "finished" | "skipped" | "left" | "unknown";
-export type WatchSession = { videoId: string; profileId?: string; startedAt: string; outcome: SessionOutcome; endedAtSec?: number };
+export type WatchSession = { videoId: string; profileId?: string; startedAt: string; outcome: SessionOutcome; endedAtSec?: number; watchedSec?: number };
 
 const DEFAULT_SEC = 300;
 const RACE_MS = 15_000; // a start inserted this soon after its own end row (out of order)
@@ -48,8 +52,10 @@ export function sessionsFrom(events: RawWatchEvent[], durationOf: (videoId: stri
     s.ended = true;
     s.outcome = e.outcome!;
     s.endedAtSec = e.endedAtSec;
+    s.watchedSec = e.watchedSec;
     s.endAtMs = Date.parse(e.startedAt);
-    if (!s.hadStart && e.endedAtSec != null) s.startedAt = new Date(Date.parse(e.startedAt) - e.endedAtSec * 1000).toISOString();
+    const back = e.watchedSec ?? e.endedAtSec;
+    if (!s.hadStart && back != null) s.startedAt = new Date(Date.parse(e.startedAt) - back * 1000).toISOString();
   };
 
   for (const e of ordered) {
@@ -89,12 +95,14 @@ export function sessionsFrom(events: RawWatchEvent[], durationOf: (videoId: stri
   }
 
   return out
-    .map((s) => ({ videoId: s.videoId, profileId: s.profileId, startedAt: s.startedAt, endedAtSec: s.endedAtSec, outcome: s.ended ? s.outcome : s.completedFlag ? "finished" : "unknown" } as WatchSession))
+    .map((s) => ({ videoId: s.videoId, profileId: s.profileId, startedAt: s.startedAt, endedAtSec: s.endedAtSec, watchedSec: s.watchedSec, outcome: s.ended ? s.outcome : s.completedFlag ? "finished" : "unknown" } as WatchSession))
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
 }
 
 /** Seconds a session counts for (see the rules at the top). */
+const MAX_SESSION_SEC = 6 * 3600;
 export function sessionSeconds(s: WatchSession, durationSec?: number): number {
+  if (s.outcome !== "unknown" && s.watchedSec != null && Number.isFinite(s.watchedSec)) return Math.max(0, Math.min(MAX_SESSION_SEC, Math.round(s.watchedSec)));
   const d = durationSec ?? DEFAULT_SEC;
   if (s.outcome === "finished") return d;
   if ((s.outcome === "skipped" || s.outcome === "left") && s.endedAtSec != null) return Math.max(0, Math.min(d, s.endedAtSec));

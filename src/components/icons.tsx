@@ -39,3 +39,12 @@ export const IconSparkle = (p: P) => <Svg {...p}><path d="M12 4.5c.6 3.4 2.1 4.9
 export const IconLibrary = (p: P) => <Svg {...p}><rect x="4" y="4.5" width="4" height="15" rx="1.2" /><rect x="10" y="4.5" width="4" height="15" rx="1.2" /><path d="m16.2 6.2 3.6-1 3 13.6-3.6 1z" transform="translate(-2.2 .3)" /></Svg>;
 export const IconActivity = (p: P) => <Svg {...p}><path d="M4 19.5h16" /><rect x="5.5" y="11" width="3" height="6" rx="1" /><rect x="10.5" y="6.5" width="3" height="10.5" rx="1" /><rect x="15.5" y="9" width="3" height="8" rx="1" /></Svg>;
 export const IconUser = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="10" r="2.8" /><path d="M6.8 18c1.1-1.9 3-3 5.2-3s4.1 1.1 5.2 3" /></Svg>;
+// Player controls.
+export const IconPause = (p: P) => <Svg {...p}><rect x="6.5" y="5" width="3.6" height="14" rx="1" fill="currentColor" stroke="none" /><rect x="13.9" y="5" width="3.6" height="14" rx="1" fill="currentColor" stroke="none" /></Svg>;
+export const IconBack10 = (p: P) => <Svg {...p}><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" /><path d="M4.5 4.5v3.2h3.2" /><text x="12" y="15.2" textAnchor="middle" fontSize="7.5" fontWeight="800" fill="currentColor" stroke="none" fontFamily="inherit">10</text></Svg>;
+export const IconFwd10 = (p: P) => <Svg {...p}><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" /><path d="M19.5 4.5v3.2h-3.2" /><text x="12" y="15.2" textAnchor="middle" fontSize="7.5" fontWeight="800" fill="currentColor" stroke="none" fontFamily="inherit">10</text></Svg>;
+export const IconNext = (p: P) => <Svg {...p}><path d="M6 5.5v13l9-6.5z" fill="currentColor" stroke="none" /><path d="M18 5.5v13" strokeWidth={2.4} /></Svg>;
+export const IconBack = (p: P) => <Svg {...p}><path d="M14.5 5.5 8 12l6.5 6.5" strokeWidth={2.4} /></Svg>;
+export const IconExpand = (p: P) => <Svg {...p}><path d="M4.5 9V4.5H9M15 4.5h4.5V9M19.5 15v4.5H15M9 19.5H4.5V15" /></Svg>;
+export const IconCollapse = (p: P) => <Svg {...p}><path d="M9 4.5V9H4.5M19.5 9H15V4.5M15 19.5V15h4.5M4.5 15H9v4.5" /></Svg>;
+export const IconMoon = (p: P) => <Svg {...p}><path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z" /></Svg>;

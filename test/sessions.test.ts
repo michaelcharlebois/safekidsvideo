@@ -95,3 +95,23 @@ describe("attribution", () => {
     expect(attributedTo("maya", "maya", 2)).toBe(true);
   });
 });
+
+describe("playback time vs position (watched_sec)", () => {
+  const withWatched = (e: RawWatchEvent, w: number): RawWatchEvent => ({ ...e, watchedSec: w });
+  it("seeking ahead doesn't add time: a 'finished' after jumping to the end counts what was played", () => {
+    expect(total([start("a", 0, "s1"), withWatched(endRow("a", 1, "finished", 600, "s1"), 40)])).toBe(40);
+  });
+  it("seeking back and watching again counts the extra time (more than the length is real viewing)", () => {
+    expect(total([start("b", 0, "s1"), withWatched(endRow("b", 5, "finished", 120, "s1"), 200)])).toBe(200);
+  });
+  it("a left/skipped session counts playing time, not where the playhead ended", () => {
+    expect(total([start("a", 0, "s1"), withWatched(endRow("a", 1, "left", 450, "s1"), 30)])).toBe(30);
+  });
+  it("rows without watched_sec (older players) keep the old rules", () => {
+    expect(total([start("a", 0, "s1"), endRow("a", 10, "finished", 600, "s1")])).toBe(600);
+  });
+  it("an end with no start is placed back by the time actually played", () => {
+    const [s] = sessionsFrom([withWatched(endRow("a", 10, "left", 500, "s9"), 60)], dur);
+    expect(s.startedAt).toBe(new Date(Date.parse(at(10)) - 60_000).toISOString());
+  });
+});

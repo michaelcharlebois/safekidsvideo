@@ -6,6 +6,8 @@
 --
 -- Now each playback gets a session_id (made by the player). Its start row (outcome is null) and its end
 -- row (outcome is not null) are unique per session, so a retry is ignored instead of double-counting.
+-- End rows also carry watched_sec: seconds of actual playback in the session (pauses and seeks excluded),
+-- so time counts what was watched, not where the playhead ended. ended_at_sec stays the position.
 -- Older rows keep session_id null; the app folds them into sessions (src/lib/sessions.ts). Nothing here
 -- rewrites history.
 --
@@ -17,6 +19,7 @@
 -- Rollback: supabase/rollbacks/0020_watch_sessions.down.sql
 
 alter table watch_events add column if not exists session_id uuid;
+alter table watch_events add column if not exists watched_sec integer check (watched_sec is null or (watched_sec >= 0 and watched_sec <= 21600));
 
 create unique index if not exists watch_events_session_start_uq
   on watch_events (session_id) where session_id is not null and outcome is null;

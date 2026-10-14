@@ -30,9 +30,9 @@ export function localDay(tz: string | undefined, d = new Date()): string {
 
 export async function watchEventsSince(familyId: string, sinceIso: string): Promise<WatchEvent[]> {
   if (!on()) return [];
-  const { data } = await supabaseAdmin().from("watch_events").select("video_id,profile_id,started_at,completed,outcome,ended_at_sec,session_id").eq("family_id", familyId).gte("started_at", sinceIso).order("started_at");
-  return (data ?? []).map((r: { video_id: string; profile_id: string | null; started_at: string; completed: boolean; outcome: WatchEvent["outcome"] | null; ended_at_sec: number | null; session_id?: string | null }) =>
-    ({ videoId: r.video_id, profileId: r.profile_id ?? undefined, startedAt: r.started_at, completed: r.completed, outcome: r.outcome ?? undefined, endedAtSec: r.ended_at_sec ?? undefined, sessionId: r.session_id ?? undefined }));
+  const { data } = await supabaseAdmin().from("watch_events").select("video_id,profile_id,started_at,completed,outcome,ended_at_sec,session_id,watched_sec").eq("family_id", familyId).gte("started_at", sinceIso).order("started_at");
+  return (data ?? []).map((r: { video_id: string; profile_id: string | null; started_at: string; completed: boolean; outcome: WatchEvent["outcome"] | null; ended_at_sec: number | null; session_id?: string | null; watched_sec?: number | null }) =>
+    ({ videoId: r.video_id, profileId: r.profile_id ?? undefined, startedAt: r.started_at, completed: r.completed, outcome: r.outcome ?? undefined, endedAtSec: r.ended_at_sec ?? undefined, sessionId: r.session_id ?? undefined, watchedSec: r.watched_sec ?? undefined }));
 }
 
 export async function listKidDays(familyId: string, sinceDay: string): Promise<KidDay[]> {

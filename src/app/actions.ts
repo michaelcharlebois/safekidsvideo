@@ -346,12 +346,12 @@ export async function recordWatchStart(videoId: string, sessionId: string) {
   await logWatchStart(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, v.profileId, sessionId);
 }
 
-/** Kid screen: how that session ended. */
-export async function recordWatchEnd(videoId: string, outcome: "skipped" | "finished" | "left", atSec: number, sessionId: string) {
+/** Kid screen: how that session ended. `atSec` = where the playhead was; `watchedSec` = how long it actually played. */
+export async function recordWatchEnd(videoId: string, outcome: "skipped" | "finished" | "left", atSec: number, sessionId: string, watchedSec?: number) {
   const v = await resolveViewer();
   if (!v.familyId || !v.profileId || !/^[\w-]{11}$/.test(videoId)) return;
   if (outcome !== "skipped" && outcome !== "finished" && outcome !== "left") return;
-  await logWatchEnd(v.familyId, videoId, v.profileId, outcome, atSec, sessionId);
+  await logWatchEnd(v.familyId, videoId, v.profileId, outcome, Number(atSec), sessionId, watchedSec == null ? undefined : Number(watchedSec));
 }
 
 /** Review queue: one decision per video, for one child. allow = explicit approval; hide = "Keep hidden" (a standing restriction for that child); never = block. */

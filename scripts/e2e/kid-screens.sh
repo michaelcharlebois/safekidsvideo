@@ -24,7 +24,7 @@ while read -r fixture script; do
 done <<'LIST'
 main kid-search.cjs
 askfirst kid-search-askfirst.cjs
-main kid-player.cjs
+player kid-player.cjs
 main kid-who.cjs
 timeup kid-timeup.cjs
 LIST

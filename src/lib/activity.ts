@@ -90,11 +90,13 @@ export async function logWatchStart(familyId: string, videoId: string, deviceId:
 }
 
 /** How that session ended: finished, skipped (left for another video) or left (home / closed). Once per session. */
-export async function logWatchEnd(familyId: string, videoId: string, profileId: string | undefined, outcome: "skipped" | "finished" | "left", atSec: number, sessionId: string) {
+export async function logWatchEnd(familyId: string, videoId: string, profileId: string | undefined, outcome: "skipped" | "finished" | "left", atSec: number, sessionId: string, watchedSec?: number) {
   if (!on() || !profileId || !UUID.test(sessionId)) return;
   const { error } = await supabaseAdmin().from("watch_events").insert({
     family_id: familyId, video_id: videoId, profile_id: profileId, completed: outcome === "finished", outcome,
     ended_at_sec: Math.max(0, Math.round(Number.isFinite(atSec) ? atSec : 0)), session_id: sessionId,
+    // Playback time (not playhead position). Omitted when the player didn't report it.
+    ...(watchedSec != null && Number.isFinite(watchedSec) ? { watched_sec: Math.max(0, Math.min(6 * 3600, Math.round(watchedSec))) } : {}),
   });
   if (error && !duplicate(error)) console.error("logWatchEnd", error.message);
 }

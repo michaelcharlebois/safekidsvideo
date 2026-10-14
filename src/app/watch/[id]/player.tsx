@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { nextVideo, recordWatchEnd, recordWatchStart } from "@/app/actions";
+import { IconBack, IconBack10, IconFwd10, IconHome, IconNext, IconPause, IconPlay } from "@/components/icons";
+import { PlaybackClock } from "@/lib/playback";
 import { arrowDir, isBack, isEnter } from "../remote-nav";
 import { clearLedger, isLocked, leavingCounts, loadLedger, saveLedger, type Ledger, type SkipConfig } from "./skip-ledger";
 
@@ -12,45 +14,66 @@ declare global {
 }
 
 type Item = { id: string; title: string };
+type Session = { videoId: string; id: string; ended: boolean; clock: PlaybackClock };
+const HIDE_AFTER_MS = 4000;
+const now = () => performance.now();
+const fmt = (s: number) => { const t = Math.max(0, Math.floor(s)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
 
 /**
- * Locked player built on the YouTube IFrame API.
- * - No search, no comments, no sidebar — the iframe is all the kid gets.
- * - When a video ends we immediately move to the next APPROVED video, so YouTube's
- *   end-screen suggestions never get a chance to render.
- * - A transparent "stage" covers the whole iframe. It keeps keyboard focus in OUR page
- *   (a focused iframe swallows every remote key) and blocks the embed's title/logo links.
- *   The stage is the kid's control surface: OK/tap = play-pause, ◀ ▶ = skip 10s,
- *   ▼ = Home/Next buttons, Return = home.
+ * The kid player, on the YouTube IFrame API, for TV (remote) and touch.
+ * - Only the video: no YouTube controls, search, comments or suggestions. When a video ends we ask the
+ *   SERVER for the next one this child may watch (nextVideo re-authorizes every time), so YouTube's end
+ *   screen never shows and a parent's change takes effect at the next advance.
+ * - A transparent stage covers the iframe so focus never enters it (a focused iframe swallows the remote)
+ *   and its title/logo links can't be tapped.
+ * - Controls: Back/Home, −10 s, Play/Pause, +10 s, Next. They hide while playing and come back on any key,
+ *   tap or pointer move; paused keeps them up.
+ *   TV: while hidden, OK pauses/plays and shows the controls; arrows only show them. While shown, ◀ ▶
+ *   move between controls and OK presses one. Return always leaves the player (to Search if you came from
+ *   there, else Home). Media keys work any time.
+ * - Viewing is one session per playback with BOTH where the playhead ended and how long it actually played
+ *   (lib/playback.ts). Skips and the screen-time countdown use playing time, so seeking can't game them.
  */
-export function Player({ playlist, index, remainingMinutes, skip }: { playlist: Item[]; index: number; remainingMinutes?: number; skip?: SkipConfig }) {
+export function Player({ playlist, index, remainingMinutes, skip, ui, fromSearch = false }: {
+  playlist: Item[]; index: number; remainingMinutes?: number; skip?: SkipConfig; ui: "tv" | "touch"; fromSearch?: boolean;
+}) {
   const router = useRouter();
+  const tv = ui === "tv";
   const hostRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLButtonElement>(null);
-  const homeRef = useRef<HTMLButtonElement>(null);
+  const playBtn = useRef<HTMLButtonElement>(null);
   const playerRef = useRef<any>(null);
-  // The viewing session in progress (lib/sessions.ts): one start, at most one end, per playback.
-  const session = useRef<{ videoId: string; id: string; ended: boolean } | null>(null);
+
+  // ---- viewing sessions: one start, at most one end, per playback ----
+  const session = useRef<Session | null>(null);
+  const screenClock = useRef(new PlaybackClock()); // all playing time on this screen, for the countdown
+  const played = () => session.current?.clock.seconds(now()) ?? 0;
   const beginSession = (videoId: string) => {
-    session.current = { videoId, id: newSessionId(), ended: false };
+    session.current = { videoId, id: newSessionId(), ended: false, clock: new PlaybackClock() };
     void recordWatchStart(videoId, session.current.id);
   };
-  const endSession = (videoId: string, outcome: "finished" | "skipped" | "left", atSec: number) => {
+  const endSession = (videoId: string, outcome: "finished" | "skipped" | "left", atSec: number, viaBeacon = false) => {
     const s = session.current;
     if (!s || s.ended || s.videoId !== videoId) return; // never twice, never for another video
     s.ended = true;
-    void recordWatchEnd(videoId, outcome, atSec, s.id);
+    s.clock.stop(now());
+    const watchedSec = s.clock.seconds(now());
+    if (viaBeacon && typeof navigator.sendBeacon === "function") {
+      // The page is going away (app closed): a beacon is the one request browsers still deliver.
+      const body = JSON.stringify({ videoId, outcome, atSec, watchedSec, sessionId: s.id });
+      if (navigator.sendBeacon("/api/watch/end", new Blob([body], { type: "application/json" }))) return;
+    }
+    void recordWatchEnd(videoId, outcome, atSec, s.id, watchedSec);
   };
-  const onFinishedRef = useRef<() => void>(() => {});
-  // The current video. Advancing asks the server (nextVideo) — the playlist below is only for display
-  // and to preserve shelf order; it is never trusted for authorization.
+
+  // The current video. Advancing asks the server; this list is only for display and shelf order.
   const [current, setCurrent] = useState<Item>(playlist[index]);
   const order = playlist.map((p) => p.id);
   const advanceRef = useRef<() => void>(() => {});
-  const [paused, setPaused] = useState(false);
+  const endedRef = useRef<(id: string, dur: number) => void>(() => {});
+  const [paused, setPaused] = useState(true);
   const [needsTap, setNeedsTap] = useState(false); // autoplay was blocked
   const [flash, setFlash] = useState<"play" | "pause" | "fwd" | "back" | null>(null);
-  const [progress, setProgress] = useState(0);
+  const [pos, setPos] = useState({ at: 0, dur: 0 });
   const idx = playlist.findIndex((p) => p.id === current.id);
   const next = playlist[(idx + 1) % playlist.length] ?? playlist[0];
 
@@ -72,15 +95,22 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
           onStateChange: (e: any) => {
             const id = e.target?.getVideoData?.()?.video_id;
             const S = window.YT.PlayerState;
+            const t = now();
             if (e.data === S.PLAYING) {
               setNeedsTap(false); setPaused(false);
-              // A new session when this video starts (again): resuming after a pause is the same session.
+              // A new session when this video starts (again); resuming after a pause is the same session.
               if (id && (!session.current || session.current.ended || session.current.videoId !== id)) beginSession(id);
+              session.current?.clock.play(t);
+              screenClock.current.play(t);
+              return;
             }
+            // Paused, buffering (incl. seeking), cued or ended: not playing, so no time counts.
+            session.current?.clock.stop(t);
+            screenClock.current.stop(t);
             if (e.data === S.PAUSED) setPaused(true);
-            if (e.data === S.ENDED) {
-              if (id) endSession(id, "finished", e.target?.getDuration?.() ?? 0);
-              onFinishedRef.current();
+            if (e.data === S.ENDED && id) {
+              endedRef.current(id, e.target?.getDuration?.() ?? 0);
+              endSession(id, "finished", e.target?.getDuration?.() ?? 0);
               advanceRef.current();
             }
           },
@@ -104,67 +134,59 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A new current video (auto-advance or Next): load it. The same video again (a one-video list) replays.
+  const [replays, setReplays] = useState(0);
   useEffect(() => {
-    if (playerRef.current?.loadVideoById && playerRef.current.getVideoData?.()?.video_id !== current.id) {
-      playerRef.current.loadVideoById(current.id);
-      window.history.replaceState(null, "", `/watch/${current.id}`);
-    }
-  }, [current.id]);
+    const p = playerRef.current;
+    if (!p?.loadVideoById) return;
+    if (p.getVideoData?.()?.video_id !== current.id || replays > 0) p.loadVideoById(current.id);
+    window.history.replaceState(null, "", `/watch/${current.id}${fromSearch ? "?from=search" : ""}`);
+  }, [current.id, replays, fromSearch]);
 
-  // Controls overlay: shows on any key/pointer activity, hides after 3s (never while paused).
-  const [showUi, setShowUi] = useState(true);
+  // ---- controls overlay ----
+  const [visible, setVisible] = useState(true);
+  const visibleRef = useRef(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const poke = useCallback(() => {
-    setShowUi(true);
+  const holdRef = useRef(false); // something to read (paused, autoplay blocked, out of skips): keep the controls up
+  const show = useCallback((on: boolean) => { visibleRef.current = on; setVisible(on); }, []);
+  const reveal = useCallback(() => {
+    show(true);
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setShowUi(false), 3000);
-  }, []);
-  useEffect(() => {
-    hideTimer.current = setTimeout(() => setShowUi(false), 3000);
-    window.addEventListener("pointermove", poke);
-    window.addEventListener("pointerdown", poke);
-    return () => {
-      window.removeEventListener("pointermove", poke);
-      window.removeEventListener("pointerdown", poke);
-      if (hideTimer.current) clearTimeout(hideTimer.current);
-    };
-  }, [poke]);
+    hideTimer.current = setTimeout(() => { if (!holdRef.current) show(false); }, HIDE_AFTER_MS);
+  }, [show]);
+  const hide = useCallback(() => { if (!holdRef.current) show(false); }, [show]);
 
-  // Progress bar ticks while the UI is visible.
+  // Position and length for the progress bar.
   useEffect(() => {
-    if (!showUi && !paused) return;
-    const tick = () => {
-      const p = playerRef.current;
-      const d = p?.getDuration?.() || 0;
-      setProgress(d ? (p.getCurrentTime?.() || 0) / d : 0);
-    };
+    if (!visible) return;
+    const tick = () => { const p = playerRef.current; setPos({ at: p?.getCurrentTime?.() || 0, dur: p?.getDuration?.() || 0 }); };
     tick();
     const t = setInterval(tick, 500);
     return () => clearInterval(t);
-  }, [showUi, paused]);
+  }, [visible]);
 
-  const flashIcon = (f: NonNullable<typeof flash>) => {
-    setFlash(f);
-    setTimeout(() => setFlash(null), 600);
-  };
+  const flashIcon = (f: NonNullable<typeof flash>) => { setFlash(f); setTimeout(() => setFlash(null), 600); };
   const togglePlay = () => {
     const p = playerRef.current;
     if (!p?.getPlayerState) return;
     if (p.getPlayerState() === window.YT.PlayerState.PLAYING) { p.pauseVideo(); flashIcon("pause"); }
     else { p.playVideo(); flashIcon("play"); }
+    reveal();
   };
   const seek = (delta: number) => {
     const p = playerRef.current;
     if (!p?.seekTo) return;
-    p.seekTo(Math.max(0, (p.getCurrentTime?.() || 0) + delta), true);
+    const dur = p.getDuration?.() || Infinity;
+    p.seekTo(Math.min(Math.max(0, (p.getCurrentTime?.() || 0) + delta), Math.max(0, dur - 1)), true);
     flashIcon(delta > 0 ? "fwd" : "back");
-    poke();
+    reveal();
   };
-  // ---- skip budget ----
+
+  // ---- skip budget (counted on playing time, not playhead position) ----
   const [ledger, setLedger] = useState<Ledger | null>(null);
   const [lockMsg, setLockMsg] = useState<string | null>(null);
   const [cooldownLeft, setCooldownLeft] = useState(0);
-  const watched = () => ({ sec: playerRef.current?.getCurrentTime?.() ?? 0, dur: playerRef.current?.getDuration?.() ?? 0 });
+  const duration = () => playerRef.current?.getDuration?.() ?? 0;
   const commit = (l: Ledger) => { saveLedger(l); setLedger({ ...l }); };
   const commitDeferred = (l: Ledger) => { saveLedger(l); queueMicrotask(() => setLedger({ ...l })); };
 
@@ -191,9 +213,13 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
     l.last = { id: current.id, title: current.title, watchedSec: 0, durationSec: 0, finished: false };
     commitDeferred(l);
     const t = setInterval(() => {
-      const w = watched();
       const cur = loadLedger(skip);
-      if (cur.last?.id === current.id && !cur.last.finished) { cur.last.watchedSec = Math.max(cur.last.watchedSec, w.sec); cur.last.durationSec = w.dur || cur.last.durationSec; saveLedger(cur); }
+      const s = session.current;
+      if (cur.last?.id === current.id && !cur.last.finished && s?.videoId === current.id) {
+        cur.last.watchedSec = s.clock.seconds(now());
+        cur.last.durationSec = duration() || cur.last.durationSec;
+        saveLedger(cur);
+      }
     }, 2000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,14 +239,19 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ledger?.lockedUntil, !!skip]);
 
+  // The video reached its end. Watched most of it → finished (skips come back). Jumped to the end → that
+  // was a skip, charged like Next.
   useEffect(() => {
-    onFinishedRef.current = () => {
+    endedRef.current = (id: string, dur: number) => {
       if (!skip) return;
       const l = loadLedger(skip);
-      if (l.last) l.last.finished = true;
-      l.skipsLeft = Math.min(skip.limit, l.skipsLeft + skip.regen);
-      l.lockedUntil = 0;
-      setLockMsg(null);
+      if (!l.last || l.last.id !== id) return;
+      l.last.watchedSec = played();
+      l.last.durationSec = dur || l.last.durationSec;
+      const verdict = leavingCounts(l.last, skip);
+      if (verdict === "finished") { l.skipsLeft = Math.min(skip.limit, l.skipsLeft + skip.regen); l.lockedUntil = 0; setLockMsg(null); }
+      else if (verdict === "skip") { if (l.skipsLeft > 0) l.skipsLeft--; else if (!isLocked(l)) l.lockedUntil = Date.now() + skip.cooldownSec * 1000; }
+      l.last.finished = true; // settled; nothing more to charge on arrival
       commit(l);
     };
   });
@@ -230,7 +261,8 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
     try {
       const n = await nextVideo(current.id, order);
       if (!n) { router.push("/watch"); return; }
-      setCurrent(n);
+      if (n.id === current.id) setReplays((r) => r + 1);
+      else setCurrent(n);
     } catch {
       router.push("/watch");
     }
@@ -240,8 +272,7 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
   const goNext = () => {
     if (skip) {
       const l = loadLedger(skip);
-      const w = watched();
-      if (l.last?.id === current.id) { l.last.watchedSec = Math.max(l.last.watchedSec, w.sec); l.last.durationSec = w.dur || l.last.durationSec; }
+      if (l.last?.id === current.id) { l.last.watchedSec = played(); l.last.durationSec = duration() || l.last.durationSec; }
       const verdict = leavingCounts(l.last, skip);
       if (verdict === "finished") { l.skipsLeft = Math.min(skip.limit, l.skipsLeft + skip.regen); if (l.last) l.last.finished = true; }
       else if (verdict === "skip") {
@@ -249,7 +280,7 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
           if (!isLocked(l)) l.lockedUntil = Date.now() + skip.cooldownSec * 1000;
           commit(l);
           setLockMsg("Let's finish this one first");
-          poke();
+          reveal();
           return; // stay put; the video keeps playing
         }
         l.skipsLeft--;
@@ -257,122 +288,187 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
       }
       commit(l);
     }
-    endSession(current.id, "skipped", watched().sec);
-    advance();
+    endSession(current.id, "skipped", playerRef.current?.getCurrentTime?.() ?? 0);
+    void advance();
   };
-  const goHome = () => {
-    endSession(current.id, "left", watched().sec);
-    router.push("/watch");
+  /** Return / Back / Home: leave the player, to Search if that's where the child came from. */
+  const leave = () => {
+    endSession(current.id, "left", playerRef.current?.getCurrentTime?.() ?? 0);
+    if (fromSearch && window.history.length > 1) router.back();
+    else router.push(fromSearch ? "/watch/search" : "/watch");
   };
 
-  // Leaving the player any other way (Back, closing the app) ends the session as "left".
+  // Leaving any other way (closing the app, navigating away) ends the session as "left".
   useEffect(() => {
-    const leave = () => { const s = session.current; if (s && !s.ended) endSession(s.videoId, "left", watched().sec); };
-    window.addEventListener("pagehide", leave);
-    return () => { window.removeEventListener("pagehide", leave); leave(); };
+    const atSec = () => playerRef.current?.getCurrentTime?.() ?? 0;
+    const onHide = () => { const s = session.current; if (s && !s.ended) endSession(s.videoId, "left", atSec(), true); };
+    window.addEventListener("pagehide", onHide);
+    return () => { window.removeEventListener("pagehide", onHide); const s = session.current; if (s && !s.ended) endSession(s.videoId, "left", atSec()); };
   }, []);
 
-  // Keep focus on the stage; the whole remote works from there.
+  // Start with the controls showing and focus on Play/Pause.
   useEffect(() => {
-    stageRef.current?.focus({ preventScroll: true });
-  }, []);
+    if (tv) playBtn.current?.focus({ preventScroll: true }); // the remote starts on Play/Pause; touch needs no focus
+    queueMicrotask(reveal); // shown now; starts the hide timer
+    const onMove = () => reveal();
+    if (!tv) return;
+    window.addEventListener("pointermove", onMove); // a motion remote / mouse brings the controls back
+    return () => window.removeEventListener("pointermove", onMove);
+  }, [reveal, tv]);
+
+  // Keep the controls up while there's something to read.
+  useEffect(() => {
+    holdRef.current = paused || needsTap || !!lockMsg;
+    if (holdRef.current) queueMicrotask(() => show(true));
+    else queueMicrotask(reveal);
+  }, [paused, needsTap, lockMsg, reveal, show]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      poke();
-      if (isBack(e)) { e.preventDefault(); goHome(); return; }
-      const onStage = document.activeElement === stageRef.current;
+      if (isBack(e)) { e.preventDefault(); e.stopPropagation(); leave(); return; }
+      // Media keys (Samsung sends these when registered in the TV shell). They work whether or not controls show.
+      if (e.key === "MediaPlayPause" || e.keyCode === 10252) { e.preventDefault(); togglePlay(); return; }
+      if (e.key === "MediaPlay" || e.keyCode === 415) { e.preventDefault(); playerRef.current?.playVideo?.(); reveal(); return; }
+      if (e.key === "MediaPause" || e.keyCode === 19) { e.preventDefault(); playerRef.current?.pauseVideo?.(); reveal(); return; }
+      if (e.key === "MediaFastForward" || e.keyCode === 417) { e.preventDefault(); seek(10); return; }
+      if (e.key === "MediaRewind" || e.keyCode === 412) { e.preventDefault(); seek(-10); return; }
       const dir = arrowDir(e);
-      if (onStage) {
-        if (isEnter(e) || e.key === " " || e.keyCode === 32) { e.preventDefault(); togglePlay(); return; }
-        if (dir === "right") { e.preventDefault(); seek(10); return; }
-        if (dir === "left") { e.preventDefault(); seek(-10); return; }
-        if (dir === "down") { e.preventDefault(); homeRef.current?.focus({ preventScroll: true }); return; }
-        if (dir === "up") { e.preventDefault(); return; }
-      } else {
-        // On the Home/Next buttons: left/right between them, up back to the stage.
-        if (dir === "up") { e.preventDefault(); stageRef.current?.focus({ preventScroll: true }); return; }
-        if (dir === "left" || dir === "right") {
-          e.preventDefault();
-          const btns = Array.from(document.querySelectorAll<HTMLElement>("[data-player-btn]"));
-          const idx = btns.indexOf(document.activeElement as HTMLElement);
-          const n = btns[dir === "right" ? Math.min(btns.length - 1, idx + 1) : Math.max(0, idx - 1)];
-          n?.focus({ preventScroll: true });
-        }
+      const ok = isEnter(e) || e.key === " " || e.keyCode === 32;
+      if (!dir && !ok) return;
+      if (!visibleRef.current) {
+        // Hidden: the first key brings the controls back, onto Play/Pause. OK also pauses or plays.
+        e.preventDefault(); e.stopPropagation();
+        playBtn.current?.focus({ preventScroll: true });
+        if (ok) togglePlay(); else reveal();
+        return;
       }
-      // Media keys (Samsung sends these when registered in the TV shell).
-      if (e.key === "MediaPlayPause" || e.keyCode === 10252) togglePlay();
-      if (e.key === "MediaPlay" || e.keyCode === 415) playerRef.current?.playVideo?.();
-      if (e.key === "MediaPause" || e.keyCode === 19) playerRef.current?.pauseVideo?.();
+      reveal();
+      const btns = Array.from(document.querySelectorAll<HTMLElement>("[data-player-btn]"));
+      if (!btns.includes(document.activeElement as HTMLElement)) { e.preventDefault(); playBtn.current?.focus({ preventScroll: true }); return; }
+      if (dir === "left" || dir === "right") {
+        e.preventDefault();
+        const i = btns.indexOf(document.activeElement as HTMLElement);
+        btns[dir === "right" ? Math.min(btns.length - 1, i + 1) : Math.max(0, i - 1)]?.focus({ preventScroll: true });
+      } else if (dir) e.preventDefault();
+      // OK on a focused control: the button's own click.
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [poke, playlist.length]);
+  }, [reveal, current.id]);
 
-  // Screen-time countdown: counts down wall-clock minutes from what the server said was left; at zero, home (which shows "all done").
+  // Screen time: counts down PLAYING time from what the server said was left; at zero, home (which shows "all done").
   const [secondsLeft, setSecondsLeft] = useState<number | null>(remainingMinutes != null ? remainingMinutes * 60 : null);
   useEffect(() => {
-    if (secondsLeft == null) return;
-    const t = setInterval(() => setSecondsLeft((s) => (s == null ? s : s - 1)), 1000);
+    if (remainingMinutes == null) return;
+    const t = setInterval(() => setSecondsLeft(remainingMinutes * 60 - screenClock.current.seconds(now())), 1000);
     return () => clearInterval(t);
-  }, [secondsLeft == null]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (secondsLeft != null && secondsLeft <= 0) router.push("/watch");
-  }, [secondsLeft, router]);
-  const minutesLeft = secondsLeft != null ? Math.ceil(secondsLeft / 60) : null;
+  }, [remainingMinutes]);
+  const timeUp = secondsLeft != null && secondsLeft <= 0;
+  useEffect(() => { if (timeUp) router.push("/watch"); }, [timeUp, router]);
+  const minutesLeft = secondsLeft != null ? Math.max(0, Math.ceil(secondsLeft / 60)) : null;
 
-  const uiVisible = showUi || paused || needsTap;
+  const shown = visible || paused || needsTap || !!lockMsg;
+  const backLabel = fromSearch ? "Back" : "Home";
+  const nextLabel = cooldownLeft > 0 ? `Next in ${fmt(cooldownLeft)}` : "Next";
+  const skipDots = skip && ledger && cooldownLeft === 0 ? (
+    <span className="inline-flex gap-1 align-middle" aria-label={`${ledger.skipsLeft} skips left`}>
+      {Array.from({ length: skip.limit }).map((_, k) => <span key={k} className={`inline-block rounded-full ${tv ? "h-[0.5vw] w-[0.5vw]" : "h-2 w-2"} ${k < ledger.skipsLeft ? "bg-current" : "bg-current opacity-25"}`} />)}
+    </span>
+  ) : null;
+  const progress = pos.dur ? Math.min(1, pos.at / pos.dur) : 0;
+
+  // TV: a focus ring on the one focused control. Touch: big targets, no ring needed for taps.
+  const btn = tv
+    ? "flex items-center justify-center gap-[0.6vw] rounded-full bg-[rgb(255_249_241/0.14)] font-extrabold text-[var(--kink)] outline-none transition-transform focus:scale-110 focus:bg-[rgb(255_249_241/0.24)] focus:shadow-[0_0_0_0.3vw_var(--kfocus)]"
+    : "flex items-center justify-center gap-2 rounded-full bg-black/55 font-extrabold text-white outline-none active:scale-95 focus-visible:shadow-[0_0_0_4px_var(--kfocus)]";
 
   return (
-    <main className="fixed inset-0 bg-black">
+    <main className={`kid-bf ${tv ? "tv" : "touch"} fixed inset-0 bg-black`} data-player>
       <div ref={hostRef} className="absolute inset-0 h-full w-full" />
 
-      {/* The stage: invisible, focusable, covers the iframe. Tap/OK toggles play. */}
+      {/* The stage: covers the iframe. TV/mouse click toggles play; a tap on touch shows or hides the controls. */}
       <button
-        ref={stageRef}
-        type="button"
-        aria-label={paused ? "Play" : "Pause"}
-        onClick={togglePlay}
+        type="button" tabIndex={-1} aria-hidden
+        onClick={() => (tv ? togglePlay() : shown && !holdRef.current ? hide() : reveal())}
         className="absolute inset-0 h-full w-full cursor-default bg-transparent outline-none"
         style={{ WebkitTapHighlightColor: "transparent" }}
       />
 
       {minutesLeft != null && minutesLeft <= 5 && (
-        <div className="pointer-events-none absolute right-4 top-4 rounded-full bg-[var(--kfocus)] px-4 py-2 text-lg font-extrabold text-[#0b1020] shadow-lg">
-          ⏰ {minutesLeft} minute{minutesLeft === 1 ? "" : "s"} left
+        <div role="status" className={`pointer-events-none absolute rounded-full bg-[var(--kfocus)] font-extrabold text-[#2a1206] shadow-lg ${tv ? "right-[4vw] top-[4vh] px-[1.4vw] py-[0.6vw] text-[1.4vw]" : "right-4 top-4 px-4 py-2 text-base"}`}>
+          {minutesLeft} minute{minutesLeft === 1 ? "" : "s"} left today
         </div>
       )}
 
-      {/* Big centre feedback: autoplay hint, paused badge, or a brief flash after a key. */}
-      {(needsTap || paused || flash) && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="flex h-32 w-32 items-center justify-center rounded-full bg-black/60 text-6xl text-white shadow-2xl">
-            {flash === "fwd" ? "⏩" : flash === "back" ? "⏪" : flash === "pause" ? "⏸" : "▶"}
-          </div>
-          {needsTap && <p className="absolute mt-44 text-2xl font-extrabold text-white drop-shadow">Press OK to play</p>}
+      {/* A brief flash after a key, or the autoplay hint. */}
+      {(flash || needsTap) && (
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4">
+          {flash && (
+            <div className={`flex items-center justify-center rounded-full bg-black/60 text-white ${tv ? "h-[8vw] w-[8vw]" : "h-28 w-28"}`}>
+              {flash === "fwd" ? <IconFwd10 size={0} className="h-1/2 w-1/2" /> : flash === "back" ? <IconBack10 size={0} className="h-1/2 w-1/2" /> : flash === "pause" ? <IconPause size={0} className="h-1/2 w-1/2" /> : <IconPlay size={0} className="h-1/2 w-1/2" />}
+            </div>
+          )}
+          {needsTap && <p className={`rounded-full bg-black/60 font-extrabold text-white ${tv ? "px-[2vw] py-[0.8vw] text-[2vw]" : "px-5 py-2 text-xl"}`}>{tv ? "Press OK to play" : "Tap Play to start"}</p>}
         </div>
       )}
 
-      <div className={`absolute inset-x-0 bottom-0 flex flex-col items-center gap-3 bg-gradient-to-t from-black/90 to-transparent px-4 pb-6 pt-16 transition-opacity duration-300 ${uiVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-        <p className="text-lg font-extrabold text-center line-clamp-1 text-white/80">{current.title}</p>
-        {lockMsg && <p className="rounded-full bg-white/10 px-4 py-1.5 text-base font-extrabold text-white">{lockMsg}{cooldownLeft > 0 ? ` — next skip in ${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, "0")}` : ""}</p>}
-        <div className="h-1.5 w-full max-w-3xl overflow-hidden rounded-full bg-white/20">
-          <div className="h-full bg-[var(--kfocus)] transition-[width] duration-500" style={{ width: `${Math.round(progress * 100)}%` }} />
-        </div>
-        <div className="flex gap-4">
-          <button ref={homeRef} data-player-btn onClick={goHome} className="bigbtn rounded-full bg-white/15 px-7 py-4 text-xl font-extrabold text-white active:scale-95">
-            🏠 Home
-          </button>
-          {playlist.length > 1 && (
-            <button data-player-btn onClick={goNext} className={`bigbtn rounded-full px-7 py-4 text-xl font-extrabold active:scale-95 ${cooldownLeft > 0 ? "bg-white/10 text-white/60" : "bg-[var(--kfocus)] text-[#0b1020]"}`}>
-              {cooldownLeft > 0 ? `Next in ${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, "0")}` : <>Next ▶ <span className="hidden sm:inline font-bold opacity-70">{next.title.slice(0, 22)}</span></>}
-              {skip && ledger && cooldownLeft === 0 && (
-                <span className="ml-2 inline-flex gap-1 align-middle" aria-label={`${ledger.skipsLeft} skips left`}>
-                  {Array.from({ length: skip.limit }).map((_, k) => <span key={k} className={`inline-block h-2 w-2 rounded-full ${k < ledger.skipsLeft ? "bg-[#0b1020]" : "bg-[#0b1020]/25"}`} />)}
-                </span>
-              )}
+      {/* Controls. Hidden ones stay in place (so focus has somewhere to be) but can't be tapped. */}
+      <div data-controls={shown ? "shown" : "hidden"} className={`pointer-events-none absolute inset-0 transition-opacity duration-300 ${shown ? "opacity-100" : "opacity-0"}`} aria-hidden={!shown}>
+        <div className={`absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 to-transparent ${tv ? "px-[5vw] pb-[6vh] pt-[4vh]" : "flex items-center gap-3 px-4 pb-10 pt-[max(1rem,env(safe-area-inset-top))]"}`}>
+          {!tv && (
+            <button data-player-btn type="button" onClick={leave} className={`${btn} ${shown ? "pointer-events-auto" : ""} h-14 shrink-0 pl-3 pr-5 text-lg`}>
+              <IconBack size={26} />{backLabel}
             </button>
+          )}
+          <p className={`font-extrabold text-white line-clamp-1 ${tv ? "text-[2vw]" : "text-lg"}`}>{current.title}</p>
+          {paused && !needsTap && <p className={`font-bold text-[var(--kmuted)] ${tv ? "mt-[0.5vh] text-[1.3vw]" : "hidden"}`}>Paused</p>}
+        </div>
+
+        {!tv && (
+          <div className="absolute inset-0 flex items-center justify-center gap-8">
+            <button data-player-btn type="button" onClick={() => seek(-10)} aria-label="Back 10 seconds" className={`${btn} ${shown ? "pointer-events-auto" : ""} h-16 w-16`}><IconBack10 size={34} /></button>
+            <button ref={playBtn} data-player-btn type="button" onClick={togglePlay} aria-label={paused ? "Play" : "Pause"} className={`${btn} ${shown ? "pointer-events-auto" : ""} h-24 w-24 !bg-[var(--kink)] !text-[#082219]`}>
+              {paused ? <IconPlay size={46} /> : <IconPause size={44} />}
+            </button>
+            <button data-player-btn type="button" onClick={() => seek(10)} aria-label="Forward 10 seconds" className={`${btn} ${shown ? "pointer-events-auto" : ""} h-16 w-16`}><IconFwd10 size={34} /></button>
+          </div>
+        )}
+
+        <div className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent ${tv ? "px-[5vw] pb-[5vh] pt-[10vh]" : "px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-14"}`}>
+          {lockMsg && <p role="status" className={`mx-auto mb-3 w-fit rounded-full bg-[rgb(255_249_241/0.14)] font-extrabold text-white ${tv ? "px-[1.4vw] py-[0.5vw] text-[1.4vw]" : "px-4 py-1.5 text-base"}`}>{lockMsg}{cooldownLeft > 0 ? ` (next skip in ${fmt(cooldownLeft)})` : ""}</p>}
+          <div className={`flex items-center ${tv ? "gap-[1vw] text-[1.2vw]" : "gap-3 text-sm"} font-bold text-white/80`}>
+            <span className="tabular-nums">{fmt(pos.at)}</span>
+            <div className={`flex-1 overflow-hidden rounded-full bg-white/20 ${tv ? "h-[0.5vw]" : "h-2"}`} role="progressbar" aria-label="How far into the video" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+              <div className="h-full bg-[var(--kfocus)] transition-[width] duration-500" style={{ width: `${Math.round(progress * 100)}%` }} />
+            </div>
+            <span className="tabular-nums">{fmt(pos.dur)}</span>
+          </div>
+          {tv ? (
+            <div className="mt-[3vh] flex items-center gap-[1.2vw]">
+              <button data-player-btn type="button" onClick={leave} className={`${btn} h-[4.6vw] px-[2vw] text-[1.5vw]`}>
+                {fromSearch ? <IconBack size={0} className="h-[1.8vw] w-[1.8vw]" /> : <IconHome size={0} className="h-[1.8vw] w-[1.8vw]" />}{backLabel}
+              </button>
+              <div className="mx-auto flex items-center gap-[1.2vw]">
+                <button data-player-btn type="button" onClick={() => seek(-10)} aria-label="Back 10 seconds" className={`${btn} h-[4.6vw] w-[4.6vw]`}><IconBack10 size={0} className="h-[2.6vw] w-[2.6vw]" /></button>
+                <button ref={playBtn} data-player-btn type="button" onClick={togglePlay} aria-label={paused ? "Play" : "Pause"} className={`${btn} h-[6vw] w-[6vw] !bg-[var(--kink)] !text-[#082219]`}>
+                  {paused ? <IconPlay size={0} className="h-[3vw] w-[3vw]" /> : <IconPause size={0} className="h-[2.8vw] w-[2.8vw]" />}
+                </button>
+                <button data-player-btn type="button" onClick={() => seek(10)} aria-label="Forward 10 seconds" className={`${btn} h-[4.6vw] w-[4.6vw]`}><IconFwd10 size={0} className="h-[2.6vw] w-[2.6vw]" /></button>
+              </div>
+              {playlist.length > 1 ? (
+                <button data-player-btn type="button" onClick={goNext} className={`${btn} h-[4.6vw] max-w-[26vw] px-[2vw] text-[1.5vw] ${cooldownLeft > 0 ? "!text-[var(--kmuted)]" : ""}`}>
+                  <span className="truncate">{nextLabel}{cooldownLeft === 0 && <span className="ml-[0.6vw] font-bold text-[var(--kmuted)]">{next.title}</span>}</span>
+                  <IconNext size={0} className="h-[1.6vw] w-[1.6vw] shrink-0" />{skipDots}
+                </button>
+              ) : <span className="w-[10vw]" />}
+            </div>
+          ) : playlist.length > 1 && (
+            <div className="mt-3 flex justify-end">
+              <button data-player-btn type="button" onClick={goNext} className={`${btn} ${shown ? "pointer-events-auto" : ""} h-14 px-6 text-lg ${cooldownLeft > 0 ? "!text-white/60" : ""}`}>
+                {nextLabel}<IconNext size={24} />{skipDots}
+              </button>
+            </div>
           )}
         </div>
       </div>
