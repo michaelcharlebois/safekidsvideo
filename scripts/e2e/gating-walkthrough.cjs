@@ -136,7 +136,7 @@ const settled = async (page) => { await page.waitForSelector('[aria-busy="true"]
 
   // 7. Allow an unreviewed video for Maya from the video page: disclosure first
   await parent.goto(`${BASE}/parent/video/XqZsoesa55w`); await settled(parent);
-  await parent.click('form:has(input[name="profileId"][value="' + MAYA + '"]) button:has-text("Allow for Maya")');
+  await parent.click('form:has(input[name="profileId"][value="' + MAYA + '"]) button:has-text("for Maya")');
   await parent.waitForURL(/confirm=/);
   check("video page: unreviewed allow asks for confirmation", (await parent.innerText("body")).includes("hasn't been reviewed yet"));
   await parent.screenshot({ path: `${OUT}/07-confirm-video-page.png` });
@@ -175,6 +175,23 @@ const settled = async (page) => { await page.waitForSelector('[aria-busy="true"]
   await kid.goto(`${BASE}/watch/XqZsoesa55w`);
   check("Leo: opening Maya's approved video by URL → not found", (await kid.innerText("body")).match(/404|not found|could not be found/i) != null);
   await kid.screenshot({ path: `${OUT}/10-leo-home.png` });
+
+  // 10. Navigation: five destinations; detail pages belong to Library; old links still land
+  await parent.goto(`${BASE}/parent/video/e_04ZrNroTo?from=review`); await settled(parent);
+  const cur = await parent.$$eval('nav[aria-label="Main"] a[aria-current="page"]', (as) => as.map((a) => a.textContent.trim()).filter(Boolean));
+  const back = await parent.textContent('main a[href^="/parent/review"]');
+  check("video page highlights Library, with a back link to Review", cur.every((t) => t.startsWith("Library")) && cur.length > 0 && /Review/.test(back || ""), cur.join("|"));
+  const tabs = await parent.$$eval('nav[aria-label="Main"].fixed a', (as) => as.map((a) => a.textContent.trim().replace(/\d+$/, "")));
+  check("phone tab bar has the five destinations", JSON.stringify(tabs) === JSON.stringify(["Home", "Review", "Library", "Activity", "Kids"]), tabs.join(","));
+  await parent.goto(`${BASE}/parent?kid=${MAYA}&view=hidden`); await settled(parent);
+  check("old Home filter link opens Library → Held back", parent.url().includes("/parent/library") && parent.url().includes("status=held"));
+  await parent.goto(`${BASE}/parent/stats?kid=${MAYA}&range=30`); await settled(parent);
+  check("old stats link opens Activity for the same child and period", parent.url().includes("/parent/activity") && parent.url().includes("range=30") && parent.url().includes(MAYA));
+  await parent.goto(`${BASE}/parent?kid=${MAYA}`); await settled(parent);
+  const homeText = await parent.innerText("main");
+  check("Home is an overview: no channel management or starter packs", !homeText.includes("Starter packs") && !homeText.includes("Reviewed for other families") && homeText.includes("Open Library"));
+  await parent.click('button[aria-controls="account-menu"]');
+  check("Account is in the profile menu", (await parent.innerText("#account-menu")).includes("Plan"));
 
   await browser.close();
   const failed = results.filter((r) => !r.ok);

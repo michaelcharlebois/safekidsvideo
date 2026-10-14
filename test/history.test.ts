@@ -30,6 +30,15 @@ describe("viewing history", () => {
     expect(h.days.flatMap((d) => d.items).some((i) => i.video.id === "c")).toBe(false);
   });
 
+  it("an end marker never attaches to an older play of the same video", () => {
+    const h2 = historyByDay([
+      { videoId: "b", profileId: "maya", startedAt: "2026-10-13T08:00:00Z", completed: false },
+      { videoId: "b", profileId: "maya", startedAt: "2026-10-13T09:00:00Z", completed: true },
+      { videoId: "b", profileId: "maya", startedAt: "2026-10-13T09:03:00Z", completed: true, outcome: "finished" as const },
+    ], vids, dayOf, "maya");
+    expect(h2.days[0].items.map((i) => i.ended)).toEqual(["finished", undefined]);
+  });
+
   it("reports what it can't attribute or show, instead of hiding it", () => {
     expect(h.unattributed).toBe(1);
     expect(h.unknown).toBe(1);

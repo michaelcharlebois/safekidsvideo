@@ -90,7 +90,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
           <div className="min-w-0">
             <h1 className="text-title sm:text-display">{kid.name}</h1>
             <p className="text-sm text-muted sm:text-base">
-              <b className="text-ink">{mode.title}</b> ({mode.tagline.toLowerCase()}). {whenSentence(settings)}.{" "}
+              <b className="text-ink">{mode.title}</b> ({mode.tagline}). {whenSentence(settings)}.{" "}
               <Link href={`/parent/settings?kid=${kid.id}`} className="font-bold text-forest underline decoration-sand underline-offset-4 hover:decoration-forest">Rules</Link>
             </p>
           </div>
@@ -277,7 +277,7 @@ function StatTile({ href, icon, tone, value, unit, label, sub, meter }: {
   const t = { ok: "bg-ok-soft text-ok", pending: "bg-pending-soft text-pending", warn: "bg-warn-soft text-warn", quiet: "bg-sand-soft text-muted", forest: "bg-sage-soft text-forest" }[tone];
   return (
     <Link href={href} className="group flex items-center gap-3 rounded-[var(--radius-card)] border border-sand bg-surface p-3.5 hover:border-forest/40 sm:p-5">
-      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full sm:h-11 sm:w-11 ${t}`}>{icon}</span>
+      <span className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-full sm:flex sm:h-11 sm:w-11 ${t}`}>{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block text-2xl font-extrabold leading-none tracking-tight text-forest sm:text-[1.75rem]">{value}{unit && <span className="ml-1 text-base font-bold">{unit}</span>}</span>
         <span className="mt-1 block text-[0.8125rem] font-bold leading-tight text-ink sm:text-sm">{label}</span>

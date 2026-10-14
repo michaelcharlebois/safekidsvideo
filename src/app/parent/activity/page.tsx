@@ -268,13 +268,13 @@ function DayBars({ days, today, week }: { days: KidStats["byDay"]; today: string
       <div className="flex h-28 items-end gap-[2px] sm:gap-1" aria-hidden>
         {days.map((d) => (
           <div key={d.day} className="group relative flex h-full flex-1 flex-col justify-end" title={`${d.day}: ${d.minutes} min`}>
-            <div className={`w-full rounded-t-[4px] ${d.minutes ? (d.day === today ? "bg-apricot" : "bg-forest") : "bg-sand"}`} style={{ height: d.minutes ? `${Math.max(4, Math.round((d.minutes / max) * 100))}%` : "2px" }} />
+            <div className={`w-full rounded-t-[4px] ${d.minutes ? "bg-forest" : "bg-sand"}`} style={{ height: d.minutes ? `${Math.max(4, Math.round((d.minutes / max) * 100))}%` : "2px" }} />
           </div>
         ))}
       </div>
       <div className="mt-1.5 flex gap-[2px] text-[11px] text-muted sm:gap-1" aria-hidden>
         {days.map((d, i) => (
-          <span key={d.day} className="flex-1 text-center">{week ? new Date(`${d.day}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" }) : i === 0 ? d.day.slice(5) : d.day === today ? "Today" : ""}</span>
+          <span key={d.day} className={`flex-1 text-center ${d.day === today ? "font-bold text-forest" : ""}`}>{d.day === today ? "Today" : week ? new Date(`${d.day}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" }) : i === 0 ? d.day.slice(5) : ""}</span>
         ))}
       </div>
       {/* The same numbers as text, for screen readers. */}

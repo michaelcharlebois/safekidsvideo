@@ -89,7 +89,7 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
               <h2 className="text-lg">Calibration notes {notes ? <span className="text-muted font-bold">· v{notes.version} · {notes.source === "learn" ? "learned" : "edited by a parent"}</span> : null}</h2>
               <p className="text-sm text-muted">Appended to the reviewer&apos;s instructions on every review. Rewritten nightly from new feedback; disputed cards get re-reviewed with the dispute in hand. Edit by hand if you know something it doesn&apos;t.</p>
             </div>
-            {admin && <form action={learnNow}><Button type="submit" variant="secondary" size="sm">Learn now</Button></form>}
+            {admin && <form action={learnNow} className="shrink-0"><Button type="submit" variant="secondary" size="sm" className="whitespace-nowrap">Learn now</Button></form>}
           </div>
           {admin ? (
             <form action={saveReviewerNotes} className="mt-3 space-y-2">

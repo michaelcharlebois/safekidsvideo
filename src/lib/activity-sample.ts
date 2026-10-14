@@ -38,7 +38,8 @@ export function sampleActivity(profileId: string, now: number) {
       const at = new Date(dayStart - (2 + Math.floor(rnd() * 9)) * 3600_000 - i * 900_000).toISOString();
       const completed = rnd() > 0.3;
       events.push({ videoId: v[0], profileId, startedAt: at, completed });
-      if (!completed && rnd() > 0.5) events.push({ videoId: v[0], profileId, startedAt: new Date(Date.parse(at) + 60_000).toISOString(), completed: false, outcome: "skipped" });
+      if (completed) events.push({ videoId: v[0], profileId, startedAt: new Date(Date.parse(at) + v[2] * 1000).toISOString(), completed: true, outcome: "finished" });
+      else if (rnd() > 0.5) events.push({ videoId: v[0], profileId, startedAt: new Date(Date.parse(at) + 60_000).toISOString(), completed: false, outcome: "skipped" });
     }
   }
   return { events, videos, cards: cards.map((c) => ({ ...c, reviewer: { ...c.reviewer, model: "sample-preview" } })), channels: CH, checkins };

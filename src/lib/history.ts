@@ -23,8 +23,9 @@ export function historyByDay(events: HistoryEvent[], videoById: Map<string, Vide
   let unknown = 0;
   for (const e of mine) {
     if (e.outcome) {
-      const p = [...plays].reverse().find((x) => x.e.videoId === e.videoId && x.e.profileId === e.profileId && !x.ended);
-      if (p) p.ended = e.outcome;
+      // Only the most recent play of that video can be the one that ended (never an older one).
+      const p = [...plays].reverse().find((x) => x.e.videoId === e.videoId && x.e.profileId === e.profileId);
+      if (p && (!p.ended || p.ended === e.outcome)) p.ended = e.outcome;
       continue;
     }
     const video = videoById.get(e.videoId);

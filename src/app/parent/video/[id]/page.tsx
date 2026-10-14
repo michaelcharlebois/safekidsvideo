@@ -97,6 +97,7 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
       <ul className="divide-y divide-sand">
         {view.perChild.map(({ profile, settings: s, v: kv, decision, childBlocked }) => {
           const st = playStatus(kv, s).status;
+          const autoHeld = st === "held" || st === "uncertain" || st === "reviewing";
           return (
             <li key={profile.id} className="space-y-2 px-5 py-4">
               <div className="flex flex-wrap items-center gap-2">
@@ -117,9 +118,13 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
                       {!decision.allow && (
                         <form action={allowVideoForChild}>
                           <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} />
-                          <Button type="submit" size="sm">Allow for {profile.name}{reviewed ? "" : " (not reviewed)"}</Button>
+                          {/* An automatic hold gets a deliberate, secondary exception, read after the findings. */}
+                          {autoHeld
+                            ? <Button type="submit" variant="secondary" size="sm">Allow exception for {profile.name}{reviewed ? "" : " (not reviewed)"}</Button>
+                            : <Button type="submit" size="sm">Allow for {profile.name}{reviewed ? "" : " (not reviewed)"}</Button>}
                         </form>
                       )}
+                      {autoHeld && st === "held" && <a href="#ai-review" className={buttonClass("quiet", "sm")}>What the review found</a>}
                       {(kv.dismissed || childBlocked) && (
                         <form action={decideVideo}>
                           <input type="hidden" name="videoId" value={v.id} /><input type="hidden" name="profileId" value={profile.id} /><input type="hidden" name="decision" value="undo" />
@@ -186,7 +191,8 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
           <VideoPreview id={v.id} title={v.title} thumbnailUrl={v.thumbnailUrl} duration={v.durationSeconds} />
 
           {/* ---- AI review ---- */}
-          <Card as="section" className="p-5">
+          <Card as="section" className="scroll-mt-20 p-5" >
+            <div id="ai-review" className="relative -top-20" aria-hidden />
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="flex items-center gap-2 text-lg"><IconReview size={20} />AI review</h2>
               {c?.reviewer?.model && c.reviewer.model !== "sample" && (

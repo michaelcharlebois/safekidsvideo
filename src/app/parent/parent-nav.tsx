@@ -10,7 +10,7 @@ type Tab = { href: string; label: string; Icon: ComponentType<{ size?: number }>
 /** The five destinations. Video and channel pages belong to Library. */
 export const TABS: Tab[] = [
   { href: "/parent", label: "Home", Icon: IconHome, perChild: true, match: (p) => p === "/parent" },
-  { href: "/parent/review", label: "Review", Icon: IconReview, perChild: false, match: (p) => p.startsWith("/parent/review") },
+  { href: "/parent/review", label: "Review", Icon: IconReview, perChild: false, match: (p) => p === "/parent/review" || p.startsWith("/parent/review/") },
   { href: "/parent/library", label: "Library", Icon: IconLibrary, perChild: true, match: (p) => p.startsWith("/parent/library") || p.startsWith("/parent/video") || p.startsWith("/parent/channel") },
   { href: "/parent/activity", label: "Activity", Icon: IconActivity, perChild: true, match: (p) => ["/parent/activity", "/parent/stats", "/parent/insights", "/parent/checkin"].some((x) => p.startsWith(x)) },
   { href: "/parent/kids", label: "Kids", Icon: IconKids, perChild: false, match: (p) => p.startsWith("/parent/kids") || p.startsWith("/parent/settings") },
