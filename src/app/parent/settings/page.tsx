@@ -278,7 +278,7 @@ export default async function ChildSettingsPage(props: PageProps<"/parent/settin
               <Button type="submit" size="sm">Save home screen</Button>
             </form>
           </details>
-          <p className="mt-3 text-sm text-muted">Channel order is on <Link href={`/parent?kid=${kid.id}#channels`} className="font-bold text-forest underline">Home</Link>.</p>
+          <p className="mt-3 text-sm text-muted">Channel order is in <Link href={`/parent/library?kid=${kid.id}&tab=sources`} className="font-bold text-forest underline">Library → Family sources</Link>.</p>
           {savedNote("arrange", "Home screen saved.")}
         </Section>
 

@@ -119,8 +119,8 @@ export async function toggleWhitelist(form: FormData) {
   const on = form.get("on") === "1";
   if (on) await db.addToWhitelist({ familyId: fid, kind, targetId, profileId: null });
   else await db.removeFromWhitelist(fid, kind, targetId, null);
-  revalidatePath("/parent");
-  revalidatePath(`/parent/video/${targetId}`);
+  revalidatePath("/parent", "layout");
+  revalidatePath("/watch");
 }
 
 export async function confirmCard(form: FormData) {
@@ -463,7 +463,8 @@ export async function approvePack(form: FormData) {
   const fid = await requireParent();
   await requirePaid(fid);
   const pack = packById(String(form.get("pack") ?? ""));
-  const next = String(form.get("next") ?? "/parent");
+  const nextRaw = String(form.get("next") ?? "");
+  const next = isLocalPath(nextRaw) ? nextRaw : "/parent";
   if (!pack) redirect(next);
   const resolved: { id: string; handle: string }[] = [];
   for (const handle of pack.channels) {
@@ -487,7 +488,7 @@ export async function approvePack(form: FormData) {
       revalidatePath("/parent"); revalidatePath("/watch");
     });
   }
-  redirect(`${next}${next.includes("?") ? "&" : "?"}pack=${pack.id}`);
+  redirect(withParam(next, "pack", pack.id));
 }
 
 /** Onboarding step 4: each kid's viewing mode, then mark the family onboarded. */
@@ -515,6 +516,8 @@ export async function moveChannel(form: FormData) {
   const profileId = String(form.get("profileId") ?? "");
   const channelId = String(form.get("channelId") ?? "");
   const dir = form.get("dir") === "up" ? -1 : 1;
+  const nextRaw = String(form.get("next") ?? "");
+  const back = isLocalPath(nextRaw) ? nextRaw : `/parent?kid=${profileId}#channels`;
   const p = await db.getProfile(profileId);
   if (!p || p.familyId !== fid) redirect("/parent");
   // Current full order = parent's list, then any approved channels not yet in it (same rule the TV uses).
@@ -523,8 +526,8 @@ export async function moveChannel(form: FormData) {
   const i = order.indexOf(channelId);
   const j = i + dir;
   if (i >= 0 && j >= 0 && j < order.length) { [order[i], order[j]] = [order[j], order[i]]; await db.upsertProfile({ ...p, channelOrder: order }); }
-  revalidatePath("/parent"); revalidatePath("/watch");
-  redirect(`/parent?kid=${profileId}#channels`);
+  revalidatePath("/parent", "layout"); revalidatePath("/watch");
+  redirect(back);
 }
 
 // ---- Kid profiles -------------------------------------------------------------
@@ -883,6 +886,7 @@ export async function sendTestPush() {
 export async function reviewNextBatch(form?: FormData) {
   const n = Math.min(20, Math.max(1, Number(form?.get("n")) || 10));
   const fid = await requireParent();
+  const nextRaw = String(form?.get("next") ?? "");
   after(async () => {
     try {
       await runPipeline({ familyId: fid, maxReviews: n, uploadsPerChannel: 10 });
@@ -891,5 +895,5 @@ export async function reviewNextBatch(form?: FormData) {
       console.error("batch review failed", (e as Error).message);
     }
   });
-  redirect(`/parent?batch=${n}`);
+  redirect(withParam(isLocalPath(nextRaw) ? nextRaw : "/parent", "batch", String(n)));
 }

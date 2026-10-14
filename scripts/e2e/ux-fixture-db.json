@@ -957,6 +957,87 @@
     "reviewedAt": "2026-10-12T00:00:00Z",
     "version": "2"
    }
+  },
+  {
+   "videoId": "fxSSS000004",
+   "synopsis": "Fixture card for UX review.",
+   "format": "song",
+   "ageFit": {
+    "min": 2,
+    "max": 7
+   },
+   "concerns": [
+    {
+     "tag": "violence",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "scary_imagery",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "monsters",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "loud_or_jarring",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "yelling_or_meanness",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "sad_themes",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "potty_humor",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "ads_or_toys",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "fast_paced",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "unsafe_behavior",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "romance",
+     "present": false,
+     "intensity": 0
+    },
+    {
+     "tag": "inappropriate_language",
+     "present": false,
+     "intensity": 0
+    }
+   ],
+   "pace": "calm",
+   "educationalValue": 3,
+   "rating": 4,
+   "parentRecommendation": "Fixture recommendation.",
+   "confidence": 0.45,
+   "reviewer": {
+    "model": "gemini-3.8-flash",
+    "reviewedAt": "2026-10-12T00:00:00Z",
+    "version": "2"
+   }
   }
  ],
  "confirmations": [],
@@ -995,10 +1076,31 @@
    "targetId": "fxCOC000003",
    "profileId": "e6148654-0dd2-4da9-ac82-3bb897a87d83",
    "createdAt": "2026-10-05T00:00:00Z"
+  },
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "kind": "video",
+   "targetId": "fxNGK000001",
+   "profileId": null,
+   "createdAt": "2026-10-06T00:00:00Z"
+  },
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "kind": "dismissed",
+   "targetId": "fxPNK000003",
+   "profileId": "e6148654-0dd2-4da9-ac82-3bb897a87d83",
+   "createdAt": "2026-10-06T00:00:00Z"
+  },
+  {
+   "familyId": "00000000-0000-0000-0000-000000000001",
+   "kind": "block",
+   "targetId": "fxPNK000002",
+   "profileId": "e6148654-0dd2-4da9-ac82-3bb897a87d83",
+   "createdAt": "2026-10-06T00:00:00Z"
   }
  ],
  "settings": [],
- "_comment": "UX-review fixture for local screenshots. Titles/ids are fixture data, not real reviews.",
+ "_comment": "UX-review fixture for local screenshots. Titles/ids are fixture data, not real reviews. Library states: fxSSS000004 low-confidence review; fxNGK000001 added directly; Maya keeps fxPNK000003 hidden and blocks fxPNK000002.",
  "profiles": [
   {
    "familyId": "00000000-0000-0000-0000-000000000001",

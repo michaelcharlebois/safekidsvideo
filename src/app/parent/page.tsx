@@ -11,16 +11,14 @@ import { playStatus, type PlayStatus } from "@/lib/status";
 import { MODE_LABELS, type VideoWithCard } from "@/lib/types";
 import { Button, buttonClass, Card, EmptyState, Meter, Notice, SectionHeader, StatusBadge, Tag } from "@/components/ui";
 import { IconAlert, IconArrowDown, IconArrowUp, IconChannels, IconChevron, IconClock, IconHand, IconPlayCircle, IconPlus, IconTv } from "@/components/icons";
-import { approvePack, grantMoreTime, moveChannel, resolveWatchRequest, reviewNextBatch, toggleWhitelist } from "@/app/actions";
+import { grantMoreTime, moveChannel, resolveWatchRequest, reviewNextBatch, toggleWhitelist } from "@/app/actions";
 import { localDay, watchEventsSince } from "@/lib/checkin";
 import { orderShelves, tasteFrom } from "@/lib/arrange";
 import { kidHome } from "@/lib/kid-home";
 import { forChild, pendingDecisions } from "@/lib/inbox";
 import { listPendingRequests, recentlyApprovedIds, recentWatchIds } from "@/lib/activity";
 import { minutesUsedToday } from "@/lib/screentime";
-import { AddForm } from "./add-form";
-import { SearchAdd } from "./search-add";
-import { PACKS } from "@/lib/packs";
+import { AddPanel } from "./library/sources";
 import { billingStatus } from "@/lib/billing";
 import { ChannelAvatar } from "@/app/watch/kid-ui";
 
@@ -265,7 +263,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
 
           {/* ---- channels ---- */}
           <section id="channels" aria-labelledby="channels-h" className="scroll-mt-20">
-            <SectionHeader id="channels-h" icon={<IconChannels />} title="Channels" sub={`Your family's channels, in ${kid.name}'s order. A channel brings videos in; each one still needs a review.`} />
+            <SectionHeader id="channels-h" icon={<IconChannels />} title="Channels" sub={`Your family's channels, in ${kid.name}'s order. A channel brings videos in; each one still needs a review.`} action={<Link href={`/parent/library?kid=${kidId}`} className="text-sm text-forest hover:underline">Library</Link>} />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <nav aria-label="Filter videos" className="flex flex-wrap gap-1.5">
                 <FilterChip href={`/parent?kid=${kidId}#channels`} active={!view}>All channels</FilterChip>
@@ -361,16 +359,16 @@ export default async function ParentPage(props: PageProps<"/parent">) {
           </Card>
 
           <Card as="section" className="p-5">
-            <SectionHeader title="Library" sub={`What it means for ${kid.name}.`} />
+            <SectionHeader title="Library" sub={`What it means for ${kid.name}.`} action={<Link href={`/parent/library?kid=${kidId}`} className="text-forest hover:underline">Open Library</Link>} />
             <ul className="mt-3 divide-y divide-sand text-sm">
-              <SummaryRow href={`/parent?kid=${kidId}#channels`} icon={<IconChannels size={18} />} label="Channels in your library" value={approvedChannels.size} />
-              <SummaryRow href={libHref("visible")} icon={<IconPlayCircle size={18} />} label={`Ready for ${kid.name}`} value={ready.length} />
-              <SummaryRow href={libHref("unreviewed")} icon={<IconClock size={18} />} label="Awaiting review" value={reviewing.length} />
-              <SummaryRow href={libHref("hidden")} icon={<IconAlert size={18} />} label="Held back" value={mine.length - ready.length - reviewing.length} />
+              <SummaryRow href={`/parent/library?kid=${kidId}&tab=sources`} icon={<IconChannels size={18} />} label="Family sources" value={approvedChannels.size} />
+              <SummaryRow href={`/parent/library?kid=${kidId}&status=plays`} icon={<IconPlayCircle size={18} />} label={`Ready for ${kid.name}`} value={ready.length} />
+              <SummaryRow href={`/parent/library?kid=${kidId}&status=reviewing`} icon={<IconClock size={18} />} label="Awaiting review" value={reviewing.length} />
+              <SummaryRow href={`/parent/library?kid=${kidId}&status=held`} icon={<IconAlert size={18} />} label="Held back by settings" value={mine.length - ready.length - reviewing.length} />
             </ul>
           </Card>
 
-          <AddPanel approvedChannels={approvedChannels} lib={lib} packAdded={typeof sp.pack === "string" ? sp.pack : undefined} />
+          <AddPanel approvedChannels={approvedChannels} lib={lib} packAdded={typeof sp.pack === "string" ? sp.pack : undefined} next="/parent" />
 
           {channels.some((c) => !approvedChannels.has(c.id)) && (
             <Card as="section" className="p-5">
@@ -446,35 +444,5 @@ function VideoTile({ v, st, why }: { v: VideoWithCard; st: PlayStatus; why: stri
         </div>
       </Link>
     </li>
-  );
-}
-
-function AddPanel({ approvedChannels, lib, packAdded }: { approvedChannels: Set<string>; lib: VideoWithCard[]; packAdded?: string }) {
-  return (
-    <Card as="section" className="p-5">
-      <SectionHeader icon={<IconPlus />} title="Add a channel" sub="Search YouTube and add from the results. Brightframe reviews the channel's videos before any can play." />
-      <SearchAdd approvedChannels={[...approvedChannels]} approvedVideos={lib.filter((v) => v.inLibrary).map((v) => v.id)} />
-      <details className="mt-4 text-sm">
-        <summary className="cursor-pointer font-bold text-forest">Paste a link instead</summary>
-        <AddForm />
-      </details>
-      <details className="mt-3 text-sm" open={approvedChannels.size === 0}>
-        <summary className="cursor-pointer font-bold text-forest">Starter packs</summary>
-        <div className="mt-2 space-y-2">
-          {PACKS.map((p) => (
-            <form key={p.id} action={approvePack} className="flex items-center gap-3 rounded-xl border border-sand p-3">
-              <input type="hidden" name="pack" value={p.id} />
-              <input type="hidden" name="next" value="/parent" />
-              <span className="text-2xl" aria-hidden>{p.emoji}</span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-bold text-forest">{p.title} <span className="text-xs font-semibold text-muted">ages {p.ages}</span></span>
-                <span className="block text-xs text-muted">{p.blurb}</span>
-              </span>
-              <Button type="submit" variant={packAdded === p.id ? "secondary" : "primary"} size="sm">{packAdded === p.id ? "Added" : "Add"}</Button>
-            </form>
-          ))}
-        </div>
-      </details>
-    </Card>
   );
 }

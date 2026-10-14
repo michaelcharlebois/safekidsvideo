@@ -97,13 +97,17 @@ const settled = async (page) => { await page.waitForSelector('[aria-busy="true"]
   const f2 = await kid.evaluate(() => document.activeElement?.closest("header") ? "header" : document.activeElement?.tagName);
   check("remote: down reaches a video tile, up returns to the top menu", f1 === "tile" && f2 === "header", `${f1} / ${f2}`);
 
-  // 6. Review queue: "Keep hidden" for Maya is a standing decision
+  // 6. An automatically held video is NOT a Review task; it's in Library, where "Keep hidden" is a standing choice
   await parent.goto(`${BASE}/parent/review?kid=${MAYA}`); await settled(parent);
-  check("review queue shows the filtered video for Maya", (await parent.innerText("body")).includes("Wheels on the Bus"));
-  await parent.screenshot({ path: `${OUT}/05-queue.png`, fullPage: true });
-  await parent.click('article:has-text("The Wheels on the Bus") button:has-text("Keep hidden")');
-  // Wait for the server action to finish (the item leaves the inbox) before navigating away.
-  await parent.waitForSelector('article:has-text("The Wheels on the Bus")', { state: "detached", timeout: 15000 });
+  check("Review doesn't list a video Maya's filters hold back", !(await parent.innerText("main")).includes("Wheels on the Bus"));
+  await parent.goto(`${BASE}/parent/library?kid=${MAYA}&status=held`); await settled(parent);
+  const row = parent.locator('li[id="v-e_04ZrNroTo"]');
+  check("Library → Held back shows it for Maya, with the reason", (await row.innerText()).includes("Held back") && /violence/i.test(await row.innerText()));
+  await parent.screenshot({ path: `${OUT}/05-library-held.png`, fullPage: true });
+  await row.locator("summary", { hasText: "Other choices" }).click();
+  await row.locator('button:has-text("Keep hidden")').click();
+  await parent.waitForURL(/decided=hide/, { timeout: 15000 }); await settled(parent);
+  check("Library confirms Keep hidden as a standing choice", (await parent.innerText("main")).includes("stays hidden even if Maya's settings change"));
   // relax Maya's filters: unblock violence
   await parent.goto(`${BASE}/parent/settings?kid=${MAYA}`); await settled(parent);
   const box = parent.locator('input[name="block:violence"]');

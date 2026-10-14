@@ -8,14 +8,14 @@ import { IconAccount, IconHome, IconKids, IconPlus, IconReview, IconTv } from "@
 
 type Tab = { href: string; label: string; Icon: ComponentType<{ size?: number }>; match: (p: string) => boolean };
 const TABS: Tab[] = [
-  { href: "/parent", label: "Home", Icon: IconHome, match: (p) => p === "/parent" || p.startsWith("/parent/video") || p.startsWith("/parent/channel") },
+  { href: "/parent", label: "Home", Icon: IconHome, match: (p) => p === "/parent" || p.startsWith("/parent/video") || p.startsWith("/parent/channel") || p.startsWith("/parent/library") }, // Library gets its own tab after the navigation review
   { href: "/parent/review", label: "Review", Icon: IconReview, match: (p) => p.startsWith("/parent/review") },
   { href: "/parent/kids", label: "Kids", Icon: IconKids, match: (p) => p.startsWith("/parent/kids") || p.startsWith("/parent/settings") || p.startsWith("/parent/checkin") || p.startsWith("/parent/insights") || p.startsWith("/parent/stats") },
   { href: "/parent/account", label: "Account", Icon: IconAccount, match: (p) => p.startsWith("/parent/account") || p.startsWith("/parent/devices") || p.startsWith("/parent/billing") || p.startsWith("/parent/reviewer") },
 ];
 
 /** Pages that are "about one child" (take ?kid=); switching child keeps you on them. Elsewhere it goes Home. */
-const PER_CHILD = ["/parent", "/parent/review", "/parent/settings", "/parent/stats", "/parent/insights", "/parent/checkin"];
+const PER_CHILD = ["/parent", "/parent/library", "/parent/review", "/parent/settings", "/parent/stats", "/parent/insights", "/parent/checkin"];
 
 export type NavKid = { id: string; name: string; avatar: string; pending: number };
 
