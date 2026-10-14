@@ -67,7 +67,8 @@ The local walkthrough (31 checks) and the real-Postgres tests can't cover the it
 - Revoke a device mid-session.
 
 **Watch sessions (0020) and per-child requests (0021): not applied. Both go to production before the build that needs them, and only after release approval.**
-- Apply 0020, play a video to the end, skip one, leave one with Back: one session each, with the right outcome, in `watch_events`.
+- Apply 0020, play a video to the end, skip one, leave one with Back, and close the app mid-video: one session each, with the right outcome, in `watch_events`.
+- Pause for a minute and seek ahead before leaving: `watched_sec` is the time actually played, `ended_at_sec` the playhead.
 - Run `scripts/staging/watch-events-audit.sql` before and after to size the historical double counting.
 - Daily limit: with a 30-minute limit, a 20-minute show finished once leaves about 10 minutes.
 
@@ -77,7 +78,10 @@ The local walkthrough (31 checks) and the real-Postgres tests can't cover the it
 
 **Samsung TV (Tizen wrapper), real remote**
 - The new TV Home: focus starts on the first video; arrows, OK and Return behave as in `scripts/e2e/kid-home.sh`; text is readable at 3 m; safe-area margins clear the bezel.
-- Who's watching and the PIN pad.
+- Who's watching and the PIN pad: tiles, arrows to OK, number keys, a wrong PIN, and the lockout after repeated wrong PINs (needs a real device row).
+- Search: the on-screen keyboard by remote; results; Ask; focus returning to the picked result after the player.
+- Player: the controls appear on the first key; OK pauses while hidden; ◀ ▶ between controls; Return leaves (to Search when you came from Search); media keys (play/pause, FF/RW) if the Tizen shell registers them.
+- Closing the Tizen app mid-video records "left" (the beacon).
 - Home rows: left/right within a row, up/down between rows.
 - Back and Return.
 - Player: auto-advance and skip limits; an allow or restriction taking effect at the next advance.

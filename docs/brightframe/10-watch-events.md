@@ -38,11 +38,16 @@
 
 **Seconds per session:**
 
+**Playback time vs position.** Each end row carries both `ended_at_sec` (where the playhead was) and `watched_sec` (seconds actually played in the session: pauses, buffering and seeks don't count; watching a part again does). The player measures it with `src/lib/playback.ts`. Jumping to the end therefore doesn't count as watching the whole video, and rewinding counts the extra viewing.
+
 | Outcome | Seconds counted |
 |---|---|
-| Finished | The video's length |
-| Skipped or left | The reported position, capped at the length |
+| Any end row with `watched_sec` (this branch's player) | `watched_sec`, capped at 6 hours |
+| Finished, older rows | The video's length |
+| Skipped or left, older rows | The reported position, capped at the length |
 | Unknown | 60% of the length, at least 2 minutes, never more than the length |
+
+Skips and the player's own screen-time countdown use the same playing time. Closing the app sends the end row by `navigator.sendBeacon` to `/api/watch/end`, so "left" is recorded more often than before; a session that still ends with no row is "unknown".
 
 A video with no known length counts as 5 minutes. Minutes are rounded once per total, not per play.
 
@@ -74,7 +79,7 @@ Run it on staging before and after 0020.
 
 **Status: not applied anywhere.** It must stay unapplied on production until the release is approved.
 
-**What it does:** adds nullable `session_id`, two partial unique indexes (one start and one end per session) and a per-child time index. It's additive. The rollback is `supabase/rollbacks/0020_watch_sessions.down.sql`.
+**What it does:** adds nullable `session_id` and `watched_sec` (0 to 21600, checked), two partial unique indexes (one start and one end per session) and a per-child time index. It's additive. The rollback is `supabase/rollbacks/0020_watch_sessions.down.sql`.
 
 **Order matters:**
 1. **0020 must precede any build that writes watch sessions** (this branch's player). That build writes `session_id`. Against a database without the column, every new viewing record is rejected. The error is logged and the record dropped, so playback works but viewing time and daily limits under-count.
