@@ -6,8 +6,9 @@ import type { FamilySettings, VideoWithCard } from "@/lib/types";
 export type PlayStatus =
   | "plays"      // passes the AI review + this child's rules, and has a source for them
   | "allowed"    // a parent explicitly allowed it for this child
-  | "reviewing"  // no usable AI review yet (none, low confidence, or incomplete); not necessarily running now
-  | "held"       // reviewed, but this child's rules hold it back — waiting on a parent's call
+  | "reviewing"  // no AI review stored yet (none, or only a sample). Says nothing about a job running now.
+  | "uncertain"  // a real AI review exists but can't be relied on (low confidence, or malformed)
+  | "held"       // reviewed, and this child's rules hold it back (filters, age, format, other parents' reports)
   | "hidden"     // a parent chose "Keep hidden" for this child
   | "blocked"    // a parent chose "Never" (for this child or the whole family)
   | "outside";   // reviewed and fine, but not in this child's library (Locked / Ask First)
@@ -16,6 +17,7 @@ export const STATUS_LABEL: Record<PlayStatus, string> = {
   plays: "Plays",
   allowed: "Allowed by you",
   reviewing: "Awaiting review",
+  uncertain: "Couldn't be sure",
   held: "Held back",
   hidden: "Kept hidden",
   blocked: "Blocked",
@@ -29,7 +31,7 @@ export function playStatus(v: VideoWithCard, s: FamilySettings): { status: PlayS
   if (first === REASON.blocked) return { status: "blocked", reasons: d.reasons };
   if (first === REASON.keptHidden) return { status: "hidden", reasons: d.reasons };
   if (first === REASON.unreviewed || first === REASON.lowConfidence || first === REASON.invalidReview) {
-    return { status: hasRealReview(v.card) && first !== REASON.unreviewed ? "held" : "reviewing", reasons: d.reasons };
+    return { status: hasRealReview(v.card) && first !== REASON.unreviewed ? "uncertain" : "reviewing", reasons: d.reasons };
   }
   if (first === REASON.notInLibrary) return { status: "outside", reasons: d.reasons };
   return { status: "held", reasons: d.reasons };

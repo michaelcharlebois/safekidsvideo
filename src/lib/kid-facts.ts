@@ -1,10 +1,10 @@
 import "server-only";
 // Everything the Kids pages show about each child, loaded once: the gate's view of their library (ready
-// count), their pending decisions (same rules as the Review badge), today's minutes, and their screens.
+// count), the requests they've made (from the same inbox the Review badge counts), today's minutes, and their screens.
 import { db } from "@/lib/db";
 import { getLibraries } from "@/lib/queries";
 import { readyFor } from "@/lib/kid-home";
-import { forChild, pendingDecisions } from "@/lib/inbox";
+import { pendingDecisions, requestsFrom } from "@/lib/inbox";
 import { listPendingRequests } from "@/lib/activity";
 import { minutesUsedToday } from "@/lib/screentime";
 import { localDay } from "@/lib/checkin";
@@ -17,7 +17,7 @@ export type Device = Awaited<ReturnType<typeof listDevices>>[number];
 export async function loadChildFacts(familyId: string): Promise<{ facts: ChildFacts[]; devices: Device[] | null; timezone?: string }> {
   const [family, children, requests, legacy] = await Promise.all([db.getFamily(familyId), getLibraries(familyId), listPendingRequests(familyId), db.listLegacyGrants(familyId)]);
   const devices = supabaseEnabled ? (await listDevices(familyId)).filter((d) => !d.revoked_at) : null;
-  const items = pendingDecisions({ requests, children, legacy });
+  const items = pendingDecisions({ requests, childIds: children.map((c) => c.profile.id), legacy });
   const today = localDay(family.timezone);
   const multi = children.length > 1;
   const facts = await Promise.all(children.map(async ({ profile, settings, lib }) => {
@@ -25,7 +25,7 @@ export async function loadChildFacts(familyId: string): Promise<{ facts: ChildFa
     return {
       profile, settings,
       ready: readyFor(lib, settings).length,
-      pending: forChild(items, profile.id).length,
+      pending: requestsFrom(items, profile.id).length, // requests this child made; not old records
       usedToday: await minutesUsedToday(familyId, profile.id, family.timezone),
       limitToday: settings.dailyMinutes ? settings.dailyMinutes + bonus : undefined,
       // Screens this child can watch on: their own devices, plus shared ones (every device in a one-child family).

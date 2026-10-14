@@ -29,7 +29,7 @@ export const maxDuration = 300; // background batch reviews run within this budg
 
 /** Library filters (?view=). Names kept for existing links; labels are the new status words. */
 type View = "visible" | "hidden" | "unreviewed";
-const VIEW_OF: Record<PlayStatus, View> = { plays: "visible", allowed: "visible", reviewing: "unreviewed", held: "hidden", hidden: "hidden", blocked: "hidden", outside: "hidden" };
+const VIEW_OF: Record<PlayStatus, View> = { plays: "visible", allowed: "visible", reviewing: "unreviewed", uncertain: "hidden", held: "hidden", hidden: "hidden", blocked: "hidden", outside: "hidden" };
 const VIEW_LABEL: Record<View, string> = { visible: "Ready", hidden: "Held back", unreviewed: "Awaiting review" };
 const thumb = (v: { id: string; thumbnailUrl?: string }) => v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`;
 const fmtTime = (hhmm?: string) => {
@@ -79,12 +79,11 @@ export default async function ParentPage(props: PageProps<"/parent">) {
   const viewOf = (v: VideoWithCard) => VIEW_OF[stat.get(v.id)?.status ?? playStatus(v, settings).status];
   const ready = home.playable;
   const reviewing = mine.filter((v) => viewOf(v) === "unreviewed");
-  // This child's pending decisions, deduplicated exactly like the Review inbox (lib/inbox.ts).
-  const decisions = kid ? forChild(pendingDecisions({ requests: allRequests, children: [{ profile: kid, settings, lib }], legacy: [] }), kid.id) : [];
-  const undecided = decisions.flatMap((d) => (d.kind === "held" && byId.get(d.videoId) ? [byId.get(d.videoId)!] : []));
-  // This child's asks, plus old asks that never recorded a child (Review lets you pick one).
+  // This child's requests from the Review inbox (lib/inbox.ts), plus older requests that never recorded a
+  // child (Review lets you pick one). Videos held back automatically are not decisions; they're in Library.
+  const decisions = kid ? forChild(pendingDecisions({ requests: allRequests, childIds: [kid.id], legacy: [] }), kid.id) : [];
   const requests = allRequests.filter((r) => decisions.some((d) => d.kind === "request" && d.requestId === r.id) && byId.has(r.videoId));
-  const needsYou = requests.length + undecided.length;
+  const needsYou = requests.length;
   const backlog = reviewing.filter((v) => (v.durationSeconds ?? 0) <= 20 * 60).length;
   const limit = settings.dailyMinutes ? settings.dailyMinutes + (settings.bonusDay === localDay(family.timezone) ? settings.bonusMinutes ?? 0 : 0) : undefined;
 
@@ -171,7 +170,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
       <section aria-label={`${kid.name} at a glance`} className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile href={libHref("visible")} icon={<IconPlayCircle />} tone="ok" value={ready.length} label="Ready to watch" sub="Reviewed and within the rules" />
         <StatTile href={libHref("unreviewed")} icon={<IconClock />} tone="pending" value={reviewing.length} label="Awaiting review" sub="Won't play until an AI review passes" />
-        <StatTile href={`/parent/review?kid=${kidId}`} icon={<IconAlert />} tone={needsYou ? "warn" : "quiet"} value={needsYou} label="Needs your decision" sub={requests.length ? `${requests.length} asked by ${kid.name}` : "Held back by filters"} />
+        <StatTile href={`/parent/review?kid=${kidId}`} icon={<IconAlert />} tone={needsYou ? "warn" : "quiet"} value={needsYou} label="Needs your decision" sub={requests.length ? `Asked for by ${kid.name}` : `Nothing ${kid.name} asked for`} />
         <StatTile href={`/parent/stats?kid=${kidId}`} icon={<IconTv />} tone="forest" value={`${usedToday}`} unit="min" label={limit ? `of ${limit} min today` : "watched today"} meter={limit ? { value: usedToday, max: limit } : undefined} />
       </section>
 
@@ -181,7 +180,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
           {needsYou > 0 ? (
             <Card as="section" raised className="overflow-hidden">
               <div className="flex items-center justify-between gap-3 border-b border-sand px-5 py-4">
-                <SectionHeader icon={<IconAlert />} title="Needs your decision" sub={requests.length ? `${kid.name} asked to watch ${requests.length === 1 ? "this video" : `${requests.length} videos`}.` : `Reviewed, but ${kid.name}'s filters hold these back.`} />
+                <SectionHeader icon={<IconAlert />} title="Needs your decision" sub={`${kid.name} asked to watch ${requests.length === 1 ? "this video" : `${requests.length} videos`}.`} />
               </div>
               {requests.slice(0, 2).map((r) => {
                 const v = byId.get(r.videoId)!;
@@ -218,16 +217,13 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                   </article>
                 );
               })}
-              {(requests.length > 2 || undecided.length > 0) && (
+              {requests.length > 2 && (
                 <Link href={`/parent/review?kid=${kidId}`} className="flex items-center gap-4 px-5 py-4 hover:bg-sand-soft">
-                  <span className="hidden -space-x-5 sm:flex">
-                    {undecided.slice(0, 3).map((v) => <Image key={v.id} src={thumb(v)} alt="" width={96} height={54} unoptimized className="aspect-video w-16 rounded-lg object-cover ring-2 ring-surface" />)}
-                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="block font-bold text-forest">
-                      {[requests.length > 2 ? `${requests.length - 2} more request${requests.length - 2 === 1 ? "" : "s"}` : null, undecided.length ? `${undecided.length} reviewed video${undecided.length === 1 ? "" : "s"} held back by ${kid.name}'s filters` : null].filter(Boolean).join(" and ")}
+                      {`${requests.length - 2} more request${requests.length - 2 === 1 ? "" : "s"}`}
                     </span>
-                    <span className="block text-sm text-muted">Allow, keep hidden, or never, one at a time.</span>
+                    <span className="block text-sm text-muted">Allow or say not now, in Review.</span>
                   </span>
                   <IconChevron className="text-muted" />
                 </Link>

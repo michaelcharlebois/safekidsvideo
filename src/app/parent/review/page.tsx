@@ -5,31 +5,30 @@ import type { ReactNode } from "react";
 import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
-import { blockedReasons, getLibraries } from "@/lib/queries";
+import { blockedReasons, getLibrariesFor } from "@/lib/queries";
 import { REASON, reviewEligibility } from "@/lib/gate";
 import { listPendingRequests } from "@/lib/activity";
-import { forChild, pendingDecisions, type InboxItem } from "@/lib/inbox";
+import { forChild, inboxOrder, isChildRequest, pendingDecisions, type InboxItem } from "@/lib/inbox";
 import type { FamilySettings, Profile, VideoWithCard } from "@/lib/types";
 import { Button, buttonClass, Card, EmptyState, Notice } from "@/components/ui";
 import { IconAlert, IconCheck, IconClock, IconHand, IconReview } from "@/components/icons";
 import { decideVideo, resolveLegacyAction, resolveWatchRequest } from "@/app/actions";
 import { UnreviewedConfirm } from "@/app/parent/unreviewed-confirm";
 import { Assessment, eligibilityNote } from "@/app/parent/assessment";
+import { detailHref } from "@/lib/back";
 import { holdExplanation, type Evidence } from "@/lib/explain";
 
 export const dynamic = "force-dynamic";
 
 const PAGE = 25;
 const thumb = (v: { id: string; thumbnailUrl?: string }) => v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`;
-const ORDER = { request: 0, held: 1, legacy: 2 } as const;
-const when = (i: InboxItem) => (i.kind === "held" ? i.publishedAt ?? "" : i.createdAt ?? "");
 
 /**
- * Review: the parent's inbox. Every pending decision across all children (lib/inbox.ts — the same list the
- * Review badge counts), filterable by child. Each item says which child it affects and where it came from:
- * the child asked, the AI review held it back, or an approval record from before per-child permissions.
- * Actions are the existing ones with their exact meaning; unreviewed allows still go through the
- * server-enforced confirmation.
+ * Review: the parent's inbox of permission decisions that are actually waiting (lib/inbox.ts — the same list
+ * the Review badge counts): requests children made, older requests that didn't record a child, and approval
+ * records from before per-child permissions. Videos held back automatically are not here; they're in
+ * Library. Actions keep their exact meaning; unreviewed allows still go through the server-enforced
+ * confirmation.
  */
 export default async function ReviewPage(props: PageProps<"/parent/review">) {
   const sp = await props.searchParams;
@@ -37,13 +36,15 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
   if (v.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent/review" : "/unlock?next=/parent/review");
   const fid = v.familyId;
   const str = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
-  const [children, requests, legacy] = await Promise.all([getLibraries(fid), listPendingRequests(fid), db.listLegacyGrants(fid)]);
-  const profiles = children.map((c) => c.profile);
+  const [profiles, requests, legacy] = await Promise.all([db.listProfiles(fid), listPendingRequests(fid), db.listLegacyGrants(fid)]);
   const kidFilter = profiles.find((p) => p.id === str("kid"));
-  // Requests first (newest first), then held-back videos (newest upload first), then old records.
-  const all = pendingDecisions({ requests, children, legacy }).sort((a, b) => ORDER[a.kind] - ORDER[b.kind] || when(b).localeCompare(when(a)));
+  const all = pendingDecisions({ requests, childIds: profiles.map((p) => p.id), legacy }).sort(inboxOrder);
   const items = kidFilter ? forChild(all, kidFilter.id) : all;
   const shown = str("all") === "1" ? items : items.slice(0, PAGE);
+  // Only the videos on this page are joined with their reviews and grants (no catalogue scan).
+  const children = await getLibrariesFor(fid, shown.map((i) => i.videoId));
+  const asked = all.filter(isChildRequest).length;
+  const older = all.length - asked;
   const here = `/parent/review${kidFilter ? `?kid=${kidFilter.id}` : ""}`;
   const error = str("error") || null;
 
@@ -72,7 +73,8 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
       <header>
         <h1 className="text-title sm:text-display">Review</h1>
         <p className="text-sm text-muted sm:text-base">
-          {all.length === 0 ? "Nothing is waiting on you." : `${all.length} decision${all.length === 1 ? "" : "s"} waiting across your family.`}
+          {all.length === 0 ? "Nothing is waiting on you."
+            : [asked ? `${asked} request${asked === 1 ? "" : "s"} from your children` : null, older ? `${older} older record${older === 1 ? "" : "s"} to sort out` : null].filter(Boolean).join(", ") + "."}
         </p>
       </header>
 
@@ -91,9 +93,9 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
             <summary className="cursor-pointer px-4 py-3 font-bold text-forest">What each choice does</summary>
             <dl className="grid gap-x-6 gap-y-2 border-t border-sand px-4 py-3 sm:grid-cols-2">
               <div><dt className="font-bold text-forest">Allow for a child</dt><dd className="text-muted">Plays for that child only, even if the AI review or their settings would hold it back.</dd></div>
-              <div><dt className="font-bold text-forest">Keep hidden</dt><dd className="text-muted">Stays off that child&apos;s screen, even if the review or settings change later. They can still ask for it.</dd></div>
-              <div><dt className="font-bold text-forest">Never for a child</dt><dd className="text-muted">Blocked for that child, and they can&apos;t ask for it.</dd></div>
               <div><dt className="font-bold text-forest">Not now</dt><dd className="text-muted">Turns down a request. It doesn&apos;t change what the child can watch.</dd></div>
+              <div><dt className="font-bold text-forest">Don&apos;t allow</dt><dd className="text-muted">Closes an old approval record without giving any child access.</dd></div>
+              <div><dt className="font-bold text-forest">Keep hidden or Never</dt><dd className="text-muted">Standing restrictions for one child. They&apos;re on each video&apos;s page and in <Link href="/parent/library" className="font-bold text-forest underline">Library</Link>.</dd></div>
             </dl>
           </details>
         )}
@@ -104,7 +106,7 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
           <Card>
             <EmptyState icon={<IconCheck />} title={kidFilter ? `Nothing waiting for ${kidFilter.name}` : "Nothing waiting on you"}
               action={<Link href="/parent" className={buttonClass("secondary")}>Back to Home</Link>}>
-              New videos from your channels are reviewed overnight. Anything a child asks for, and anything a child&apos;s settings hold back, shows up here.
+              When a child asks for a video, it shows up here. Videos a child&apos;s settings hold back automatically aren&apos;t tasks: you can browse and change them in <Link href={`/parent/library${kidFilter ? `?kid=${kidFilter.id}` : ""}`} className="font-bold text-forest underline">Library</Link>.
             </EmptyState>
           </Card>
         ) : (
@@ -140,8 +142,8 @@ const Count = ({ n }: { n: number }) => <span className="opacity-70">{n}</span>;
 
 /** Where a decision came from. */
 function Origin({ item }: { item: InboxItem }) {
-  if (item.kind === "request") return <span className="inline-flex items-center gap-1 rounded-full bg-apricot-soft px-2.5 py-1 text-xs font-bold text-apricot-ink"><IconHand size={14} />Child&apos;s request</span>;
-  if (item.kind === "held") return <span className="inline-flex items-center gap-1 rounded-full bg-warn-soft px-2.5 py-1 text-xs font-bold text-warn"><IconAlert size={14} />Held back by settings</span>;
+  if (isChildRequest(item)) return <span className="inline-flex items-center gap-1 rounded-full bg-apricot-soft px-2.5 py-1 text-xs font-bold text-apricot-ink"><IconHand size={14} />Child&apos;s request</span>;
+  if (item.kind === "request") return <span className="inline-flex items-center gap-1 rounded-full bg-sand-soft px-2.5 py-1 text-xs font-bold text-muted"><IconClock size={14} />Older request</span>;
   return <span className="inline-flex items-center gap-1 rounded-full bg-sand-soft px-2.5 py-1 text-xs font-bold text-muted"><IconClock size={14} />Old approval record</span>;
 }
 
@@ -191,12 +193,11 @@ function InboxCard({ item, v, child, settings, profiles, next }: {
     item.kind === "request"
       ? [child ? `${child.name} asked to watch this.` : "A child asked to watch this, but the request didn't record which one.",
          hold?.summary ?? (outside && !unreviewed ? `It isn't in ${child?.name}'s library, so it needs your OK.` : "")].filter(Boolean).join(" ")
-    : item.kind === "held" ? (hold?.summary ?? "")
     : item.legacyKind === "override" ? "Before permissions were per child, a parent approved this video. It's paused until you choose a child."
     : "Before permissions were per child, an automatic Open-mode check cleared this. No parent approved it. It's paused until you choose.";
 
   return (
-    <Card as="article" className="overflow-hidden" raised={item.kind === "request"}>
+    <Card as="article" className="overflow-hidden" raised={isChildRequest(item)}>
       <div className="grid lg:grid-cols-[minmax(0,1fr)_24rem]">
         {/* ---- the decision ---- */}
         <div className="space-y-3 p-4 sm:p-5">
@@ -206,13 +207,13 @@ function InboxCard({ item, v, child, settings, profiles, next }: {
           </div>
           <div className="flex gap-3 sm:gap-4">
             {v && (
-              <Link href={`/parent/video/${v.id}`} className="relative block w-28 shrink-0 overflow-hidden rounded-xl bg-sand-soft sm:w-44" aria-label={`Open ${v.title}`}>
+              <Link href={detailHref(`/parent/video/${v.id}`, "review", child?.id)} className="relative block w-28 shrink-0 overflow-hidden rounded-xl bg-sand-soft sm:w-44" aria-label={`Open ${v.title}`}>
                 <Image src={thumb(v)} alt="" width={320} height={180} unoptimized className="aspect-video w-full object-cover" />
                 {v.durationSeconds ? <span className="absolute bottom-1.5 right-1.5 rounded bg-forest-900/85 px-1 text-[11px] font-bold text-ivory">{Math.floor(v.durationSeconds / 60)}:{String(v.durationSeconds % 60).padStart(2, "0")}</span> : null}
               </Link>
             )}
             <div className="min-w-0">
-              <Link href={`/parent/video/${item.videoId}`} className="block font-bold leading-snug text-forest hover:underline line-clamp-2 sm:text-lg">{v?.title ?? "Video details unavailable"}</Link>
+              <Link href={detailHref(`/parent/video/${item.videoId}`, "review", child?.id)} className="block font-bold leading-snug text-forest hover:underline line-clamp-2 sm:text-lg">{v?.title ?? "Video details unavailable"}</Link>
               <p className="text-sm text-muted">{v?.channel?.title ?? v?.channelId ?? item.videoId}</p>
             </div>
           </div>
@@ -246,14 +247,6 @@ function InboxCard({ item, v, child, settings, profiles, next }: {
                 <Button type="submit" name="decision" value="deny" variant="secondary">Not now</Button>
               </form>
             )}
-            {item.kind === "held" && child && (
-              <form action={decideVideo} className="flex flex-wrap items-center gap-2">
-                <input type="hidden" name="videoId" value={item.videoId} /><input type="hidden" name="profileId" value={child.id} /><input type="hidden" name="next" value={next} />
-                <Button type="submit" name="decision" value="allow">Allow for {child.name}</Button>
-                <Button type="submit" name="decision" value="hide" variant="secondary">Keep hidden</Button>
-                <Button type="submit" name="decision" value="never" variant="danger">Never for {child.name}</Button>
-              </form>
-            )}
             {item.kind === "legacy" && (
               <>
                 {(item.candidateIds.length ? profiles.filter((p) => item.candidateIds.includes(p.id)) : profiles).map((p) => (
@@ -280,7 +273,7 @@ function InboxCard({ item, v, child, settings, profiles, next }: {
         <aside className="hidden border-l border-sand bg-sand-soft/50 p-5 lg:block" aria-label="AI review">
           <p className="mb-3 flex items-center gap-1.5 text-sm font-bold text-forest"><IconReview size={16} />AI review</p>
           {v ? <Assessment v={v} compact /> : <p className="text-sm text-muted">No details for this video.</p>}
-          <Link href={`/parent/video/${item.videoId}`} className="mt-3 inline-block text-sm font-bold text-forest underline decoration-sand underline-offset-4">Full review and who can watch</Link>
+          <Link href={detailHref(`/parent/video/${item.videoId}`, "review", child?.id)} className="mt-3 inline-block text-sm font-bold text-forest underline decoration-sand underline-offset-4">Full review and who can watch</Link>
         </aside>
       </div>
     </Card>

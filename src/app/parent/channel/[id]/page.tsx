@@ -6,6 +6,7 @@ import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { channelReport, channelSlug } from "@/lib/channel-report";
 import { blockedReasons, canPlay, getLibrary } from "@/lib/queries";
+import { backLink } from "@/lib/back";
 import { ChannelReportView } from "@/components/channel-report-view";
 import { Button, Card, Pill, TopBar } from "@/components/ui";
 import { reviewChannelNow, toggleWhitelist } from "@/app/actions";
@@ -21,6 +22,7 @@ export default async function ChannelPage(props: PageProps<"/parent/channel/[id]
   const v = await resolveViewer();
   if (v.role !== "parent") redirect(supabaseEnabled ? `/login?next=/parent/channel/${id}` : `/unlock?next=/parent/channel/${id}`);
   const fid = v.familyId;
+  const back = backLink(sp);
   const profiles = await db.listProfiles(fid);
   const kidId = (typeof sp.kid === "string" && profiles.some((p) => p.id === sp.kid) ? sp.kid : undefined) ?? v.profileId ?? profiles[0]?.id;
   const [r, lib, settings, wl] = await Promise.all([channelReport(id), getLibrary(fid, kidId), db.getSettings(fid, kidId), db.listWhitelist(fid)]);
@@ -36,7 +38,7 @@ export default async function ChannelPage(props: PageProps<"/parent/channel/[id]
   const backlog = rows.filter((x) => (!x.v.card || x.v.card.reviewer.model === "sample") && (x.v.durationSeconds ?? 0) <= 20 * 60).length;
   return (
     <>
-      <TopBar title="Channel" right={<Link href="/parent" className="text-sm font-bold text-muted hover:text-ink">← Dashboard</Link>} />
+      <TopBar title="Channel" right={<Link href={back.href} className="text-sm font-bold text-muted hover:text-ink">← {back.label}</Link>} />
       <main className="mx-auto w-full max-w-3xl px-4 py-6 space-y-4">
         <div className="flex items-start gap-3">
           {r.channel.thumbnailUrl && <Image src={r.channel.thumbnailUrl} alt="" width={64} height={64} unoptimized className="h-16 w-16 rounded-full object-cover bg-line" />}

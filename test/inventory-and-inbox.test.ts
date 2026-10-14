@@ -1,11 +1,11 @@
 // Shared selectors: the parent dashboard and the kid home screen select the same child's content, and the
-// Review badge counts every child's pending decisions with explicit dedup rules.
+// Review inbox holds only requests and old records (automatic holds are Library statuses).
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { buildLibrary, canPlay } from "@/lib/gate";
 import { inventoryFor, kidHome, readyFor } from "@/lib/kid-home";
-import { forChild, pendingDecisions } from "@/lib/inbox";
+import { forChild, inboxOrder, isChildRequest, pendingDecisions, requestsFrom } from "@/lib/inbox";
 import { playStatus } from "@/lib/status";
 import type { ContentCard, LegacyGrant, Video, WatchRequest, WhitelistEntry } from "@/lib/types";
 import { CH_OTHER, CH_SONGS, FAM, LEO, MAYA, card, grant, leo, maya, video } from "./fixtures";
@@ -79,56 +79,73 @@ describe("inventory vs. playback (shared by kid home and parent dashboard)", () 
   });
 });
 
-describe("Review badge: pending decisions across all children", () => {
-  // Maya (6, Open) and Leo (4, Locked) both block violence; Leo also has a lower age.
-  const videos = [video("v1", CH_SONGS), video("v2", CH_SONGS), video("v3", CH_SONGS), video("v4", CH_OTHER), video("v5", CH_SONGS)];
-  const cards = [card("v1", { tags: { violence: 3 } }), card("v2", { tags: { violence: 2 } }), card("v3", { ageMin: 5 }), card("v4"), card("v5")];
-  const wl = [grant("channel", CH_SONGS), grant("override", "v2", MAYA)]; // Maya already allowed v2
-  const req = (id: string, videoId: string, profileId?: string): WatchRequest => ({ id, familyId: FAM, videoId, profileId, status: "pending", createdAt: "2026-10-13T00:00:00Z" });
-  const children = [
-    { profile: { id: MAYA }, settings: maya(), lib: lib(MAYA, videos, cards, wl) },
-    { profile: { id: LEO }, settings: leo(), lib: lib(LEO, videos, cards, wl) },
-  ];
-  const legacy: LegacyGrant[] = [{ id: "lg1", familyId: FAM, kind: "auto", targetId: "v5", createdAt: "", candidateProfileIds: [MAYA, LEO] }];
-  const requests = [req("r1", "v1", MAYA), req("r2", "v4", LEO), req("r3", "v5")];
-  const items = pendingDecisions({ requests, children, legacy });
+describe("Review: requests and old records only (automatic holds live in Library)", () => {
+  // Maya (6, Open) and Leo (4, Locked) both block violence. v1–v3 and v6 are held back automatically for
+  // someone (violence, age, an uncertain review, a video added one by one); none of that is a Review task.
+  const videos = [video("v1", CH_SONGS), video("v2", CH_SONGS), video("v3", CH_SONGS), video("v4", CH_OTHER), video("v5", CH_SONGS), video("v6", CH_OTHER)];
+  const cards = [card("v1", { tags: { violence: 3 } }), card("v2", { tags: { violence: 2 } }), card("v3", { ageMin: 5 }), card("v4"), card("v5"), card("v6", { confidence: 0.4 })];
+  const wl = [grant("channel", CH_SONGS), grant("video", "v6"), grant("override", "v2", MAYA)];
+  const req = (id: string, videoId: string, profileId?: string, createdAt = "2026-10-13T00:00:00Z"): WatchRequest => ({ id, familyId: FAM, videoId, profileId, status: "pending", createdAt });
+  const legacy: LegacyGrant[] = [{ id: "lg1", familyId: FAM, kind: "auto", targetId: "v5", createdAt: "2026-01-01T00:00:00Z", candidateProfileIds: [MAYA, LEO] }];
+  const requests = [req("r1", "v1", MAYA), req("r2", "v4", LEO, "2026-10-12T00:00:00Z"), req("r3", "v5")];
+  const childIds = [MAYA, LEO];
+  const items = pendingDecisions({ requests, childIds, legacy });
   const keys = items.map((i) => i.key).sort();
 
-  it("counts each child's decisions separately, with dedup", () => {
-    expect(keys).toEqual([
-      `h:${LEO}:v1`,      // Leo: v1 held by violence (Maya's v1 is covered by her request)
-      `h:${LEO}:v2`,      // Leo: v2 held (Maya's allow is hers only)
-      `h:${LEO}:v3`,      // Leo: v3 rated 5+, he's 4
-      "l:lg1",            // an old record waiting to be assigned
-      "r:r1",             // Maya asked for v1 (her held v1 is NOT counted again)
-      "r:r2",             // Leo asked for v4
-      "r:r3",             // a request that didn't record a child
-    ].sort());
-    expect(items).toHaveLength(7);
+  it("contains each pending request and each unresolved old record — nothing else", () => {
+    expect(keys).toEqual(["l:lg1", "r:r1", "r:r2", "r:r3"]);
   });
 
-  it("the total doesn't depend on which child is selected", () => {
-    const reversed = pendingDecisions({ requests, children: [...children].reverse(), legacy });
-    expect(reversed.map((i) => i.key).sort()).toEqual(keys);
+  it("automatically held videos create no Review item: channel holds, a directly added video, an uncertain review", () => {
+    const kids = [{ s: maya(), id: MAYA }, { s: leo(), id: LEO }];
+    // Sanity: these really are held back for someone right now.
+    const held = kids.flatMap(({ s, id }) => lib(id, videos, cards, wl).filter((v) => v.inLibrary && !canPlay(v, s)).map((v) => `${id}:${v.id}`));
+    expect(held).toEqual(expect.arrayContaining([`${LEO}:v1`, `${LEO}:v3`, `${MAYA}:v6`, `${LEO}:v6`]));
+    expect(pendingDecisions({ requests: [], childIds, legacy: [] })).toEqual([]);
+    expect(items.some((i) => ["v2", "v3", "v6"].includes(i.videoId))).toBe(false);
   });
 
-  it("filtering to one child: their requests + held items, plus unattributed requests and old records naming them", () => {
+  it("the library statuses say why, with uncertain reviews kept separate from filter holds", () => {
+    const l = lib(LEO, videos, cards, wl);
+    const st = (id: string) => playStatus(l.find((v) => v.id === id)!, leo()).status;
+    expect(st("v1")).toBe("held");     // violence, for Leo
+    expect(st("v3")).toBe("held");     // rated 5+, he's 4
+    expect(st("v6")).toBe("uncertain"); // a real review with low confidence
+    expect(playStatus(lib(LEO, [video("v7", CH_SONGS)], [], wl)[0], leo()).status).toBe("reviewing"); // no review at all
+  });
+
+  it("a child's own count is only the requests they made; unattributed and old records stay separate", () => {
+    expect(requestsFrom(items, MAYA).map((i) => i.key)).toEqual(["r:r1"]);
+    expect(requestsFrom(items, LEO).map((i) => i.key)).toEqual(["r:r2"]);
+    expect(items.filter(isChildRequest).map((i) => i.key).sort()).toEqual(["r:r1", "r:r2"]);
+  });
+
+  it("filtering Review to one child also shows historical items that may concern them, labelled as such", () => {
     expect(forChild(items, MAYA).map((i) => i.key).sort()).toEqual(["l:lg1", "r:r1", "r:r3"]);
-    expect(forChild(items, LEO).map((i) => i.key).sort()).toEqual([`h:${LEO}:v1`, `h:${LEO}:v2`, `h:${LEO}:v3`, "l:lg1", "r:r2", "r:r3"].sort());
+    expect(forChild(items, LEO).map((i) => i.key).sort()).toEqual(["l:lg1", "r:r2", "r:r3"]);
+  });
+
+  it("order: named children's requests newest first, then older unattributed requests, then old records", () => {
+    expect([...items].sort(inboxOrder).map((i) => i.key)).toEqual(["r:r1", "r:r2", "r:r3", "l:lg1"]);
   });
 
   it("resolved requests, resolved old records and other families' children don't count", () => {
     const more = pendingDecisions({
       requests: [...requests, { ...req("r9", "v3", MAYA), status: "approved" }, req("r10", "v3", "someone-else")],
-      children, legacy: [...legacy, { ...legacy[0], id: "lg2", resolvedAt: "2026-10-01" }],
+      childIds, legacy: [...legacy, { ...legacy[0], id: "lg2", resolvedAt: "2026-10-01" }],
     });
-    expect(more).toHaveLength(7);
+    expect(more).toHaveLength(4);
   });
 
-  it("the parent layout's badge uses this function (not one child's view)", () => {
-    const src = readFileSync(path.resolve(import.meta.dirname, "../src/app/parent/layout.tsx"), "utf8");
-    expect(src).toMatch(/pendingDecisions\(/);
-    expect(src).toMatch(/getLibraries\(/);
-    expect(src).not.toMatch(/needsDecision\(x, settings\)/);
+  it("the badge, Kids and Review count without reading any child's library (no catalogue scan)", () => {
+    const read = (f: string) => readFileSync(path.resolve(import.meta.dirname, "..", f), "utf8");
+    const layout = read("src/app/parent/layout.tsx");
+    expect(layout).toMatch(/pendingDecisions\(/);
+    expect(layout).not.toMatch(/getLibraries|getLibrary\(/);
+    expect(layout).toMatch(/requestsFrom\(/);
+    const review = read("src/app/parent/review/page.tsx");
+    expect(review).not.toMatch(/getLibraries\(/);
+    expect(review).toMatch(/getLibrariesFor\(/);
+    expect(read("src/lib/kid-facts.ts")).toMatch(/requestsFrom\(/);
   });
 });

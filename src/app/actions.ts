@@ -18,7 +18,10 @@ import { assignDevice, createPairingCode, DEVICE_COOKIE, claimDevicePinAttempt, 
 import { addVideoToLibrary, allowForChild, approveRequest, decideForChild, GrantError, NeedsUnreviewedConfirm, recordOpenClearance, removeFamilyBlock, resolveLegacy, splitFamilyBlock, unhideForFamily as unhideForFamilyGrant } from "@/lib/grants";
 import { pinIsSet, verifyPin } from "@/lib/pin";
 import { saveSettingsForm, SettingsError } from "@/lib/settings-save";
-import { isLocalPath, withParam } from "@/lib/paths";
+import { isLocalPath, withoutParams, withParam } from "@/lib/paths";
+
+/** Notes a page shows after an action; dropped from a return path before adding the new outcome. */
+const OUTCOME_PARAMS = ["confirm", "for", "via", "ref", "why", "decided", "video", "error", "saved", "failed"];
 import { nextAuthorized, reviewEligibility } from "@/lib/gate";
 import { timeState } from "@/lib/screentime";
 import { DEFAULT_PROFILE } from "@/lib/db/store";
@@ -305,9 +308,10 @@ export async function askGrownUp(form: FormData): Promise<void> {
  * Where to send a parent who tried to allow an unreviewed video without confirming: the review page's
  * disclosure step, carrying everything needed to resubmit the same decision with confirm=1.
  */
-function unreviewedConfirmUrl(e: NeedsUnreviewedConfirm, via: "request" | "queue" | "legacy", ref: string, kid: string) {
-  const q = new URLSearchParams({ kid, confirm: e.videoId, for: e.profileId, via, ref, why: e.reason });
-  return `/parent/review?${q}`;
+/** Back to the page that asked (Review by default; Library shows the same disclosure) with the confirm step. */
+function unreviewedConfirmUrl(e: NeedsUnreviewedConfirm, via: "request" | "queue" | "legacy", ref: string, kid: string, base = "/parent/review") {
+  const q = { kid, confirm: e.videoId, for: e.profileId, via, ref, why: e.reason };
+  return Object.entries(q).reduce((url, [k, v]) => withParam(url, k, v), base);
 }
 const confirmed = (form: FormData) => form.get("confirm") === "1";
 
@@ -354,17 +358,19 @@ export async function decideVideo(form: FormData) {
   const profileId = String(form.get("profileId") ?? "");
   const d = String(form.get("decision") ?? "");
   const decision = d === "allow" || d === "hide" || d === "never" || d === "undo" ? d : null;
-  const next = String(form.get("next") ?? "/parent/review");
+  // Come back to the page that asked (Library, Review, a video page), never an outside address.
+  const nextRaw = String(form.get("next") ?? "");
+  const next = withoutParams(isLocalPath(nextRaw) ? nextRaw : "/parent/library", OUTCOME_PARAMS);
   if (!decision) redirect(next);
   try {
     await decideForChild(db, fid, profileId, videoId, decision, { confirmedUnreviewed: confirmed(form) });
   } catch (e) {
-    if (e instanceof NeedsUnreviewedConfirm) redirect(unreviewedConfirmUrl(e, "queue", "", profileId));
-    if (e instanceof GrantError) redirect(`/parent/review?error=${encodeURIComponent(e.message)}`);
+    if (e instanceof NeedsUnreviewedConfirm) redirect(unreviewedConfirmUrl(e, "queue", "", profileId, next));
+    if (e instanceof GrantError) redirect(withParam(next, "error", e.message));
     throw e;
   }
-  revalidatePath("/parent"); revalidatePath("/parent/review"); revalidatePath(`/parent/video/${videoId}`); revalidatePath("/watch");
-  redirect(isLocalPath(next) ? next : "/parent/review");
+  revalidatePath("/parent", "layout"); revalidatePath(`/parent/video/${videoId}`); revalidatePath("/watch");
+  redirect(withParam(withParam(next, "decided", decision), "video", videoId));
 }
 
 export async function reviewChannelNow(form: FormData) {
@@ -604,12 +610,14 @@ export async function addAndReview(form: FormData) {
   await requirePaid(fid);
   const videoId = String(form.get("videoId") ?? "");
   const remove = form.get("remove") === "1";
+  let started = false; // a review job really was started (so the page may say "Reviewing now")
   try {
     if (remove) await db.removeFromWhitelist(fid, "video", videoId, null);
     else {
       await addVideoToLibrary(db, fid, videoId);
       const video = await db.getVideo(videoId);
       if (video && !reviewEligibility(await db.getCard(videoId)).eligible && process.env.GEMINI_API_KEY) {
+        started = true;
         after(async () => {
           try { await db.upsertCard(await reviewVideo(videoId, { durationSeconds: video.durationSeconds })); }
           catch (e) { console.error("add & review failed", videoId, (e as Error).message); }
@@ -622,7 +630,8 @@ export async function addAndReview(form: FormData) {
     throw e;
   }
   revalidatePath(`/parent/video/${videoId}`); revalidatePath("/parent");
-  redirect(`/parent/video/${videoId}${remove ? "" : "?reviewing=1"}`);
+  // `reviewing` carries when the job started, so the page stops saying "Reviewing now" if it never finished.
+  redirect(`/parent/video/${videoId}${remove ? "?removed=1" : `?added=1${started ? `&reviewing=${Date.now()}` : ""}`}`);
 }
 
 /** Parent: allow one specific video for one child (the explicit approval). Unreviewed videos need a confirm step. */
@@ -848,7 +857,7 @@ export async function runReview(form: FormData) {
       console.error("review failed", video.id, (e as Error).message);
     }
   });
-  redirect(`/parent/video/${videoId}?reviewing=1`);
+  redirect(`/parent/video/${videoId}?reviewing=${Date.now()}`);
 }
 
 // ---- Push notifications -------------------------------------------------------

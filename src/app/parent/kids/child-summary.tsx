@@ -9,6 +9,7 @@ export type ChildFacts = {
   profile: Profile;
   settings: FamilySettings;
   ready: number;
+  /** Pending requests this child made (not historical records). */
   pending: number;
   usedToday: number;
   limitToday?: number;
@@ -41,7 +42,7 @@ export function ChildSummary({ f, link, flush = false }: { f: ChildFacts; link?:
       </Answer>
       <Answer icon={<IconHand size={18} />} q="Asking for more" href={link?.("viewing")}>
         <p>{mode.ask(p.name)}</p>
-        {f.pending > 0 && <p className="font-bold text-apricot-ink">{f.pending} waiting in Review.</p>}
+        {f.pending > 0 && <p className="font-bold text-apricot-ink">{p.name} asked for {f.pending === 1 ? "a video" : `${f.pending} videos`}. Waiting in Review.</p>}
       </Answer>
       <Answer icon={<IconTv size={18} />} q="Where" href={link?.("screens")}>
         {f.screens === undefined ? (

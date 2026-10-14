@@ -31,6 +31,24 @@ export async function getLibraries(familyId: string) {
   })));
 }
 
+/**
+ * Like getLibraries, but only for the named videos (the handful a Review page shows). Same flags and gate
+ * decisions per child, without reading the whole catalogue.
+ */
+export async function getLibrariesFor(familyId: string, videoIds: string[]) {
+  const ids = [...new Set(videoIds)];
+  const [videos, channels, whitelist, profiles, cards, confirmations] = await Promise.all([
+    Promise.all(ids.map((id) => db.getVideo(id))).then((vs) => vs.filter((v): v is NonNullable<typeof v> => !!v)),
+    db.listChannels(), db.listWhitelist(familyId), db.listProfiles(familyId),
+    ids.length ? db.listCards(ids) : Promise.resolve([]), ids.length ? db.listConfirmations(ids) : Promise.resolve([]),
+  ]);
+  return Promise.all(profiles.map(async (profile) => ({
+    profile,
+    settings: await db.getSettings(familyId, profile.id),
+    lib: buildLibrary({ videos, channels, cards, confirmations, whitelist, profileId: profile.id }),
+  })));
+}
+
 /** One video as each child in the family sees it: flags + the gate's decision, per child. */
 export async function videoForChildren(familyId: string, videoId: string) {
   const [video, channels, card, confirmations, whitelist, profiles] = await Promise.all([

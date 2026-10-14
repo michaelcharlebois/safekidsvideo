@@ -2,8 +2,7 @@ import { Suspense } from "react";
 import { resolveViewer } from "@/lib/family";
 import { db } from "@/lib/db";
 import { listPendingRequests } from "@/lib/activity";
-import { getLibraries } from "@/lib/queries";
-import { forChild, pendingDecisions } from "@/lib/inbox";
+import { pendingDecisions, requestsFrom } from "@/lib/inbox";
 import { ParentNav, type NavKid } from "./parent-nav";
 
 /**
@@ -16,15 +15,15 @@ export default async function ParentLayout({ children }: LayoutProps<"/parent">)
   let kids: NavKid[] = [];
   let defaultKidId: string | undefined;
   if (v.role === "parent") {
-    // One count for the whole family: every pending decision across all children (see lib/inbox.ts).
-    const [requests, children, legacy] = await Promise.all([listPendingRequests(v.familyId), getLibraries(v.familyId), db.listLegacyGrants(v.familyId)]);
-    const items = pendingDecisions({ requests, children, legacy });
+    // One count for the whole family: pending requests and unresolved old records (lib/inbox.ts). Videos
+    // held back automatically are not tasks, so no child's library — and no catalogue scan — is needed.
+    const [requests, profiles, legacy] = await Promise.all([listPendingRequests(v.familyId), db.listProfiles(v.familyId), db.listLegacyGrants(v.familyId)]);
+    const items = pendingDecisions({ requests, childIds: profiles.map((p) => p.id), legacy });
     badge = items.length;
-    defaultKidId = (v.profileId && children.some((c) => c.profile.id === v.profileId) ? v.profileId : undefined) ?? children[0]?.profile.id;
-    // Per child (sidebar): the same count as that child's filter on Review — everything that concerns them,
-    // including requests that didn't record a child and old records listing them. Shared items count for
-    // each child they concern, so per-child numbers can add up to more than the total.
-    kids = children.map(({ profile: p }) => ({ id: p.id, name: p.name, avatar: p.avatar, pending: forChild(items, p.id).length }));
+    defaultKidId = (v.profileId && profiles.some((p) => p.id === v.profileId) ? v.profileId : undefined) ?? profiles[0]?.id;
+    // Per child (sidebar): requests that child actually made. Unattributed and historical items count only
+    // in the family total, so a child's number never includes something they didn't ask for.
+    kids = profiles.map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, pending: requestsFrom(items, p.id).length }));
   }
   return (
     <div className="flex flex-1 flex-col pb-20 md:pb-0 lg:flex-row lg:pb-0">

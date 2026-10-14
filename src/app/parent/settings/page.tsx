@@ -102,7 +102,7 @@ export default async function ChildSettingsPage(props: PageProps<"/parent/settin
           {[
             { href: "#viewing", q: "Watch", a: `${MODE_UI[s.mode].title}, ${f.ready} ready` },
             { href: "#time", q: "When", a: whenSentence(s) },
-            { href: "#viewing", q: "Asking", a: f.pending ? `${f.pending} waiting in Review` : s.mode === "locked" ? "Can't ask (Locked)" : "Nothing waiting" },
+            { href: "#viewing", q: "Asking", a: f.pending ? `Asked for ${f.pending}, waiting in Review` : s.mode === "locked" ? "Can't ask (Locked)" : "Nothing waiting" },
             { href: "#screens", q: "Where", a: f.screens === undefined ? "This browser" : f.screens.length ? f.screens.map((x) => x.name).join(", ") : "No screens yet" },
           ].map((r) => (
             <li key={r.q}>

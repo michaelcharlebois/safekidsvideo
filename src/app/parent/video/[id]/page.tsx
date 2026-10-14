@@ -7,6 +7,7 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { videoForChildren } from "@/lib/queries";
 import { isFound, reviewEligibility } from "@/lib/gate";
 import { playStatus } from "@/lib/status";
+import { backLink } from "@/lib/back";
 import { holdExplanation } from "@/lib/explain";
 import { VERDICT_LABELS } from "@/lib/types";
 import type { AuthDecision } from "@/lib/gate";
@@ -33,8 +34,14 @@ export const maxDuration = 300; // parent-triggered reviews run in the backgroun
 export default async function VideoPage(props: PageProps<"/parent/video/[id]">) {
   const { id } = await props.params;
   const sp = await props.searchParams;
-  const reviewing = sp.reviewing === "1";
+  // "Reviewing now" only with evidence: the add/run action stamps when it started a review job. After 15
+  // minutes with no review stored, the job didn't finish, and the page says so instead of waiting forever.
+  const startedAt = typeof sp.reviewing === "string" ? Number(sp.reviewing) : NaN;
+  const sinceStart = Number.isFinite(startedAt) ? Date.now() - startedAt : Infinity; // eslint-disable-line react-hooks/purity -- server component
+  const reviewing = sinceStart < 15 * 60_000;
+  const stalled = Number.isFinite(startedAt) && !reviewing;
   const unblockAll = sp.unblockAll === "1";
+  const back = backLink(sp);
   const viewer = await resolveViewer();
   if (viewer.role !== "parent") redirect(supabaseEnabled ? `/login?next=/parent/video/${id}` : `/unlock?next=/parent/video/${id}`);
   const fid = viewer.familyId;
@@ -145,7 +152,7 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
 
   return (
     <main className="mx-auto w-full max-w-[76rem] px-4 pb-10 pt-5 sm:px-6 lg:px-10 lg:pt-8">
-      <Link href="/parent" className="inline-flex items-center gap-1 text-sm font-bold text-muted hover:text-forest"><IconChevron size={16} className="rotate-180" />Home</Link>
+      <Link href={back.href} className="inline-flex items-center gap-1 text-sm font-bold text-muted hover:text-forest"><IconChevron size={16} className="rotate-180" />{back.label}</Link>
 
       {/* ---- title + library source ---- */}
       <header className="mt-2 flex flex-wrap items-start justify-between gap-3">
@@ -158,6 +165,13 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
 
       <div className="mt-4 space-y-3">
         {error && <Notice tone="bad">{error}</Notice>}
+        {sp.added === "1" && (
+          <Notice tone="ok">
+            Added to your family&apos;s sources.{" "}
+            {reviewed ? "Each child's settings decide whether it plays: see Who can watch this." : reviewing ? "The AI review has started. Until it passes, it won't play for any child unless you allow it." : "It hasn't been reviewed, so it won't play for any child unless you allow it."}
+          </Notice>
+        )}
+        {sp.removed === "1" && <Notice tone="ok">Removed from your family&apos;s sources. A child you allowed it for can still watch it.</Notice>}
         {allowedFor && <Notice tone="ok">{sp.undone === "1" ? `Undone. ${allowedFor.name} is back to the normal rules for this video.` : `Allowed for ${allowedFor.name}.`}</Notice>}
         {confirmFor && !reviewed && (
           <UnreviewedConfirm childName={confirmFor.profile.name} reason={reviewEligibility(c).reason} action={allowVideoForChild}
@@ -185,6 +199,7 @@ export default async function VideoPage(props: PageProps<"/parent/video/[id]">) 
               {!c ? (
                 <div className="space-y-3 text-sm">
                   <Notice tone="warn">{eligibilityNote(undefined)}</Notice>
+                  {stalled && <p className="text-muted">The review that started earlier didn&apos;t finish. You can run it again.</p>}
                   {reviewing ? (
                     <p className="text-muted">Reviewing now{v.durationSeconds ? ` (${Math.round(v.durationSeconds / 60)} minutes of video)` : ""}. This can take a few minutes; refresh to check.</p>
                   ) : (

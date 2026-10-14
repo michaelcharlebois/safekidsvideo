@@ -42,6 +42,7 @@ export function StatusBadge({ status, children, className = "" }: { status: Play
     plays: ["bg-ok-soft text-ok", IconPlayCircle],
     allowed: ["bg-sage-soft text-forest", IconShield],
     reviewing: ["bg-pending-soft text-pending", IconClock],
+    uncertain: ["bg-warn-soft text-warn", IconAlert],
     held: ["bg-warn-soft text-warn", IconAlert],
     hidden: ["bg-sand-soft text-muted", IconEyeOff],
     blocked: ["bg-bad-soft text-bad", IconBan],
