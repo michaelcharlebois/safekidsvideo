@@ -9,6 +9,7 @@ const SAID: Record<Said, string> = {
   asked: "Sent to a grown-up!",
   checking: "Brightframe is watching it first…",
   limit: "No more checks today",
+  too_many: "You asked for lots. Wait for a grown-up",
   error: "That didn't work. Try later",
 };
 const SETTLED = { waiting: "Waiting for a grown-up", checking: "Checking…" } as const;

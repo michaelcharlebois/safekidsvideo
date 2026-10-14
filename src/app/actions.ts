@@ -26,7 +26,8 @@ import { nextAuthorized, reviewEligibility } from "@/lib/gate";
 import { timeState } from "@/lib/screentime";
 import { DEFAULT_PROFILE } from "@/lib/db/store";
 import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
-import { checksToday, createRequest, finishCheck, getRequest, logCheck, logWatchEnd, logWatchStart, resolveRequest } from "@/lib/activity";
+import { checksToday, createRequest, finishCheck, getRequest, listPendingRequests, logCheck, logWatchEnd, logWatchStart, resolveRequest } from "@/lib/activity";
+import { planCheck } from "@/lib/check-plan";
 import { authorize, childSettings, getKidScreen, getLibrary, playableFor, screen } from "@/lib/queries";
 import { BudgetExceededError, IncompleteReviewError, reviewVideo } from "@/lib/reviewer";
 import { pushToFamily, removeSubscription, saveSubscription } from "@/lib/push";
@@ -780,6 +781,7 @@ export type CheckResult =
   | { status: "checking"; videoId: string }
   | { status: "asked"; videoId: string; reasons: string[] }
   | { status: "limit" }
+  | { status: "too_many" }
   | { status: "error"; message: string }
   | null;
 
@@ -845,45 +847,48 @@ export async function checkVideo(_prev: CheckResult, form: FormData): Promise<Ch
   if (!(await familyStatus(familyId)).status.ok) return { status: "error", message: "Ask a grown-up to renew Brightframe" };
   if (settings.mode === "locked") return { status: "error", message: "Search is off" };
   const deviceId = v.role === "device" ? v.deviceId : undefined;
-  if ((await checksToday(familyId, profileId)) >= settings.dailyCheckLimit) return { status: "limit" };
+  const mode = settings.mode;
 
   try {
     // Already in Brightframe's catalogue? Use it (no YouTube call needed).
     const video = (await db.getVideo(videoId)) ?? await ingestVideo(videoId);
-    const existing = await db.getCard(video.id);
-    if ((!existing || existing.reviewer.model === "sample") && (video.durationSeconds ?? 0) > MAX_KID_CHECK_SECONDS) {
-      // Too long to auto-check: hand it to the parent instead of burning minutes of Gemini time.
-      const minutes = Math.round((video.durationSeconds ?? 0) / 60);
-      await createRequest(familyId, video.id, deviceId, `Too long to auto-check (${minutes} min)`, profileId);
-      await logCheck(familyId, video.id, deviceId, "needs_parent", profileId);
-      revalidatePath("/parent");
-      return { status: "asked", videoId: video.id, reasons: [`Too long to auto-check (${Math.round((video.durationSeconds ?? 0) / 60)} min)`] };
-    }
-    if (existing && existing.reviewer.model !== "sample") {
-      const checkId = await logCheck(familyId, video.id, deviceId, "pending", profileId);
-      return await settleCheck(familyId, video.id, deviceId, checkId, profileId);
-    }
-    if (settings.mode === "open_ask") {
-      // Ask first: nothing new plays until a grown-up says yes, so the request goes in now (one per child
-      // per video; asking again is a no-op with no second notification). A review, if a reviewer is set
-      // up, runs in the background so the grown-up has it when they look; it can't make the video play.
-      await createRequest(familyId, video.id, deviceId, "Asked to watch", profileId);
-      if (process.env.GEMINI_API_KEY) {
+    const [existing, lib, pendingAll, aiChecksToday] = await Promise.all([
+      db.getCard(video.id), getLibrary(familyId, profileId), listPendingRequests(familyId), checksToday(familyId, profileId),
+    ]);
+    const row = lib.find((x) => x.id === video.id);
+    const mine = pendingAll.filter((r) => r.profileId === profileId);
+    // The rules (lib/check-plan.ts): asking a grown-up is never limited by the AI-review allowance; only an
+    // automatic review uses it; only authorize() can make anything play.
+    const plan = planCheck({
+      mode, playable: !!row && authorize(row, settings).allow,
+      reviewed: !!existing && existing.reviewer.model !== "sample",
+      tooLong: (video.durationSeconds ?? 0) > MAX_KID_CHECK_SECONDS,
+      reviewerConfigured: !!process.env.GEMINI_API_KEY,
+      aiChecksToday, aiDailyLimit: settings.dailyCheckLimit,
+      alreadyAsked: mine.some((r) => r.videoId === video.id), pendingForChild: mine.length,
+    });
+    const refresh = () => { revalidatePath("/watch"); revalidatePath("/watch/search"); revalidatePath("/parent", "layout"); };
+    switch (plan.do) {
+      case "play": return { status: "playing", videoId: video.id };
+      case "already-asked": return { status: "asked", videoId: video.id, reasons: [] };
+      case "too-many-requests": return { status: "too_many" };
+      case "settle": return await settleCheck(familyId, video.id, deviceId, null, profileId); // no AI run: not logged as a check
+      case "request": {
+        await createRequest(familyId, video.id, deviceId, plan.reason, profileId);
+        if (plan.reviewAfter) {
+          // For the parent's benefit only: the result can't make the video play in Ask first.
+          const checkId = await logCheck(familyId, video.id, deviceId, "pending", profileId);
+          after(() => reviewInBackground(familyId, video, deviceId, checkId, profileId));
+        }
+        refresh();
+        return { status: "asked", videoId: video.id, reasons: mode === "open_ask" ? [] : [plan.reason] };
+      }
+      case "review": {
         const checkId = await logCheck(familyId, video.id, deviceId, "pending", profileId);
         after(() => reviewInBackground(familyId, video, deviceId, checkId, profileId));
+        return { status: "checking", videoId: video.id };
       }
-      revalidatePath("/watch"); revalidatePath("/watch/search"); revalidatePath("/parent");
-      return { status: "asked", videoId: video.id, reasons: [] };
     }
-    if (!process.env.GEMINI_API_KEY) {
-      // No reviewer configured here: it can't be checked automatically, so a grown-up decides.
-      await createRequest(familyId, video.id, deviceId, "Couldn't be checked automatically", profileId);
-      revalidatePath("/watch"); revalidatePath("/watch/search"); revalidatePath("/parent");
-      return { status: "asked", videoId: video.id, reasons: ["Couldn't be checked automatically"] };
-    }
-    const checkId = await logCheck(familyId, video.id, deviceId, "pending", profileId);
-    after(() => reviewInBackground(familyId, video, deviceId, checkId, profileId));
-    return { status: "checking", videoId: video.id };
   } catch (e) {
     return { status: "error", message: (e as Error).message };
   }
