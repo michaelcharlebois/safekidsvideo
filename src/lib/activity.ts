@@ -62,21 +62,31 @@ export async function resolveRequest(familyId: string, requestId: string, status
     .match({ id: requestId, family_id: familyId, status: "pending" });
 }
 
-export async function logWatch(familyId: string, videoId: string, deviceId: string | undefined, completed: boolean, profileId?: string) {
-  if (!on()) return;
-  await supabaseAdmin().from("watch_events").insert({
-    family_id: familyId,
-    video_id: videoId,
-    device_id: deviceId && deviceId !== "local" ? deviceId : null,
-    profile_id: profileId ?? null,
-    completed,
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Unique-index conflict: the same session row was already written (a retry). Safe to ignore. */
+const duplicate = (e: { code?: string } | null) => e?.code === "23505";
+
+/**
+ * A viewing session began (see lib/sessions.ts). One row per session: a retried call is ignored by the
+ * 0020 unique index. Viewing is only recorded for a known child; without one nothing is written.
+ */
+export async function logWatchStart(familyId: string, videoId: string, deviceId: string | undefined, profileId: string | undefined, sessionId: string) {
+  if (!on() || !profileId || !UUID.test(sessionId)) return;
+  const { error } = await supabaseAdmin().from("watch_events").insert({
+    family_id: familyId, video_id: videoId, device_id: deviceId && deviceId !== "local" ? deviceId : null,
+    profile_id: profileId, completed: false, session_id: sessionId,
   });
+  if (error && !duplicate(error)) console.error("logWatchStart", error.message);
 }
 
-/** How a play ended: skipped (left early for another video), finished, or just left (home / closed). */
-export async function logWatchEnd(familyId: string, videoId: string, profileId: string | undefined, outcome: "skipped" | "finished" | "left", atSec: number) {
-  if (!on()) return;
-  await supabaseAdmin().from("watch_events").insert({ family_id: familyId, video_id: videoId, profile_id: profileId ?? null, completed: outcome === "finished", outcome, ended_at_sec: Math.max(0, Math.round(atSec)) });
+/** How that session ended: finished, skipped (left for another video) or left (home / closed). Once per session. */
+export async function logWatchEnd(familyId: string, videoId: string, profileId: string | undefined, outcome: "skipped" | "finished" | "left", atSec: number, sessionId: string) {
+  if (!on() || !profileId || !UUID.test(sessionId)) return;
+  const { error } = await supabaseAdmin().from("watch_events").insert({
+    family_id: familyId, video_id: videoId, profile_id: profileId, completed: outcome === "finished", outcome,
+    ended_at_sec: Math.max(0, Math.round(Number.isFinite(atSec) ? atSec : 0)), session_id: sessionId,
+  });
+  if (error && !duplicate(error)) console.error("logWatchEnd", error.message);
 }
 
 // ---- kid-triggered AI checks ------------------------------------------------

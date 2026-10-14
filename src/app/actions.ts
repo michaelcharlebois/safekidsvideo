@@ -26,7 +26,7 @@ import { nextAuthorized, reviewEligibility } from "@/lib/gate";
 import { timeState } from "@/lib/screentime";
 import { DEFAULT_PROFILE } from "@/lib/db/store";
 import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
-import { checksToday, createRequest, finishCheck, getRequest, logCheck, logWatch, logWatchEnd, resolveRequest } from "@/lib/activity";
+import { checksToday, createRequest, finishCheck, getRequest, logCheck, logWatchEnd, logWatchStart, resolveRequest } from "@/lib/activity";
 import { authorize, childSettings, getKidScreen, getLibrary, playableFor, screen } from "@/lib/queries";
 import { BudgetExceededError, IncompleteReviewError, reviewVideo } from "@/lib/reviewer";
 import { pushToFamily, removeSubscription, saveSubscription } from "@/lib/push";
@@ -339,16 +339,19 @@ export async function resolveWatchRequest(form: FormData) {
   if (isLocalPath(next)) redirect(next);
 }
 
-export async function recordWatchEnd(videoId: string, outcome: "skipped" | "finished" | "left", atSec: number) {
+/** Kid screen: a viewing session began. Recorded only for the child this screen is watching as. */
+export async function recordWatchStart(videoId: string, sessionId: string) {
   const v = await resolveViewer();
-  if (!v.familyId) return;
-  await logWatchEnd(v.familyId, videoId, v.profileId, outcome, atSec);
+  if (!v.familyId || !v.profileId || !/^[\w-]{11}$/.test(videoId)) return;
+  await logWatchStart(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, v.profileId, sessionId);
 }
 
-export async function recordWatch(videoId: string, completed: boolean) {
+/** Kid screen: how that session ended. */
+export async function recordWatchEnd(videoId: string, outcome: "skipped" | "finished" | "left", atSec: number, sessionId: string) {
   const v = await resolveViewer();
-  if (!v.familyId) return;
-  await logWatch(v.familyId, videoId, v.role === "device" ? v.deviceId : undefined, completed, v.profileId);
+  if (!v.familyId || !v.profileId || !/^[\w-]{11}$/.test(videoId)) return;
+  if (outcome !== "skipped" && outcome !== "finished" && outcome !== "left") return;
+  await logWatchEnd(v.familyId, videoId, v.profileId, outcome, atSec, sessionId);
 }
 
 /** Review queue: one decision per video, for one child. allow = explicit approval; hide = "Keep hidden" (a standing restriction for that child); never = block. */

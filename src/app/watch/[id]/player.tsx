@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { nextVideo, recordWatch, recordWatchEnd } from "@/app/actions";
+import { nextVideo, recordWatchEnd, recordWatchStart } from "@/app/actions";
 import { arrowDir, isBack, isEnter } from "../remote-nav";
 import { clearLedger, isLocked, leavingCounts, loadLedger, saveLedger, type Ledger, type SkipConfig } from "./skip-ledger";
 
@@ -29,7 +29,18 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
   const stageRef = useRef<HTMLButtonElement>(null);
   const homeRef = useRef<HTMLButtonElement>(null);
   const playerRef = useRef<any>(null);
-  const started = useRef<Set<string>>(new Set());
+  // The viewing session in progress (lib/sessions.ts): one start, at most one end, per playback.
+  const session = useRef<{ videoId: string; id: string; ended: boolean } | null>(null);
+  const beginSession = (videoId: string) => {
+    session.current = { videoId, id: newSessionId(), ended: false };
+    void recordWatchStart(videoId, session.current.id);
+  };
+  const endSession = (videoId: string, outcome: "finished" | "skipped" | "left", atSec: number) => {
+    const s = session.current;
+    if (!s || s.ended || s.videoId !== videoId) return; // never twice, never for another video
+    s.ended = true;
+    void recordWatchEnd(videoId, outcome, atSec, s.id);
+  };
   const onFinishedRef = useRef<() => void>(() => {});
   // The current video. Advancing asks the server (nextVideo) — the playlist below is only for display
   // and to preserve shelf order; it is never trusted for authorization.
@@ -63,11 +74,12 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
             const S = window.YT.PlayerState;
             if (e.data === S.PLAYING) {
               setNeedsTap(false); setPaused(false);
-              if (id && !started.current.has(id)) { started.current.add(id); void recordWatch(id, false); }
+              // A new session when this video starts (again): resuming after a pause is the same session.
+              if (id && (!session.current || session.current.ended || session.current.videoId !== id)) beginSession(id);
             }
             if (e.data === S.PAUSED) setPaused(true);
             if (e.data === S.ENDED) {
-              if (id) { void recordWatch(id, true); void recordWatchEnd(id, "finished", e.target?.getDuration?.() ?? 0); }
+              if (id) endSession(id, "finished", e.target?.getDuration?.() ?? 0);
               onFinishedRef.current();
               advanceRef.current();
             }
@@ -164,7 +176,6 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
       const verdict = leavingCounts(l.last, skip);
       if (verdict === "finished") l.skipsLeft = Math.min(skip.limit, l.skipsLeft + skip.regen);
       else if (verdict === "skip") {
-        void recordWatchEnd(l.last.id, "skipped", l.last.watchedSec);
         if (l.skipsLeft > 0) l.skipsLeft--;
         else if (!isLocked(l)) l.lockedUntil = Date.now() + skip.cooldownSec * 1000;
         if (l.skipsLeft === 0 && isLocked(l)) {
@@ -242,18 +253,24 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
           return; // stay put; the video keeps playing
         }
         l.skipsLeft--;
-        void recordWatchEnd(current.id, "skipped", w.sec);
         if (l.last) l.last.finished = true; // settled; don't double-charge on arrival
       }
       commit(l);
     }
+    endSession(current.id, "skipped", watched().sec);
     advance();
   };
   const goHome = () => {
-    const w = watched();
-    if (w.sec > 5) void recordWatchEnd(current.id, "left", w.sec);
+    endSession(current.id, "left", watched().sec);
     router.push("/watch");
   };
+
+  // Leaving the player any other way (Back, closing the app) ends the session as "left".
+  useEffect(() => {
+    const leave = () => { const s = session.current; if (s && !s.ended) endSession(s.videoId, "left", watched().sec); };
+    window.addEventListener("pagehide", leave);
+    return () => { window.removeEventListener("pagehide", leave); leave(); };
+  }, []);
 
   // Keep focus on the stage; the whole remote works from there.
   useEffect(() => {
@@ -361,4 +378,14 @@ export function Player({ playlist, index, remainingMinutes, skip }: { playlist: 
       </div>
     </main>
   );
+}
+
+/** A session id; crypto.randomUUID isn't available on plain-http TV browsers. */
+function newSessionId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }

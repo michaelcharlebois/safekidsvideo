@@ -1,9 +1,14 @@
 import "server-only";
-import { db } from "@/lib/db";
-import { localDay, watchEventsSince, type WatchEvent } from "@/lib/checkin";
+import { localDay, type WatchEvent } from "@/lib/checkin";
+import { attributedTo, sessionSeconds, sessionsFrom } from "@/lib/sessions";
 import { FORMAT_LABELS, type Channel, type ContentCard, type Video, type VideoFormat } from "@/lib/types";
 
-/* Viewing stats for one kid over a window. Minutes are estimated: completed → full length, else ~60%. */
+/*
+ * Viewing stats for one child over a window, from viewing SESSIONS (lib/sessions.ts) — the same
+ * interpretation as Home's "today", daily limits and check-ins. One session = one play. Seconds per
+ * session: finished → full length; skipped / left → reported position; no end recorded → an estimate.
+ * Unattributed rows count for the child only when the family has one child.
+ */
 
 export type KidStats = {
   days: number;
@@ -20,12 +25,11 @@ export type KidStats = {
   reviewedShare: number; // 0–1 of minutes on videos with a card
   skips: number;
   finishes: number;
+  left: number;
+  unknown: number; // sessions with no recorded end (estimated)
   starts: number;
-};
-
-const minutesOf = (e: WatchEvent, v?: Video) => {
-  const dur = (v?.durationSeconds ?? 300) / 60;
-  return Math.round(e.completed ? dur : Math.min(dur, Math.max(2, dur * 0.6)));
+  /** Plays in the window that couldn't be attributed to any child (several children, no child recorded). */
+  unattributed: number;
 };
 
 function localHour(tz: string | undefined, d: Date): number {
@@ -33,65 +37,65 @@ function localHour(tz: string | undefined, d: Date): number {
   return Number(h) % 24;
 }
 
-export async function kidStats(familyId: string, profileId: string | undefined, days: number, tz?: string): Promise<KidStats> {
-  const now = Date.now();
-  const events = await watchEventsSince(familyId, new Date(now - 2 * days * 86_400_000).toISOString());
-  const ids = [...new Set(events.map((e) => e.videoId))];
-  const [videos, cards, channels] = await Promise.all([Promise.all(ids.map((id) => db.getVideo(id))), db.listCards(ids), db.listChannels()]);
-  return computeKidStats({ events, videos: videos.filter((v): v is Video => !!v), cards, channels, profileId, days, tz, now });
-}
-
-/** The same numbers from data already in hand (pure apart from the clock passed in). */
-export function computeKidStats(input: { events: WatchEvent[]; videos: Video[]; cards: ContentCard[]; channels: Channel[]; profileId?: string; days: number; tz?: string; now: number }): KidStats {
-  const { profileId, days, tz, now, channels } = input;
-  const since = new Date(now - days * 86_400_000);
-  const all = input.events.filter((e) => !profileId || e.profileId === profileId || !e.profileId);
-  const inWindow = all.filter((e) => Date.parse(e.startedAt) >= since.getTime());
-  const cur = inWindow.filter((e) => !e.outcome); // plays
-  const ends = inWindow.filter((e) => e.outcome);  // how plays ended
-  const prev = all.filter((e) => Date.parse(e.startedAt) < since.getTime() && Date.parse(e.startedAt) >= now - 2 * days * 86_400_000 && !e.outcome);
+/** The numbers from data already in hand (pure apart from the clock passed in). */
+export function computeKidStats(input: {
+  events: WatchEvent[]; videos: Video[]; cards: ContentCard[]; channels: Channel[]; profileId: string; childCount: number; days: number; tz?: string; now: number;
+}): KidStats {
+  const { profileId, childCount, days, tz, now, channels } = input;
+  const since = now - days * 86_400_000;
+  const prevSince = now - 2 * days * 86_400_000;
   const videoById = new Map(input.videos.map((v) => [v.id, v]));
   const cardById = new Map(input.cards.filter((c) => c.reviewer.model !== "sample").map((c) => [c.videoId, c]));
   const channelTitle = (id: string) => channels.find((c) => c.id === id)?.title ?? id;
+  const sessions = sessionsFrom(input.events, (id) => videoById.get(id)?.durationSeconds);
+  const inRange = (from: number, to = Infinity) => (s: { startedAt: string }) => { const t = Date.parse(s.startedAt); return t >= from && t < to; };
+  const mine = sessions.filter((s) => attributedTo(s.profileId, profileId, childCount));
+  const cur = mine.filter(inRange(since));
+  const prev = mine.filter(inRange(prevSince, since));
+  const secOf = (s: (typeof sessions)[number]) => sessionSeconds(s, videoById.get(s.videoId)?.durationSeconds);
 
-  const s: KidStats = {
-    days, minutes: 0, plays: cur.length, activeDays: 0, prevMinutes: prev.reduce((a, e) => a + minutesOf(e, videoById.get(e.videoId)), 0),
+  const st: KidStats = {
+    days, minutes: 0, plays: cur.length, activeDays: 0, prevMinutes: Math.round(prev.reduce((a, s) => a + secOf(s), 0) / 60),
     byDay: [], byChannel: [], byFormat: [], byHour: Array(24).fill(0), pace: { calm: 0, moderate: 0, frenetic: 0 }, topVideos: [], reviewedShare: 0,
-    skips: ends.filter((e) => e.outcome === "skipped").length, finishes: ends.filter((e) => e.outcome === "finished").length, starts: cur.length,
+    skips: cur.filter((s) => s.outcome === "skipped").length, finishes: cur.filter((s) => s.outcome === "finished").length,
+    left: cur.filter((s) => s.outcome === "left").length, unknown: cur.filter((s) => s.outcome === "unknown").length, starts: cur.length,
+    unattributed: sessions.filter(inRange(since)).filter((s) => !s.profileId && childCount > 1).length,
   };
-  const dayMap = new Map<string, number>();
-  for (let i = days - 1; i >= 0; i--) dayMap.set(localDay(tz, new Date(now - i * 86_400_000)), 0);
-  const chan = new Map<string, { minutes: number; plays: number }>();
+  const daySec = new Map<string, number>();
+  for (let i = days - 1; i >= 0; i--) daySec.set(localDay(tz, new Date(now - i * 86_400_000)), 0);
+  const hourSec = Array(24).fill(0);
+  const chan = new Map<string, { sec: number; plays: number }>();
   const fmt = new Map<VideoFormat, number>();
-  const vid = new Map<string, { plays: number; minutes: number }>();
-  let reviewedMinutes = 0;
-  for (const e of cur) {
-    const v = videoById.get(e.videoId);
-    const m = minutesOf(e, v);
-    s.minutes += m;
-    const d = localDay(tz, new Date(e.startedAt));
-    if (dayMap.has(d)) dayMap.set(d, (dayMap.get(d) ?? 0) + m);
-    s.byHour[localHour(tz, new Date(e.startedAt))] += m;
+  const vid = new Map<string, { plays: number; sec: number }>();
+  const pace = { calm: 0, moderate: 0, frenetic: 0 };
+  let total = 0, reviewed = 0;
+  for (const s of cur) {
+    const v = videoById.get(s.videoId);
+    const sec = secOf(s);
+    total += sec;
+    const d = localDay(tz, new Date(s.startedAt));
+    if (daySec.has(d)) daySec.set(d, (daySec.get(d) ?? 0) + sec);
+    hourSec[localHour(tz, new Date(s.startedAt))] += sec;
     if (v) {
-      const c = chan.get(v.channelId) ?? { minutes: 0, plays: 0 };
-      c.minutes += m; c.plays++; chan.set(v.channelId, c);
-      const t = vid.get(v.id) ?? { plays: 0, minutes: 0 };
-      t.plays++; t.minutes += m; vid.set(v.id, t);
+      const c = chan.get(v.channelId) ?? { sec: 0, plays: 0 };
+      c.sec += sec; c.plays++; chan.set(v.channelId, c);
+      const t = vid.get(v.id) ?? { plays: 0, sec: 0 };
+      t.plays++; t.sec += sec; vid.set(v.id, t);
     }
-    const card = cardById.get(e.videoId);
-    if (card) {
-      reviewedMinutes += m;
-      fmt.set(card.format, (fmt.get(card.format) ?? 0) + m);
-      s.pace[card.pace] += m;
-    }
+    const card = cardById.get(s.videoId);
+    if (card) { reviewed += sec; fmt.set(card.format, (fmt.get(card.format) ?? 0) + sec); pace[card.pace] += sec; }
   }
-  s.byDay = [...dayMap.entries()].map(([day, minutes]) => ({ day, minutes }));
-  s.activeDays = s.byDay.filter((d) => d.minutes > 0).length;
-  s.byChannel = [...chan.entries()].map(([id, x]) => ({ id, title: channelTitle(id), ...x })).sort((a, b) => b.minutes - a.minutes).slice(0, 8);
-  s.byFormat = [...fmt.entries()].map(([format, minutes]) => ({ format, label: FORMAT_LABELS[format], minutes })).sort((a, b) => b.minutes - a.minutes);
-  s.topVideos = [...vid.entries()].map(([id, x]) => ({ video: videoById.get(id)!, ...x })).filter((x) => x.video).sort((a, b) => b.plays - a.plays || b.minutes - a.minutes).slice(0, 5);
-  s.reviewedShare = s.minutes ? reviewedMinutes / s.minutes : 0;
-  return s;
+  const m = (sec: number) => Math.round(sec / 60);
+  st.minutes = m(total);
+  st.byDay = [...daySec.entries()].map(([day, sec]) => ({ day, minutes: m(sec) }));
+  st.activeDays = [...daySec.values()].filter((x) => x > 0).length;
+  st.byHour = hourSec.map(m);
+  st.pace = { calm: m(pace.calm), moderate: m(pace.moderate), frenetic: m(pace.frenetic) };
+  st.byChannel = [...chan.entries()].map(([id, x]) => ({ id, title: channelTitle(id), minutes: m(x.sec), plays: x.plays })).sort((a, b) => b.minutes - a.minutes).slice(0, 8);
+  st.byFormat = [...fmt.entries()].map(([format, sec]) => ({ format, label: FORMAT_LABELS[format], minutes: m(sec) })).sort((a, b) => b.minutes - a.minutes);
+  st.topVideos = [...vid.entries()].map(([id, x]) => ({ video: videoById.get(id)!, plays: x.plays, minutes: m(x.sec) })).filter((x) => x.video).sort((a, b) => b.plays - a.plays || b.minutes - a.minutes).slice(0, 5);
+  st.reviewedShare = total ? reviewed / total : 0;
+  return st;
 }
 
 export type { ContentCard };

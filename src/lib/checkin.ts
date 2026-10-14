@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { pushToFamily } from "@/lib/push";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS, type ConcernTag, type ContentCard, type Video, type VideoFormat } from "@/lib/types";
 import { isFound } from "@/lib/gate";
+import { sessionSeconds, sessionsFrom, type RawWatchEvent } from "@/lib/sessions";
 
 /* Daily mood check-in + the "what did the day look like" correlation. Supabase-only. */
 
@@ -18,7 +19,7 @@ export const MOODS = [
   { value: 4, emoji: "😄", label: "Great" },
 ] as const;
 
-export type WatchEvent = { videoId: string; profileId?: string; startedAt: string; completed: boolean; outcome?: "skipped" | "finished" | "left"; endedAtSec?: number };
+export type WatchEvent = RawWatchEvent;
 export type KidDay = { profileId: string; day: string; mood: number; note?: string };
 
 /** Local calendar day for a timezone (defaults to America/Los_Angeles until we've learned the family's). */
@@ -29,9 +30,9 @@ export function localDay(tz: string | undefined, d = new Date()): string {
 
 export async function watchEventsSince(familyId: string, sinceIso: string): Promise<WatchEvent[]> {
   if (!on()) return [];
-  const { data } = await supabaseAdmin().from("watch_events").select("video_id,profile_id,started_at,completed,outcome,ended_at_sec").eq("family_id", familyId).gte("started_at", sinceIso).order("started_at");
-  return (data ?? []).map((r: { video_id: string; profile_id: string | null; started_at: string; completed: boolean; outcome: WatchEvent["outcome"] | null; ended_at_sec: number | null }) =>
-    ({ videoId: r.video_id, profileId: r.profile_id ?? undefined, startedAt: r.started_at, completed: r.completed, outcome: r.outcome ?? undefined, endedAtSec: r.ended_at_sec ?? undefined }));
+  const { data } = await supabaseAdmin().from("watch_events").select("video_id,profile_id,started_at,completed,outcome,ended_at_sec,session_id").eq("family_id", familyId).gte("started_at", sinceIso).order("started_at");
+  return (data ?? []).map((r: { video_id: string; profile_id: string | null; started_at: string; completed: boolean; outcome: WatchEvent["outcome"] | null; ended_at_sec: number | null; session_id?: string | null }) =>
+    ({ videoId: r.video_id, profileId: r.profile_id ?? undefined, startedAt: r.started_at, completed: r.completed, outcome: r.outcome ?? undefined, endedAtSec: r.ended_at_sec ?? undefined, sessionId: r.session_id ?? undefined }));
 }
 
 export async function listKidDays(familyId: string, sinceDay: string): Promise<KidDay[]> {
@@ -55,21 +56,24 @@ export async function saveTimezone(familyId: string, tz: string) {
 export type DayShape = { minutes: number; videos: { video: Video; card?: ContentCard; minutes: number }[]; formats: Set<VideoFormat>; tags: Set<ConcernTag>; frenetic: number };
 export function shapeDay(events: WatchEvent[], videoById: Map<string, Video>, cardById: Map<string, ContentCard>): DayShape {
   const shape: DayShape = { minutes: 0, videos: [], formats: new Set(), tags: new Set(), frenetic: 0 };
-  for (const e of events) {
-    if (e.outcome) continue; // end markers (skipped/finished/left) aren't plays
-    const video = videoById.get(e.videoId);
+  let seconds = 0;
+  // One session = one play (lib/sessions.ts), the same interpretation as Activity and screen-time limits.
+  for (const s of sessionsFrom(events, (id) => videoById.get(id)?.durationSeconds)) {
+    const video = videoById.get(s.videoId);
     if (!video) continue;
-    const card = cardById.get(e.videoId);
-    const dur = (video.durationSeconds ?? 300) / 60;
-    const minutes = Math.round(e.completed ? dur : Math.min(dur, Math.max(2, dur * 0.6)));
-    shape.minutes += minutes;
+    const card = cardById.get(s.videoId);
+    const sec = sessionSeconds(s, video.durationSeconds);
+    seconds += sec;
+    const minutes = Math.round(sec / 60);
     shape.videos.push({ video, card, minutes });
     if (card) {
       shape.formats.add(card.format);
       for (const c of card.concerns) if (isFound(c)) shape.tags.add(c.tag);
-      if (card.pace === "frenetic") shape.frenetic += minutes;
+      if (card.pace === "frenetic") shape.frenetic += sec / 60;
     }
   }
+  shape.minutes = Math.round(seconds / 60);
+  shape.frenetic = Math.round(shape.frenetic);
   return shape;
 }
 

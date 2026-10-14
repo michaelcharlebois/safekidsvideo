@@ -1,8 +1,9 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { localDay, shapeDay, watchEventsSince } from "@/lib/checkin";
+import { localDay, watchEventsSince, type WatchEvent } from "@/lib/checkin";
+import { attributedTo, sessionSeconds, sessionsFrom } from "@/lib/sessions";
 import { pushToFamily } from "@/lib/push";
-import type { FamilySettings } from "@/lib/types";
+import type { FamilySettings, Video } from "@/lib/types";
 
 /* Screen-time limits: minutes per day + a "done for the day" time, per kid, with parent-granted bonus minutes. */
 
@@ -17,16 +18,29 @@ function minutesOfDay(hhmm: string, tz?: string, d = new Date()): { now: number;
   return { now: nh * 60 + nm, at: h * 60 + m };
 }
 
-/** Approximate minutes this kid has watched today (completed → full length, else ~60%). */
+/**
+ * Minutes this child has watched today, from viewing sessions (lib/sessions.ts) — the same count Activity
+ * and Home show. Unattributed rows count only in a one-child family. Without a child, nothing is counted.
+ */
 export async function minutesUsedToday(familyId: string, profileId: string | undefined, tz?: string): Promise<number> {
+  if (!profileId) return 0;
   const day = localDay(tz);
-  const events = (await watchEventsSince(familyId, new Date(Date.now() - 30 * 3600 * 1000).toISOString()))
-    .filter((e) => localDay(tz, new Date(e.startedAt)) === day && (!profileId || e.profileId === profileId || !e.profileId));
+  const [raw, profiles] = await Promise.all([watchEventsSince(familyId, new Date(Date.now() - 30 * 3600 * 1000).toISOString()), db.listProfiles(familyId)]);
+  // Sessions that started today (a session is counted on the day it started).
+  const events = raw.filter((e) => attributedTo(e.profileId, profileId, profiles.length));
   if (!events.length) return 0;
   const ids = [...new Set(events.map((e) => e.videoId))];
   const videos = await Promise.all(ids.map((id) => db.getVideo(id)));
   const videoById = new Map(videos.filter(Boolean).map((v) => [v!.id, v!]));
-  return shapeDay(events, videoById, new Map()).minutes;
+  return usedMinutesOn(events, videoById, (iso) => localDay(tz, new Date(iso)), day);
+}
+
+/** Pure: minutes of sessions that started on `day`. */
+export function usedMinutesOn(events: WatchEvent[], videoById: Map<string, Video>, dayOf: (iso: string) => string, day: string): number {
+  const sec = sessionsFrom(events, (id) => videoById.get(id)?.durationSeconds)
+    .filter((s) => dayOf(s.startedAt) === day)
+    .reduce((a, s) => a + sessionSeconds(s, videoById.get(s.videoId)?.durationSeconds), 0);
+  return Math.round(sec / 60);
 }
 
 export async function timeState(familyId: string, settings: FamilySettings, tz?: string): Promise<TimeState> {

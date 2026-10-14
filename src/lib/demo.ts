@@ -159,8 +159,10 @@ export async function seedDemoActivity(fid: string, days = 30) {
         const outcome: "finished" | "skipped" | "left" = r < skipP ? "skipped" : r < skipP + 0.06 ? "left" : "finished";
         const watched = outcome === "finished" ? dur : outcome === "skipped" ? Math.round(30 + rand() * Math.max(30, dur * 0.5)) : Math.round(dur * (0.3 + rand() * 0.4));
         const startedAt = new Date(t);
-        events.push({ family_id: fid, profile_id: p.id, video_id: v.id, started_at: startedAt.toISOString(), completed: outcome === "finished" });
-        events.push({ family_id: fid, profile_id: p.id, video_id: v.id, started_at: new Date(t + watched * 1000).toISOString(), completed: outcome === "finished", outcome, ended_at_sec: watched });
+        // One session: a start row and its end row (the shape the player writes; lib/sessions.ts).
+        const session_id = crypto.randomUUID();
+        events.push({ family_id: fid, profile_id: p.id, video_id: v.id, started_at: startedAt.toISOString(), completed: false, session_id });
+        events.push({ family_id: fid, profile_id: p.id, video_id: v.id, started_at: new Date(t + watched * 1000).toISOString(), completed: outcome === "finished", outcome, ended_at_sec: watched, session_id });
         t += (watched + 5 + rand() * 20) * 1000;
         minutes += watched / 60;
         if (frenetic) frantic += watched / 60;

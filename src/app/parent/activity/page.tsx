@@ -8,6 +8,7 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { computeKidStats, type KidStats } from "@/lib/stats";
 import { findPatterns, historyRecorded, listKidDays, localDay, MOODS, shapeDay, watchEventsSince, type KidDay, type WatchEvent } from "@/lib/checkin";
 import { historyByDay } from "@/lib/history";
+import { attributedTo } from "@/lib/sessions";
 import { detailHref } from "@/lib/back";
 import { sampleActivity } from "@/lib/activity-sample";
 import type { Channel, ContentCard, Video } from "@/lib/types";
@@ -52,18 +53,20 @@ export default async function ActivityPage(props: PageProps<"/parent/activity">)
     const ids = [...new Set(events.map((e) => e.videoId))];
     [videos, cards] = await Promise.all([Promise.all(ids.map((id) => db.getVideo(id))).then((vs) => vs.filter((x): x is Video => !!x)), db.listCards(ids)]);
   }
-  const s = computeKidStats({ events, videos, cards, channels, profileId: kid.id, days, tz, now });
+  const s = computeKidStats({ events, videos, cards, channels, profileId: kid.id, childCount: profiles.length, days, tz, now });
   const videoById = new Map(videos.map((x) => [x.id, x]));
   const cardById = new Map(cards.map((c) => [c.videoId, c]));
   const windowStart = now - days * 86_400_000;
-  const history = historyByDay(events.filter((e) => Date.parse(e.startedAt) >= windowStart), videoById, (iso) => localDay(tz, new Date(iso)), kid.id);
+  // Built from every loaded row (so a session that straddles the window start pairs correctly), then windowed.
+  const allHistory = historyByDay(events, videoById, (iso) => localDay(tz, new Date(iso)), kid.id, profiles.length);
+  const history = { ...allHistory, unattributed: s.unattributed, days: allHistory.days.map((d) => ({ ...d, items: d.items.filter((i) => Date.parse(i.at) >= windowStart) })).filter((d) => d.items.length).map((d) => ({ ...d, minutes: d.items.reduce((a, i) => a + i.minutes, 0) })) };
   const today = localDay(tz, new Date(now));
   const href = (o: { range?: number; kid?: string } = {}) => `/parent/activity?kid=${o.kid ?? kid.id}&range=${o.range ?? days}`;
 
   // Check-ins: the parent's own answers, with what that day's viewing looked like.
   const mine = checkins.filter((d) => d.profileId === kid.id);
   const eventsByDay = new Map<string, WatchEvent[]>();
-  for (const e of events) if (e.profileId === kid.id || (!e.profileId && profiles.length === 1)) { const d = localDay(tz, new Date(e.startedAt)); eventsByDay.set(d, [...(eventsByDay.get(d) ?? []), e]); }
+  for (const e of events) if (attributedTo(e.profileId, kid.id, profiles.length)) { const d = localDay(tz, new Date(e.startedAt)); eventsByDay.set(d, [...(eventsByDay.get(d) ?? []), e]); }
   const moodRows = mine.map((d) => ({ day: d.day, mood: d.mood, note: d.note, shape: shapeDay(eventsByDay.get(d.day) ?? [], videoById, cardById) })).sort((a, b) => b.day.localeCompare(a.day));
   const patterns = findPatterns(moodRows);
   const tonight = mine.find((d) => d.day === today);
@@ -151,7 +154,7 @@ export default async function ActivityPage(props: PageProps<"/parent/activity">)
             )}
             {(history.unattributed > 0 || history.unknown > 0) && (
               <p className="border-t border-sand px-5 py-3 text-xs text-muted">
-                {history.unattributed > 0 && `${history.unattributed} play${history.unattributed === 1 ? "" : "s"} came from a screen that didn't record which child was watching; they're included for every child. `}
+                {history.unattributed > 0 && `${history.unattributed} play${history.unattributed === 1 ? "" : "s"} in this period came from a screen that didn't record which child was watching. They aren't counted for any child. `}
                 {history.unknown > 0 && `${history.unknown} play${history.unknown === 1 ? " is" : "s are"} of videos no longer in Brightframe and aren't listed.`}
               </p>
             )}
