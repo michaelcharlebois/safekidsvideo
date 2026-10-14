@@ -2,6 +2,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Channel, Confirmation, ContentCard, Family, FamilySettings, LegacyGrant, Profile, ReviewerNotes, Video, WatchRequest, WhitelistEntry } from "@/lib/types";
+import type { TimeRequest } from "@/lib/time-requests";
+import type { RawWatchEvent } from "@/lib/sessions";
 import { DEFAULT_PROFILE, DEFAULT_SETTINGS, mergeSettings, type Store } from "./store";
 
 type Db = {
@@ -20,6 +22,10 @@ type Db = {
   legacyGrants?: LegacyGrant[];
   /** "Ask a grown-up" requests (local mode only; Supabase keeps them in watch_requests). */
   requests?: (WatchRequest & { resolvedAt?: string })[];
+  /** "More time" requests (local mode; Supabase: time_requests, migration 0022). */
+  timeRequests?: TimeRequest[];
+  /** Viewing records (local mode; Supabase: watch_events), so limits and Activity work offline too. */
+  watchEvents?: (RawWatchEvent & { familyId: string })[];
 };
 
 /** Overridable for tests. */
@@ -294,6 +300,46 @@ export const localRequests = {
     if (!r) return;
     r.status = status;
     r.resolvedAt = new Date().toISOString();
+    await persist(db);
+  },
+};
+
+/** Local-mode more-time requests: the same rules as time_requests (one pending per child, kind and day). */
+export const localTimeRequests = {
+  async list(familyId: string) {
+    return ((await load()).timeRequests ?? []).filter((r) => r.familyId === familyId);
+  },
+  async create(r: Omit<TimeRequest, "id" | "createdAt" | "status">): Promise<"created" | "exists"> {
+    const db = await load();
+    db.timeRequests ??= [];
+    if (db.timeRequests.some((x) => x.profileId === r.profileId && x.kind === r.kind && x.day === r.day && x.status === "pending")) return "exists";
+    db.timeRequests.push({ ...r, id: randomUUID(), status: "pending", createdAt: new Date().toISOString() });
+    await persist(db);
+    return "created";
+  },
+  /** Answer a pending request; returns it, or undefined if it wasn't pending (already answered). */
+  async resolve(familyId: string, id: string, status: "approved" | "denied", grantedMinutes?: 15 | 30 | 60) {
+    const db = await load();
+    const r = (db.timeRequests ?? []).find((x) => x.id === id && x.familyId === familyId && x.status === "pending");
+    if (!r) return undefined;
+    r.status = status;
+    if (status === "approved") r.grantedMinutes = grantedMinutes;
+    r.resolvedAt = new Date().toISOString();
+    await persist(db);
+    return { ...r };
+  },
+};
+
+/** Local-mode viewing records: one start and at most one end per session, like the 0020 unique indexes. */
+export const localWatchEvents = {
+  async since(familyId: string, sinceIso: string) {
+    return ((await load()).watchEvents ?? []).filter((e) => e.familyId === familyId && e.startedAt >= sinceIso).sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  },
+  async add(e: RawWatchEvent & { familyId: string }) {
+    const db = await load();
+    db.watchEvents ??= [];
+    if (e.sessionId && db.watchEvents.some((x) => x.sessionId === e.sessionId && !!x.outcome === !!e.outcome)) return; // a retry
+    db.watchEvents.push(e);
     await persist(db);
   },
 };

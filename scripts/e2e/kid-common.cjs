@@ -38,5 +38,14 @@ const press = async (p, key, n = 1) => { for (let i = 0; i < n; i++) { await p.k
 /** The Samsung remote's Return: keyCode 10009 with no key name (older Tizen). */
 const samsungReturn = (p) => p.evaluate(() => { const e = new KeyboardEvent("keydown", { bubbles: true, cancelable: true }); Object.defineProperty(e, "keyCode", { get: () => 10009 }); (document.activeElement ?? document.body).dispatchEvent(e); });
 const db = () => JSON.parse(fs.readFileSync(DB, "utf8"));
+/** The focused element's text and background colours and their WCAG contrast ratio. */
+const focusedContrast = (p) => p.evaluate(() => {
+  const el = document.activeElement; if (!el) return null;
+  const cs = getComputedStyle(el);
+  const rgb = (s) => (s.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+  const lum = ([r, g, b]) => { const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const a = lum(rgb(cs.color)), b = lum(rgb(cs.backgroundColor));
+  return { text: (el.textContent || "").trim().slice(0, 40), color: cs.color, background: cs.backgroundColor, ratio: Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 10) / 10 };
+});
 const done = () => { console.log(`${results.filter(Boolean).length}/${results.length} checks passed`); process.exit(results.every(Boolean) ? 0 : 1); };
-module.exports = { BASE, OUT, MAYA, SAMSUNG, check, launch, parent, kid, go, active, press, samsungReturn, db, done };
+module.exports = { BASE, OUT, MAYA, SAMSUNG, check, launch, parent, kid, go, active, press, samsungReturn, db, done, focusedContrast };

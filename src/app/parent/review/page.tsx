@@ -8,6 +8,8 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { blockedReasons, getLibrariesFor } from "@/lib/queries";
 import { REASON, reviewEligibility } from "@/lib/gate";
 import { listPendingRequests } from "@/lib/activity";
+import { pendingTimeRequests } from "@/lib/more-time";
+import { TimeRequestCard } from "@/app/parent/time-request-card";
 import { forChild, inboxOrder, isChildRequest, pendingDecisions, type InboxItem } from "@/lib/inbox";
 import type { FamilySettings, Profile, VideoWithCard } from "@/lib/types";
 import { Button, buttonClass, Card, EmptyState, Notice } from "@/components/ui";
@@ -37,10 +39,13 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
   if (v.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent/review" : "/unlock?next=/parent/review");
   const fid = v.familyId;
   const str = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
-  const [profiles, requests, legacy] = await Promise.all([db.listProfiles(fid), listPendingRequests(fid), db.listLegacyGrants(fid)]);
+  const [profiles, requests, legacy, timeAsks, family] = await Promise.all([db.listProfiles(fid), listPendingRequests(fid), db.listLegacyGrants(fid), pendingTimeRequests(fid), db.getFamily(fid)]);
   const kidFilter = profiles.find((p) => p.id === str("kid"));
   const all = pendingDecisions({ requests, childIds: profiles.map((p) => p.id), legacy }).sort(inboxOrder);
   const items = kidFilter ? forChild(all, kidFilter.id) : all;
+  // "More time" asks: today's pending ones (lib/more-time.ts), per child like everything else here.
+  const timeShown = kidFilter ? timeAsks.filter((t) => t.profileId === kidFilter.id) : timeAsks;
+  const timeNote = str("time");
   const shown = str("all") === "1" ? items : items.slice(0, PAGE);
   // Only the videos on this page are joined with their reviews and grants (no catalogue scan).
   const children = await getLibrariesFor(fid, shown.map((i) => i.videoId));
@@ -74,16 +79,16 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
       <header>
         <h1 className="text-title sm:text-display">Review</h1>
         <p className="text-sm text-muted sm:text-base">
-          {all.length === 0 ? "Nothing is waiting on you."
-            : [asked ? `${asked} request${asked === 1 ? "" : "s"} from your children` : null, older ? `${older} older record${older === 1 ? "" : "s"} to sort out` : null].filter(Boolean).join(", ") + "."}
+          {all.length + timeAsks.length === 0 ? "Nothing is waiting on you."
+            : [timeAsks.length ? `${timeAsks.length} ask${timeAsks.length === 1 ? "" : "s"} for more time` : null, asked ? `${asked} request${asked === 1 ? "" : "s"} from your children` : null, older ? `${older} older record${older === 1 ? "" : "s"} to sort out` : null].filter(Boolean).join(", ") + "."}
         </p>
       </header>
 
       {profiles.length > 1 && (
         <nav aria-label="Show decisions for" className="mt-5 flex flex-wrap gap-1.5">
-          <Chip href="/parent/review" active={!kidFilter}>Everyone <Count n={all.length} /></Chip>
+          <Chip href="/parent/review" active={!kidFilter}>Everyone <Count n={all.length + timeAsks.length} /></Chip>
           {profiles.map((p) => (
-            <Chip key={p.id} href={`/parent/review?kid=${p.id}`} active={kidFilter?.id === p.id}><span aria-hidden>{p.avatar}</span>{p.name} <Count n={forChild(all, p.id).length} /></Chip>
+            <Chip key={p.id} href={`/parent/review?kid=${p.id}`} active={kidFilter?.id === p.id}><span aria-hidden>{p.avatar}</span>{p.name} <Count n={forChild(all, p.id).length + timeAsks.filter((t) => t.profileId === p.id).length} /></Chip>
           ))}
         </nav>
       )}
@@ -101,9 +106,15 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
           </details>
         )}
         {error && <Notice tone="bad">{error}</Notice>}
+        {timeNote && <Notice tone="ok">{timeNote === "declined" ? "Declined. They won't be able to ask again today." : `Added ${timeNote.replace("added-", "")} minutes for today.`}</Notice>}
+        {timeShown.length > 0 && (
+          <section aria-label="Asks for more time" className="space-y-3">
+            {timeShown.map((t) => { const c = profiles.find((p) => p.id === t.profileId); return c ? <TimeRequestCard key={t.id} req={t} child={c} next={here} tz={family.timezone} /> : null; })}
+          </section>
+        )}
         {confirm && <UnreviewedConfirm childName={confirm.kid.name} title={confirm.video.title} reason={confirm.reason} action={confirm.action} fields={confirm.fields} cancelHref={here} />}
 
-        {items.length === 0 ? (
+        {items.length === 0 && timeShown.length > 0 ? null : items.length === 0 ? (
           <Card>
             <EmptyState icon={<IconCheck />} title={kidFilter ? `Nothing waiting for ${kidFilter.name}` : "Nothing waiting on you"}
               action={<Link href="/parent" className={buttonClass("secondary")}>Back to Home</Link>}>

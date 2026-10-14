@@ -3,6 +3,7 @@ import { resolveViewer } from "@/lib/family";
 import { db } from "@/lib/db";
 import { listPendingRequests } from "@/lib/activity";
 import { pendingDecisions, requestsFrom } from "@/lib/inbox";
+import { pendingTimeRequests } from "@/lib/more-time";
 import { ParentNav, type NavKid } from "./parent-nav";
 
 /**
@@ -17,13 +18,13 @@ export default async function ParentLayout({ children }: LayoutProps<"/parent">)
   if (v.role === "parent") {
     // One count for the whole family: pending requests and unresolved old records (lib/inbox.ts). Videos
     // held back automatically are not tasks, so no child's library — and no catalogue scan — is needed.
-    const [requests, profiles, legacy] = await Promise.all([listPendingRequests(v.familyId), db.listProfiles(v.familyId), db.listLegacyGrants(v.familyId)]);
+    const [requests, profiles, legacy, timeAsks] = await Promise.all([listPendingRequests(v.familyId), db.listProfiles(v.familyId), db.listLegacyGrants(v.familyId), pendingTimeRequests(v.familyId)]);
     const items = pendingDecisions({ requests, childIds: profiles.map((p) => p.id), legacy });
-    badge = items.length;
+    badge = items.length + timeAsks.length; // today's asks for more time are decisions too
     defaultKidId = (v.profileId && profiles.some((p) => p.id === v.profileId) ? v.profileId : undefined) ?? profiles[0]?.id;
     // Per child (sidebar): requests that child actually made. Unattributed and historical items count only
     // in the family total, so a child's number never includes something they didn't ask for.
-    kids = profiles.map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, pending: requestsFrom(items, p.id).length }));
+    kids = profiles.map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, pending: requestsFrom(items, p.id).length + timeAsks.filter((t) => t.profileId === p.id).length }));
   }
   return (
     <div className="flex flex-1 flex-col pb-20 md:pb-0 lg:flex-row lg:pb-0">

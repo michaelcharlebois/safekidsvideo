@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { computeKidStats, type KidStats } from "@/lib/stats";
-import { findPatterns, historyRecorded, listKidDays, localDay, MOODS, shapeDay, watchEventsSince, type KidDay, type WatchEvent } from "@/lib/checkin";
+import { findPatterns, historyRecorded, sampleActivityAllowed, listKidDays, localDay, MOODS, shapeDay, watchEventsSince, type KidDay, type WatchEvent } from "@/lib/checkin";
 import { historyByDay } from "@/lib/history";
 import { attributedTo } from "@/lib/sessions";
 import { detailHref } from "@/lib/back";
@@ -43,7 +43,7 @@ export default async function ActivityPage(props: PageProps<"/parent/activity">)
   const now = Date.now();
   const recorded = historyRecorded();
   // Design preview only: a deployment that records nothing can show labelled sample data when asked to.
-  const sample = !recorded && process.env.BRIGHTFRAME_SAMPLE_ACTIVITY === "1" ? sampleActivity(kid.id, now) : null;
+  const sample = sampleActivityAllowed() && process.env.BRIGHTFRAME_SAMPLE_ACTIVITY === "1" ? sampleActivity(kid.id, now) : null;
 
   let events: WatchEvent[] = [], videos: Video[] = [], cards: ContentCard[] = [], channels: Channel[] = [], checkins: KidDay[] = [];
   if (sample) ({ events, videos, cards, channels, checkins } = sample);

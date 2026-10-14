@@ -5,12 +5,15 @@ import { pushToFamily } from "@/lib/push";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS, type ConcernTag, type ContentCard, type Video, type VideoFormat } from "@/lib/types";
 import { isFound } from "@/lib/gate";
 import { sessionSeconds, sessionsFrom, type RawWatchEvent } from "@/lib/sessions";
+import { localWatchEvents } from "@/lib/db/local";
 
 /* Daily mood check-in + the "what did the day look like" correlation. Supabase-only. */
 
 const on = () => supabaseEnabled && !!(process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY);
-/** Whether viewing and check-ins are recorded at all here (they need the family account's database). */
-export const historyRecorded = on;
+/** Whether viewing is recorded here: the family database, or the local store in local mode. (Check-ins are database-only.) */
+export const historyRecorded = () => on() || !supabaseEnabled;
+/** A deployment with no database at all (local mode): the only place the labelled sample Activity may appear. */
+export const sampleActivityAllowed = () => !supabaseEnabled;
 
 export const MOODS = [
   { value: 1, emoji: "😤", label: "Rough" },
@@ -29,6 +32,7 @@ export function localDay(tz: string | undefined, d = new Date()): string {
 }
 
 export async function watchEventsSince(familyId: string, sinceIso: string): Promise<WatchEvent[]> {
+  if (!supabaseEnabled) return (await localWatchEvents.since(familyId, sinceIso)).map(({ familyId: _f, ...e }) => e); // eslint-disable-line @typescript-eslint/no-unused-vars
   if (!on()) return [];
   const { data } = await supabaseAdmin().from("watch_events").select("video_id,profile_id,started_at,completed,outcome,ended_at_sec,session_id,watched_sec").eq("family_id", familyId).gte("started_at", sinceIso).order("started_at");
   return (data ?? []).map((r: { video_id: string; profile_id: string | null; started_at: string; completed: boolean; outcome: WatchEvent["outcome"] | null; ended_at_sec: number | null; session_id?: string | null; watched_sec?: number | null }) =>

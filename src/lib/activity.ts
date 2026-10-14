@@ -3,11 +3,11 @@ import { supabaseAdmin, supabaseEnabled } from "@/lib/supabase/server";
 import { pushToFamily } from "@/lib/push";
 import { db } from "@/lib/db";
 import type { WatchRequest } from "@/lib/types";
-import { localRequests } from "@/lib/db/local";
+import { localRequests, localWatchEvents } from "@/lib/db/local";
 
 /*
  * "Ask a grown-up" requests and watch history. Requests work in Supabase and in local mode (lib/db/local.ts
- * localRequests, same rules); watch history is Supabase-only. Every request is child-scoped: one PENDING
+ * localRequests, same rules); watch history too (local mode keeps it in the local store, same one-start/one-end rule). Every request is child-scoped: one PENDING
  * request per child per video, and the parent's phone is only pinged when a new one is created.
  */
 
@@ -81,7 +81,9 @@ const duplicate = (e: { code?: string } | null) => e?.code === "23505";
  * 0020 unique index. Viewing is only recorded for a known child; without one nothing is written.
  */
 export async function logWatchStart(familyId: string, videoId: string, deviceId: string | undefined, profileId: string | undefined, sessionId: string) {
-  if (!on() || !profileId || !UUID.test(sessionId)) return;
+  if (!profileId || !UUID.test(sessionId)) return;
+  if (local()) return localWatchEvents.add({ familyId, videoId, profileId, startedAt: new Date().toISOString(), completed: false, sessionId });
+  if (!on()) return;
   const { error } = await supabaseAdmin().from("watch_events").insert({
     family_id: familyId, video_id: videoId, device_id: deviceId && deviceId !== "local" ? deviceId : null,
     profile_id: profileId, completed: false, session_id: sessionId,
@@ -91,7 +93,15 @@ export async function logWatchStart(familyId: string, videoId: string, deviceId:
 
 /** How that session ended: finished, skipped (left for another video) or left (home / closed). Once per session. */
 export async function logWatchEnd(familyId: string, videoId: string, profileId: string | undefined, outcome: "skipped" | "finished" | "left", atSec: number, sessionId: string, watchedSec?: number) {
-  if (!on() || !profileId || !UUID.test(sessionId)) return;
+  if (!profileId || !UUID.test(sessionId)) return;
+  if (local()) {
+    return localWatchEvents.add({
+      familyId, videoId, profileId, startedAt: new Date().toISOString(), completed: outcome === "finished", outcome, sessionId,
+      endedAtSec: Math.max(0, Math.round(Number.isFinite(atSec) ? atSec : 0)),
+      watchedSec: watchedSec != null && Number.isFinite(watchedSec) ? Math.max(0, Math.min(6 * 3600, Math.round(watchedSec))) : undefined,
+    });
+  }
+  if (!on()) return;
   const { error } = await supabaseAdmin().from("watch_events").insert({
     family_id: familyId, video_id: videoId, profile_id: profileId, completed: outcome === "finished", outcome,
     ended_at_sec: Math.max(0, Math.round(Number.isFinite(atSec) ? atSec : 0)), session_id: sessionId,

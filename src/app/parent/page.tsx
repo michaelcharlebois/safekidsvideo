@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { pendingTimeRequests } from "@/lib/more-time";
+import { TimeRequestCard } from "@/app/parent/time-request-card";
 import { VideoThumb } from "@/components/video-thumb";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
@@ -13,7 +15,7 @@ import { MODE_UI, whenSentence } from "@/lib/modes";
 import { detailHref } from "@/lib/back";
 import { Button, buttonClass, Card, EmptyState, Meter, Notice, SectionHeader, StatusBadge, Tag } from "@/components/ui";
 import { IconAlert, IconChannels, IconChevron, IconClock, IconHand, IconPlayCircle, IconPlus, IconTv } from "@/components/icons";
-import { grantMoreTime, resolveWatchRequest } from "@/app/actions";
+import { resolveWatchRequest } from "@/app/actions";
 import { localDay, watchEventsSince } from "@/lib/checkin";
 import { tasteFrom } from "@/lib/arrange";
 import { kidHome } from "@/lib/kid-home";
@@ -61,7 +63,8 @@ export default async function ParentPage(props: PageProps<"/parent">) {
     watchEventsSince(fid, new Date(Date.now() - 30 * 86_400_000).toISOString()), // eslint-disable-line react-hooks/purity -- server component
     minutesUsedToday(fid, kid.id, family.timezone),
   ]);
-  const moreAsk = typeof sp.more === "string" ? profiles.find((p) => p.id === sp.more) : undefined;
+  // Today's stored ask for more time from this child (push links here and to Review).
+  const timeAsk = (await pendingTimeRequests(fid)).find((t) => t.profileId === kid.id);
   const byId = new Map(lib.map((v) => [v.id, v]));
 
   // The kid screen, from the SAME selector the kid home uses (lib/kid-home.ts); counts from Library's.
@@ -117,18 +120,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
       {billing.ok && billing.state === "trial" && (billing.daysLeft ?? 99) <= 7 && (
         <Notice className="mt-5">{billing.daysLeft} day{billing.daysLeft === 1 ? "" : "s"} left in your free trial. <Link href="/parent/billing" className="font-bold text-forest underline">Keep Brightframe going</Link></Notice>
       )}
-      {moreAsk && (
-        <Card raised className="mt-5 flex flex-wrap items-center gap-3 border-apricot/60 p-4">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-apricot-soft text-apricot-ink"><IconClock /></span>
-          <p className="flex-1 font-bold text-forest">{moreAsk.name} is asking for more time today</p>
-          <div className="flex flex-wrap gap-2">
-            {[15, 30, 60].map((m) => (
-              <form key={m} action={grantMoreTime}><input type="hidden" name="profileId" value={moreAsk.id} /><input type="hidden" name="minutes" value={m} /><Button type="submit" size="sm">+{m} min</Button></form>
-            ))}
-            <Link href={`/parent?kid=${kid.id}`} className={buttonClass("quiet", "sm")}>Not today</Link>
-          </div>
-        </Card>
-      )}
+      {timeAsk && <div className="mt-5"><TimeRequestCard req={timeAsk} child={kid} next={`/parent?kid=${kid.id}`} tz={family.timezone} usedMinutes={usedToday} limitMinutes={settings.dailyMinutes} /></div>}
 
       {/* ---- counts, each a door ---- */}
       <section aria-label={`${kid.name} at a glance`} className="mt-6 grid grid-cols-3 gap-2.5 sm:gap-3">

@@ -27,6 +27,8 @@ askfirst kid-search-askfirst.cjs
 player kid-player.cjs
 main kid-who.cjs
 timeup kid-timeup.cjs
+limit kid-moretime.cjs
+limit-decline kid-moretime.cjs
 LIST
 echo "screenshots: $OUT"
 exit $fail

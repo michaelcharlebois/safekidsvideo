@@ -10,7 +10,8 @@ import { fetchChannelMeta, parseYouTubeUrl, searchForParent, type ParentSearch }
 import { packById } from "@/lib/packs";
 import { billingEnabled, createCheckoutUrl, createPortalUrl, familyStatus } from "@/lib/billing";
 import { saveKidDay, saveTimezone } from "@/lib/checkin";
-import { askForMoreTime, grantBonusMinutes } from "@/lib/screentime";
+import { grantBonusMinutes } from "@/lib/screentime";
+import { answerTimeRequest, askForMoreTime, settlePendingWithGrant } from "@/lib/more-time";
 import { CONCERN_TAGS, type ConcernTag, type ConfirmationVerdict, type TagVote } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
@@ -391,28 +392,40 @@ export async function reviewChannelNow(form: FormData) {
 
 // ---- Screen time ----------------------------------------------------------------
 
-export type MoreTimeResult = { sent: true; already: boolean } | null;
+export type MoreTimeResult = { state: "pending" | "declined" | "not-offered" | "unavailable"; justSent: boolean } | null;
 /**
- * Time-up screen: "Ask a grown-up for more time". One notification per child per day from a screen: asking
- * again says it's already been sent instead of buzzing the parent's phone again (and the notification is
- * tagged per child, so a phone shows one). Only a parent can add time (grantMoreTime).
+ * Time-up screen: "Ask a grown-up for more time". Stored as a request (lib/more-time.ts): one pending ask per
+ * child per day across every screen; the parent answers it in Review. The kid sees the stored state, not
+ * whether a notification went out. Never adds time by itself.
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- useActionState passes the previous result
 export async function askMoreTime(_prev: MoreTimeResult): Promise<MoreTimeResult> {
   const v = await resolveViewer();
   if (!v.familyId) redirect("/pair");
   const pid = v.profileId;
-  if (!pid) redirect("/watch/who");
-  const c = await cookies();
-  const tz = (await db.getFamily(v.familyId)).timezone;
-  const mark = `${pid}:${new Intl.DateTimeFormat("en-CA", { timeZone: tz || "America/Los_Angeles" }).format(new Date())}`;
-  const asked = (c.get(ASKED_TIME_COOKIE)?.value ?? "").split(",");
-  if (asked.includes(mark)) return { sent: true, already: true };
-  await askForMoreTime(v.familyId, pid);
-  c.set(ASKED_TIME_COOKIE, [...asked.filter((x) => x && !x.startsWith(`${pid}:`)).slice(-5), mark].join(","), { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 2 });
-  return { sent: true, already: false };
+  const settings = await childSettings(v.familyId, pid);
+  if (!pid || !settings) redirect("/watch/who");
+  const time = await timeState(v.familyId, settings, (await db.getFamily(v.familyId)).timezone);
+  if (time.allowed) redirect("/watch"); // time came back already (a grown-up added some)
+  const out = await askForMoreTime(v.familyId, pid, time.reason, v.role === "device" ? v.deviceId : undefined);
+  revalidatePath("/parent", "layout");
+  return out === "created" ? { state: "pending", justSent: true } : { state: out, justSent: false };
 }
-const ASKED_TIME_COOKIE = "bf_asked_time";
+
+/** Parent: answer a more-time request (approve with 15/30/60 minutes, or decline). */
+export async function answerTimeRequestAction(form: FormData) {
+  const fid = await requireParent();
+  const id = String(form.get("requestId") ?? "");
+  const decision = form.get("decision") === "approve" ? "approve" : "deny";
+  const minutes = Number(form.get("minutes"));
+  const next = String(form.get("next") ?? "");
+  const back = isLocalPath(next) ? next : "/parent/review";
+  let out: Awaited<ReturnType<typeof answerTimeRequest>>;
+  try { out = await answerTimeRequest(fid, id, decision, decision === "approve" ? minutes : undefined); }
+  catch (e) { redirect(withParam(back, "error", (e as Error).message)); }
+  revalidatePath("/parent", "layout"); revalidatePath("/watch", "layout");
+  redirect(out === "done" ? withParam(back, "time", decision === "approve" ? `added-${minutes}` : "declined") : withParam(back, "error", out === "expired" ? "That request was for an earlier day." : "That request was already answered."));
+}
 
 export async function grantMoreTime(form: FormData) {
   const fid = await requireParent();
@@ -422,6 +435,7 @@ export async function grantMoreTime(form: FormData) {
   if (p && p.familyId === fid && [15, 30, 60, -1000].includes(minutes)) {
     const tz = (await db.getFamily(fid)).timezone;
     await grantBonusMinutes(profileId, minutes, tz);
+    if (minutes > 0) await settlePendingWithGrant(fid, profileId, minutes); // answers today's ask, if any
     if (minutes > 0) await pushToFamily(fid, { title: `+${minutes} minutes for ${p.name}`, body: "Added for today.", url: `/parent/settings?kid=${profileId}`, tag: `more-time-${profileId}` });
   }
   revalidatePath("/parent"); revalidatePath("/parent/settings"); revalidatePath("/watch");

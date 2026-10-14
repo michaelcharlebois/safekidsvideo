@@ -2,7 +2,6 @@ import "server-only";
 import { db } from "@/lib/db";
 import { localDay, watchEventsSince, type WatchEvent } from "@/lib/checkin";
 import { attributedTo, sessionSeconds, sessionsFrom } from "@/lib/sessions";
-import { pushToFamily } from "@/lib/push";
 import type { FamilySettings, Video } from "@/lib/types";
 
 /* Screen-time limits: minutes per day + a "done for the day" time, per kid, with parent-granted bonus minutes. */
@@ -59,17 +58,6 @@ export async function timeState(familyId: string, settings: FamilySettings, tz?:
   const used = await minutesUsedToday(familyId, settings.profileId, tz);
   if (used >= limit) return { allowed: false, reason: "limit", usedMinutes: used, limitMinutes: limit, bedtime: settings.bedtime };
   return { allowed: true, remainingMinutes: limit - used, bedtime: settings.bedtime };
-}
-
-/** Kid taps "Ask for more time" → parent's phone. */
-export async function askForMoreTime(familyId: string, profileId?: string) {
-  const p = profileId ? await db.getProfile(profileId) : undefined;
-  return pushToFamily(familyId, {
-    title: `${p?.name ?? "Your kid"} is asking for more time`,
-    body: "Tap to add 15 or 30 minutes for today, or say not today.",
-    url: `/parent?more=${profileId ?? ""}`,
-    tag: `more-time-${profileId ?? "kid"}`,
-  });
 }
 
 export async function grantBonusMinutes(profileId: string, minutes: number, tz?: string) {
