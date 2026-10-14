@@ -25,10 +25,12 @@
 
 | How playback ends | Recorded as |
 |---|---|
-| The video plays to the end | `finished` |
-| Next / skip, with or without skip limits | `skipped` |
+| The video ends, or Next, after at least 70% of it was actually played | `finished` |
+| Next with less than 70% played, or reaching the end by seeking ahead | `skipped` |
 | Home, Back, closing the app | `left` |
 | No end recorded (power cut, crash) | `unknown` |
+
+The 70% rule is the skip budget's own (`leavingOutcome` / `leavingCounts` in `skip-ledger.ts`), so a row never says "finished" while the budget charged a skip. Local mode now records sessions too (the local store), so limits and Activity work offline.
 
 **What the player and database guarantee:**
 - Resuming after a pause is the same session. Playing a video again is a new session.

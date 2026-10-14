@@ -6,7 +6,7 @@ import { nextVideo, recordWatchEnd, recordWatchStart } from "@/app/actions";
 import { IconBack, IconBack10, IconFwd10, IconHome, IconNext, IconPause, IconPlay } from "@/components/icons";
 import { PlaybackClock } from "@/lib/playback";
 import { arrowDir, isBack, isEnter } from "../remote-nav";
-import { clearLedger, isLocked, leavingCounts, loadLedger, saveLedger, type Ledger, type SkipConfig } from "./skip-ledger";
+import { clearLedger, isLocked, leavingCounts, leavingOutcome, loadLedger, saveLedger, type Ledger, type SkipConfig } from "./skip-ledger";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare global {
@@ -109,8 +109,11 @@ export function Player({ playlist, index, remainingMinutes, skip, ui, fromSearch
             screenClock.current.stop(t);
             if (e.data === S.PAUSED) setPaused(true);
             if (e.data === S.ENDED && id) {
-              endedRef.current(id, e.target?.getDuration?.() ?? 0);
-              endSession(id, "finished", e.target?.getDuration?.() ?? 0);
+              const dur = e.target?.getDuration?.() ?? 0;
+              endedRef.current(id, dur);
+              // Reached the end: "finished" only if most of it was actually played (seeking there is a skip).
+              const s = session.current;
+              endSession(id, leavingOutcome(s && s.videoId === id ? s.clock.seconds(t) : 0, dur), dur);
               advanceRef.current();
             }
           },
@@ -288,7 +291,8 @@ export function Player({ playlist, index, remainingMinutes, skip, ui, fromSearch
       }
       commit(l);
     }
-    endSession(current.id, "skipped", playerRef.current?.getCurrentTime?.() ?? 0);
+    // Next: recorded by the same rule as the budget (most of it played → finished, else skipped).
+    endSession(current.id, leavingOutcome(played(), duration()), playerRef.current?.getCurrentTime?.() ?? 0);
     void advance();
   };
   /** Return / Back / Home: leave the player, to Search if that's where the child came from. */

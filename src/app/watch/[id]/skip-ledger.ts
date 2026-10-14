@@ -46,3 +46,12 @@ export function leavingCounts(last: Ledger["last"], cfg: SkipConfig): "free" | "
 }
 
 export const isLocked = (l: Ledger) => l.lockedUntil > Date.now();
+
+/**
+ * How a viewing session that leaves a video (it ended, or Next) is recorded — by the same rule the skip
+ * budget uses: at least FINISH_RATIO of it actually PLAYED → finished; otherwise skipped (including jumping
+ * to the end). So the record never says "finished" while the budget charged a skip.
+ */
+export function leavingOutcome(playedSec: number, durationSec: number): "finished" | "skipped" {
+  return durationSec > 0 && playedSec / durationSec >= FINISH_RATIO ? "finished" : "skipped";
+}
