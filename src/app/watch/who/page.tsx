@@ -48,7 +48,7 @@ export default async function WhoPage(props: PageProps<"/watch/who">) {
         <Avatar emoji={p?.avatar} tv={tv} />
         <h1 className={`${h1} mt-6`}>This is {p?.name}&apos;s screen</h1>
         <p className={sub}>A grown-up can change that in the grown-up area.</p>
-        <Link href="/watch" data-tv-start="" className={tv ? "bigbtn mt-[5vh] rounded-full bg-[var(--kfocus)] px-[3vw] py-[1vw] text-[1.8vw] font-extrabold text-[#2a1206]" : "mt-8 flex h-14 items-center rounded-full bg-[var(--kfocus)] px-8 text-lg font-extrabold text-[#2a1206]"}>Go to {p?.name}&apos;s videos</Link>
+        <Link href="/watch" data-tv-start="" className={tv ? "bigbtn kbtn-primary mt-[5vh] rounded-full bg-[var(--kfocus)] px-[3vw] py-[1vw] text-[1.8vw] font-extrabold text-[#2a1206]" : "mt-8 flex h-14 items-center rounded-full bg-[var(--kfocus)] px-8 text-lg font-extrabold text-[#2a1206]"}>Go to {p?.name}&apos;s videos</Link>
       </>,
     );
   }

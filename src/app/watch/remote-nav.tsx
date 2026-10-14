@@ -155,7 +155,8 @@ export function RemoteNav({ home = "/watch" }: { home?: string }) {
       const dir = arrowDir(e);
 
       if (isBack(e)) {
-        // The TV search keyboard: a real keyboard's Backspace deletes a letter (the remote's Return still goes Home).
+        // Typing surfaces (the TV search keyboard, the PIN pad) mark themselves data-typing: there a real
+        // keyboard's Backspace deletes a character. The remote's Return (10009 / 461) and Escape still go back.
         if (e.key === "Backspace" && e.keyCode === 8 && document.querySelector("[data-typing]")) return;
         if (inInput && (target as HTMLInputElement).value && e.keyCode === 8) return; // Backspace edits the field
         e.preventDefault();

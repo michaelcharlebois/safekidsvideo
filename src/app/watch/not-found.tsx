@@ -8,7 +8,7 @@ export default function KidNotFound() {
       <BrandMark tone="dark" size={56} />
       <h1 className="mt-6 text-3xl font-extrabold">This one isn&apos;t here</h1>
       <p className="mt-2 text-lg font-semibold text-[var(--kmuted)]">Let&apos;s find something else to watch.</p>
-      <Link href="/watch" autoFocus className="bigbtn mt-8 flex h-14 items-center rounded-full bg-[var(--kfocus)] px-8 text-lg font-extrabold text-[#2a1206]">Go Home</Link>
+      <Link href="/watch" autoFocus className="bigbtn kbtn-primary mt-8 flex h-14 items-center rounded-full bg-[var(--kfocus)] px-8 text-lg font-extrabold text-[#2a1206]">Go Home</Link>
     </div>
   );
 }

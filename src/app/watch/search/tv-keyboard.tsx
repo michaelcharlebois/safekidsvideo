@@ -41,7 +41,7 @@ export function TvKeyboard({ initial }: { initial: string }) {
         <button type="button" onClick={() => add(" ")} className={`${key} px-[3vw]`}>Space</button>
         <button type="button" onClick={() => setQ((x) => x.slice(0, -1))} className={`${key} px-[2vw]`} aria-label="Delete a letter">Delete</button>
         <button type="button" onClick={() => setQ("")} className={`${key} px-[2vw]`}>Clear</button>
-        <button type="button" onClick={go} disabled={!q.trim()} className={`${key} bg-[var(--kfocus)] px-[3vw] text-[#2a1206] disabled:opacity-50`}>Search</button>
+        <button type="button" onClick={go} disabled={!q.trim()} className={`${key} kbtn-primary bg-[var(--kfocus)] px-[3vw] text-[#2a1206] disabled:opacity-50`}>Search</button>
       </div>
     </div>
   );

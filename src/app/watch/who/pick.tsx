@@ -33,6 +33,7 @@ export function PinPad({ profileId, next, tv }: { profileId: string; next: strin
     const onKey = (e: KeyboardEvent) => {
       const d = /^\d$/.test(e.key) ? e.key : e.keyCode >= 48 && e.keyCode <= 57 ? String(e.keyCode - 48) : null;
       if (d) { e.preventDefault(); setPin((p) => (p.length < 4 ? p + d : p)); }
+      else if (e.key === "Backspace" && e.keyCode === 8) { e.preventDefault(); setPin((p) => p.slice(0, -1)); } // a real keyboard; the remote's Return still goes back
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -43,7 +44,7 @@ export function PinPad({ profileId, next, tv }: { profileId: string; next: strin
   const rows = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["⌫", "0", "OK"]];
   const key = tv ? "bigbtn h-[5.4vw] w-[7vw] rounded-[1.2vw] text-[2.2vw] font-extrabold" : "bigbtn h-16 w-20 rounded-2xl text-2xl font-extrabold sm:h-[4.5rem] sm:w-24";
   return (
-    <form action={action} className={`flex flex-col items-center ${tv ? "mt-[3vh] gap-[1.4vh]" : "mt-6 gap-3"}`}>
+    <form action={action} data-typing className={`flex flex-col items-center ${tv ? "mt-[3vh] gap-[1.4vh]" : "mt-6 gap-3"}`}>
       <input type="hidden" name="profileId" value={profileId} />
       <input type="hidden" name="next" value={next} />
       <input type="hidden" name="pin" value={pin} />
@@ -56,7 +57,7 @@ export function PinPad({ profileId, next, tv }: { profileId: string; next: strin
           <div key={r.join("")} data-nav-row className={`flex ${tv ? "gap-[0.8vw]" : "gap-2"}`}>
             {r.map((k) =>
               k === "OK" ? (
-                <button key={k} type="submit" disabled={pending || pin.length !== 4} className={`${key} bg-[var(--kfocus)] text-[#2a1206] disabled:opacity-40`}>OK</button>
+                <button key={k} type="submit" disabled={pending || pin.length !== 4} className={`${key} kbtn-primary bg-[var(--kfocus)] text-[#2a1206] disabled:opacity-40`}>OK</button>
               ) : (
                 <button key={k} type="button" data-tv-start={i === 0 && k === "1" ? "" : undefined} aria-label={k === "⌫" ? "Delete a digit" : k}
                   onClick={() => (k === "⌫" ? setPin((p) => p.slice(0, -1)) : press(k))} className={`${key} bg-[rgb(255_249_241/0.1)]`}>{k}</button>

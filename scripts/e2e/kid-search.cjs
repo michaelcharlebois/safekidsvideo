@@ -2,7 +2,7 @@
 // Kid Search + requests (Maya in Open, local practice search over the catalogue). TV: the remote keyboard,
 // focus on results, asking with the remote, focus kept through the state change, Return. Touch: the
 // search field, asking, no duplicates. Parent: approve one request and decline another; the child sees both.
-const { OUT, MAYA, check, launch, parent, kid, go, active, press, samsungReturn, db, done } = require("./kid-common.cjs");
+const { OUT, MAYA, check, launch, parent, kid, go, active, press, samsungReturn, db, done, focusedContrast } = require("./kid-common.cjs");
 const WHEELS = "fxSSS000002", CLEANUP = "fxSSS000004", TWINKLE = "fxSSS000001", POLICE = "fxPNK000002";
 const reqs = (videoId) => (db().requests ?? []).filter((r) => r.videoId === videoId);
 const until = async (fn, ms = 8000) => { const t = Date.now(); while (Date.now() - t < ms) { if (fn()) return true; await new Promise((r) => setTimeout(r, 200)); } return false; };
@@ -35,6 +35,9 @@ const until = async (fn, ms = 8000) => { const t = Date.now(); while (Date.now()
   // Down to the action row, then right to Search.
   await press(tv, "ArrowDown", 3); for (let i = 0; i < 4 && (await active(tv)).text !== "Search"; i++) await press(tv, "ArrowRight");
   check("Down reaches the Search key", (await active(tv)).text === "Search", JSON.stringify(await active(tv)));
+  const sk = await focusedContrast(tv);
+  check("the focused Search key keeps its apricot fill and dark text", sk && sk.background === "rgb(255, 159, 110)" && sk.ratio >= 4.5, JSON.stringify(sk));
+  await tv.screenshot({ path: `${OUT}/search-tv-search-key-focused.png` });
   await press(tv, "Enter"); await tv.waitForURL(/q=duck/); await tv.waitForLoadState("networkidle"); await tv.waitForTimeout(800);
   a = await active(tv);
   check("after searching, focus moves to the first result", !!a.result, JSON.stringify(a));
@@ -44,8 +47,12 @@ const until = async (fn, ms = 8000) => { const t = Date.now(); while (Date.now()
   await go(tv, "/watch/search");
   await tv.keyboard.type("song"); await tv.waitForTimeout(200);
   check("a real keyboard types into the TV search too", (await tv.locator('[aria-label="What you typed"]').innerText()).trim() === "song");
+  await press(tv, "ArrowRight"); // focus on a key, not the page
+  check("(focus is on a keyboard key)", (await active(tv)).tag === "BUTTON");
   await tv.keyboard.press("Backspace"); await tv.waitForTimeout(200);
   check("a real keyboard's Backspace deletes a letter (it doesn't leave Search)", (await tv.locator('[aria-label="What you typed"]').innerText()).trim() === "son" && new URL(tv.url()).pathname === "/watch/search");
+  await samsungReturn(tv); await tv.waitForURL((u) => u.pathname === "/watch", { timeout: 8000 }).catch(() => {});
+  check("…while the Samsung Return key still goes back (Home)", new URL(tv.url()).pathname === "/watch", tv.url());
 
   // ---- TV: results for "song" ----
   await go(tv, "/watch/search?q=song", 900);

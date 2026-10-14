@@ -199,6 +199,12 @@ body {
 .kid-mode .kid-bf.tv .tile:focus-within { transform: scale(1.06); box-shadow: 0 0 0 0.35vw var(--kfocus), 0 1.6vw 3vw rgb(0 0 0 / 0.55); }
 .kid-mode .kid-bf.tv .tile:focus-within .tv-title { color: #fff; }
 .kid-mode .kid-bf.tv .bigbtn:focus { box-shadow: 0 0 0 0.3vw var(--kfocus); background: rgb(255 249 241 / 0.16); }
+/* Primary (apricot) buttons keep their fill and dark text when focused — an apricot ring would vanish on an
+   apricot button and the generic focus fill above would leave dark text on dark. They get an ivory ring
+   (with a ground-coloured gap) and a lift instead. Contrast: #2a1206 on #ff9f6e ≈ 8.9:1. */
+.kid-mode .kid-bf .bigbtn.kbtn-primary:focus,
+.kid-mode .kid-bf.tv .bigbtn.kbtn-primary:focus { background: var(--kfocus); color: #2a1206; box-shadow: 0 0 0 4px var(--kbg), 0 0 0 8px var(--kink); outline: none; }
+.kid-mode .kid-bf.tv .bigbtn.kbtn-primary:focus { box-shadow: 0 0 0 0.22vw var(--kbg), 0 0 0 0.5vw var(--kink); transform: scale(1.05); }
 /* Touch: no hover lift (it sticks on touch screens); a press state instead. */
 .kid-mode .kid-bf.touch .tile:hover, .kid-mode .kid-bf.touch .tile:focus-within { transform: none; box-shadow: none; }
 .kid-mode .kid-bf.touch .tile:active { transform: scale(0.98); }

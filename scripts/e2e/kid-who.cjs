@@ -2,7 +2,7 @@
 // Who's watching and the PIN pad (a shared screen in local mode). TV: tiles with the remote, the PIN by
 // arrows + OK and by number keys, a wrong PIN, Back. A child can't switch into another profile without the
 // PIN (the server decides). Touch layouts. (The 0019 attempt lockout needs a real device row: Supabase.)
-const { OUT, check, launch, parent, kid, go, active, press, done } = require("./kid-common.cjs");
+const { OUT, check, launch, parent, kid, go, active, press, done, focusedContrast } = require("./kid-common.cjs");
 const LEO_NAME = "Leo";
 (async () => {
   const b = await launch();
@@ -33,9 +33,16 @@ const LEO_NAME = "Leo";
   check("…and the screen is still Maya's", /Maya/.test(await tv.innerText("header")));
   // Right PIN with the number keys.
   await go(tv, "/watch/who", 600); await press(tv, "ArrowRight"); await press(tv, "Enter"); await tv.waitForURL(/pick=/); await tv.waitForTimeout(500);
-  for (const d of "2580") await tv.keyboard.press(d);
+  for (const d of "25809") await tv.keyboard.press(d); // a fifth digit is ignored
+  await tv.keyboard.press("Backspace"); await tv.waitForTimeout(150);
+  check("a real keyboard's Backspace deletes a PIN digit and stays on the pad", /3 of 4/.test(await tv.locator('[aria-label$="digits entered"]').getAttribute("aria-label")) && /pick=/.test(tv.url()));
+  await tv.keyboard.press("0");
   await tv.screenshot({ path: `${OUT}/who-tv-pin.png` });
-  await press(tv, "ArrowDown", 3); await press(tv, "ArrowRight", 2); await press(tv, "Enter");
+  await press(tv, "ArrowDown", 3); await press(tv, "ArrowRight", 2);
+  const ok = await focusedContrast(tv);
+  check("focused OK keeps its apricot fill and dark text", ok && ok.text === "OK" && ok.background === "rgb(255, 159, 110)" && ok.ratio >= 4.5, JSON.stringify(ok));
+  await tv.screenshot({ path: `${OUT}/who-tv-pin-ok-focused.png` });
+  await press(tv, "Enter");
   await tv.waitForURL((u) => u.pathname === "/watch", { timeout: 10000 }).catch(() => {});
   await tv.waitForTimeout(600);
   const hdr = await tv.innerText("header");
