@@ -6,6 +6,8 @@ import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS, type ConcernTag, type Cont
 import { isFound } from "@/lib/gate";
 import { sessionSeconds, sessionsFrom, type RawWatchEvent } from "@/lib/sessions";
 import { localWatchEvents } from "@/lib/db/local";
+import { permissionWritesPaused } from "@/lib/maintenance";
+import { serverNow } from "@/lib/clock";
 
 /* Daily mood check-in + the "what did the day look like" correlation. Supabase-only. */
 
@@ -26,7 +28,7 @@ export type WatchEvent = RawWatchEvent;
 export type KidDay = { profileId: string; day: string; mood: number; note?: string };
 
 /** Local calendar day for a timezone (defaults to America/Los_Angeles until we've learned the family's). */
-export function localDay(tz: string | undefined, d = new Date()): string {
+export function localDay(tz: string | undefined, d = serverNow()): string {
   const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: tz || "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit" });
   return fmt.format(d); // YYYY-MM-DD
 }
@@ -52,6 +54,7 @@ export async function saveKidDay(familyId: string, d: KidDay) {
 }
 
 export async function saveTimezone(familyId: string, tz: string) {
+  if (permissionWritesPaused()) return; // the time zone decides bedtime and "today"; remembered again after the pause
   if (!on() || !/^[A-Za-z_]+\/[A-Za-z_\/+-]+$/.test(tz)) return;
   await supabaseAdmin().from("families").update({ timezone: tz }).eq("id", familyId);
 }

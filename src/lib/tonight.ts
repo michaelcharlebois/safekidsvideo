@@ -1,5 +1,6 @@
 import "server-only";
 import { localDay } from "@/lib/checkin";
+import { serverNow } from "@/lib/clock";
 import { minutesUsedToday } from "@/lib/screentime";
 import { bedtimeNow, clockTime, extensionChoices, nightOf, type BedtimeExtension } from "@/lib/bedtime";
 import { listExtensions } from "@/lib/bedtime-store";
@@ -17,11 +18,11 @@ export type ChildTime = {
   choices: { minutes: number; label: string; passed: boolean }[];
 };
 
-export async function childTime(familyId: string, s: FamilySettings, tz?: string, now = new Date()): Promise<ChildTime> {
+export async function childTime(familyId: string, s: FamilySettings, tz?: string, now = serverNow()): Promise<ChildTime> {
   const today = localDay(tz, now);
   const bonus = s.bonusDay === today ? s.bonusMinutes ?? 0 : 0;
   const limit = s.dailyMinutes ? s.dailyMinutes + bonus : undefined;
-  const used = await minutesUsedToday(familyId, s.profileId, tz);
+  const used = await minutesUsedToday(familyId, s.profileId, tz, now);
   const b = bedtimeNow(now, s.bedtime, tz, s.bedtime && s.profileId ? (await listExtensions(familyId, nightOf(now, tz))).filter((e) => e.profileId === s.profileId) : []);
   return {
     usedMinutes: used, limitMinutes: limit, limitReached: limit != null && used >= limit,

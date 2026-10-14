@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { localDay, watchEventsSince, type WatchEvent } from "@/lib/checkin";
 import { attributedTo, sessionSeconds, sessionsFrom } from "@/lib/sessions";
 import { bedtimeNow, nightOf } from "@/lib/bedtime";
+import { serverNow } from "@/lib/clock";
 import { listExtensions } from "@/lib/bedtime-store";
 import type { FamilySettings, Video } from "@/lib/types";
 
@@ -34,10 +35,10 @@ export type TimeState =
  * Minutes this child has watched today, from viewing sessions (lib/sessions.ts) — the same count Activity
  * and Home show. Unattributed rows count only in a one-child family. Without a child, nothing is counted.
  */
-export async function minutesUsedToday(familyId: string, profileId: string | undefined, tz?: string): Promise<number> {
+export async function minutesUsedToday(familyId: string, profileId: string | undefined, tz?: string, now = serverNow()): Promise<number> {
   if (!profileId) return 0;
-  const day = localDay(tz);
-  const [raw, profiles] = await Promise.all([watchEventsSince(familyId, new Date(Date.now() - 30 * 3600 * 1000).toISOString()), db.listProfiles(familyId)]);
+  const day = localDay(tz, now);
+  const [raw, profiles] = await Promise.all([watchEventsSince(familyId, new Date(now.getTime() - 30 * 3600 * 1000).toISOString()), db.listProfiles(familyId)]);
   // Sessions that started today (a session is counted on the day it started).
   const events = raw.filter((e) => attributedTo(e.profileId, profileId, profiles.length));
   if (!events.length) return 0;
@@ -60,7 +61,7 @@ export function usedMinutesOn(events: WatchEvent[], videoById: Map<string, Video
  * is checked first and is never lifted by extra minutes; then the daily minutes (plus today's bonus), which
  * an extension never adds to.
  */
-export async function timeState(familyId: string, settings: FamilySettings, tz?: string, now = new Date()): Promise<TimeState> {
+export async function timeState(familyId: string, settings: FamilySettings, tz?: string, now = serverNow()): Promise<TimeState> {
   const today = localDay(tz, now);
   const night = nightOf(now, tz);
   const exts = settings.bedtime && settings.profileId ? (await listExtensions(familyId, night)).filter((e) => e.profileId === settings.profileId) : [];
@@ -68,7 +69,7 @@ export async function timeState(familyId: string, settings: FamilySettings, tz?:
   const extensionMinutes = b.extension?.extraMinutes ?? 0;
   const bonus = settings.bonusDay === today ? settings.bonusMinutes ?? 0 : 0;
   const limit = settings.dailyMinutes ? settings.dailyMinutes + bonus : undefined;
-  const used = limit ? await minutesUsedToday(familyId, settings.profileId, tz) : 0;
+  const used = limit ? await minutesUsedToday(familyId, settings.profileId, tz, now) : 0;
   if (b.inBedtime) {
     return { allowed: false, reason: "bedtime", usedMinutes: used, limitMinutes: limit, bedtime: settings.bedtime, night, extensionMinutes,
       limitReached: limit != null && used >= limit, stoppedAt: b.stopsAt?.toISOString() };
@@ -78,10 +79,10 @@ export async function timeState(familyId: string, settings: FamilySettings, tz?:
   return { allowed: true, remainingMinutes: limit != null ? limit - used : undefined, bedtime: settings.bedtime, night, stopsAt, extendedUntil: b.extension ? stopsAt : undefined };
 }
 
-export async function grantBonusMinutes(profileId: string, minutes: number, tz?: string) {
+export async function grantBonusMinutes(profileId: string, minutes: number, tz?: string, now = serverNow()) {
   const p = await db.getProfile(profileId);
   if (!p) return;
-  const today = localDay(tz);
+  const today = localDay(tz, now);
   const current = p.bonusDay === today ? p.bonusMinutes ?? 0 : 0;
   await db.upsertProfile({ ...p, bonusMinutes: Math.max(0, current + minutes), bonusDay: today });
 }

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import type { WatchRequest } from "@/lib/types";
 import { localRequests, localWatchEvents } from "@/lib/db/local";
 import { assertPermissionWritesOpen } from "@/lib/maintenance";
+import { serverNow } from "@/lib/clock";
 
 /*
  * "Ask a grown-up" requests and watch history. Requests work in Supabase and in local mode (lib/db/local.ts
@@ -85,7 +86,7 @@ const duplicate = (e: { code?: string } | null) => e?.code === "23505";
  */
 export async function logWatchStart(familyId: string, videoId: string, deviceId: string | undefined, profileId: string | undefined, sessionId: string) {
   if (!profileId || !UUID.test(sessionId)) return;
-  if (local()) return localWatchEvents.add({ familyId, videoId, profileId, startedAt: new Date().toISOString(), completed: false, sessionId });
+  if (local()) return localWatchEvents.add({ familyId, videoId, profileId, startedAt: serverNow().toISOString(), completed: false, sessionId });
   if (!on()) return;
   const { error } = await supabaseAdmin().from("watch_events").insert({
     family_id: familyId, video_id: videoId, device_id: deviceId && deviceId !== "local" ? deviceId : null,
@@ -99,7 +100,7 @@ export async function logWatchEnd(familyId: string, videoId: string, profileId: 
   if (!profileId || !UUID.test(sessionId)) return;
   if (local()) {
     return localWatchEvents.add({
-      familyId, videoId, profileId, startedAt: new Date().toISOString(), completed: outcome === "finished", outcome, sessionId,
+      familyId, videoId, profileId, startedAt: serverNow().toISOString(), completed: outcome === "finished", outcome, sessionId,
       endedAtSec: Math.max(0, Math.round(Number.isFinite(atSec) ? atSec : 0)),
       watchedSec: watchedSec != null && Number.isFinite(watchedSec) ? Math.max(0, Math.min(6 * 3600, Math.round(watchedSec))) : undefined,
     });

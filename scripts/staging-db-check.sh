@@ -27,7 +27,7 @@ echo "▶ Postgres $("$BIN/postgres" --version | awk '{print $3}') on socket $DI
 export PG_TEST_URL="postgresql://postgres@localhost:$PORT/postgres?host=$DIR"
 
 echo "▶ Real-Postgres tests (representative data rehearsal, concurrency)"
-npx vitest run test/staging-migration.test.ts test/pin-lockout-db.test.ts test/migration-0018.test.ts test/watch-sessions-db.test.ts test/child-requests-db.test.ts test/time-requests-db.test.ts test/bedtime-extensions-db.test.ts test/rollback-rehearsal.test.ts
+npx vitest run test/staging-migration.test.ts test/pin-lockout-db.test.ts test/migration-0018.test.ts test/watch-sessions-db.test.ts test/child-requests-db.test.ts test/time-requests-db.test.ts test/bedtime-extensions-db.test.ts test/time-grants-db.test.ts test/rollback-rehearsal.test.ts
 
 if [ "${1:-}" = "--scale" ]; then
   echo "▶ Production-sized rehearsal (${BF_SCALE_FAMILIES:-2000} families): 0018 → 0023, timed, then rolled back"
@@ -68,11 +68,17 @@ SQL
   done
   echo "▶ Report"; "${PSQL[@]}" -P pager=off -f scripts/staging/report.sql
   echo "▶ Held for review (first 25)"; "${PSQL[@]}" -P pager=off -c "select family_id, kind, target_id, array_length(candidate_profile_ids,1) as candidates from legacy_grants order by family_id limit 25"
-  echo "▶ Rolling back (0023 → 0018) and comparing"
+  echo "▶ Rolling back (0023 → 0018) and checking that nobody's access widened"
+  "${PSQL[@]}" -c "create table _pre_rb as select family_id, kind, target_id, profile_id from whitelist; create table _kids_rb as select family_id, count(*)::int n from profiles group by family_id" >/dev/null
   for m in 0023_bedtime_extensions 0022_time_requests 0021_child_requests 0020_watch_sessions; do "${PSQL[@]}" -f "supabase/rollbacks/$m.down.sql" >/dev/null; done
   "${PSQL[@]}" -f supabase/rollbacks/0019_pin_attempts.down.sql >/dev/null
   "${PSQL[@]}" -f supabase/rollbacks/0018_child_scope.down.sql >/dev/null
-  DIFF=$("${PSQL[@]}" -At -c "select count(*) from ((table _wl_before except select family_id, kind, target_id, created_at from whitelist) union all (select family_id, kind, target_id, created_at from whitelist except table _wl_before)) d")
-  [ "$DIFF" = "0" ] && echo "✓ rollback restored the whitelist exactly" || { echo "✗ rollback differs by $DIFF rows"; exit 1; }
+  WIDER=$("${PSQL[@]}" -At -c "select count(*) from whitelist w join _kids_rb k on k.family_id = w.family_id where w.kind in ('channel','video','override','auto') and not exists (select 1 from _pre_rb p where p.family_id = w.family_id and p.kind = w.kind and p.target_id = w.target_id and p.profile_id is null) and (select count(distinct p.profile_id) from _pre_rb p where p.family_id = w.family_id and p.kind = w.kind and p.target_id = w.target_id) <> k.n")
+  LOOSER=$("${PSQL[@]}" -At -c "select count(*) from _pre_rb p where p.kind in ('block','dismissed') and not exists (select 1 from whitelist w where w.family_id = p.family_id and w.kind = p.kind and w.target_id = p.target_id)")
+  FAMWIDE=$("${PSQL[@]}" -At -c "select count(*) from ((select family_id, kind, target_id from _wl_before where kind in ('channel','video','block','dismissed') except select family_id, kind, target_id from whitelist) union all (select family_id, kind, target_id from whitelist where kind in ('channel','video','block','dismissed') except select family_id, kind, target_id from _wl_before)) d")
+  REPORTED=$("${PSQL[@]}" -At -c "select count(*) from rollback_0018_report")
+  [ "$WIDER" = "0" ] && [ "$LOOSER" = "0" ] && [ "$FAMWIDE" = "0" ] \
+    && echo "✓ rollback widened nobody's access; family-wide sources and restrictions identical; $REPORTED per-child allows reported for manual restore" \
+    || { echo "✗ rollback check failed: widened=$WIDER loosened=$LOOSER family-wide-diff=$FAMWIDE"; exit 1; }
 fi
 echo "✓ staging rehearsal passed"

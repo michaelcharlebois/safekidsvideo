@@ -1,5 +1,5 @@
 import "server-only";
-import { assertPermissionWritesOpen } from "@/lib/maintenance";
+import { assertPermissionWritesOpen, permissionWritesPaused, PermissionWritesPaused } from "@/lib/maintenance";
 import { cookies } from "next/headers";
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { DEFAULT_FAMILY_ID, STORE_KIND } from "@/lib/db";
@@ -112,6 +112,7 @@ export async function familyForUser(userId: string): Promise<string> {
 // ---- pairing -------------------------------------------------------------
 
 export async function createPairingCode(familyId: string): Promise<{ code: string; expiresAt: string }> {
+  assertPermissionWritesOpen();
   const sb = supabaseAdmin();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -132,6 +133,7 @@ export async function createDeviceToken(familyId: string, name: string): Promise
 
 /** Redeem a code from the kid device. Returns the raw token to set as a cookie. */
 export async function redeemPairingCode(code: string, deviceName: string): Promise<{ token: string } | { error: string }> {
+  if (permissionWritesPaused()) return { error: new PermissionWritesPaused().message };
   const sb = supabaseAdmin();
   const { data } = await sb.from("pairing_codes").select("*").eq("code", code.trim()).maybeSingle();
   if (!data) return { error: "That code isn't right." };
@@ -163,6 +165,7 @@ export async function assignDevice(familyId: string, deviceId: string, profileId
 }
 
 export async function setDeviceActiveProfile(familyId: string, deviceId: string, profileId: string | null) {
+  assertPermissionWritesOpen();
   const { error } = await supabaseAdmin().from("devices").update({ active_profile_id: profileId }).match({ id: deviceId, family_id: familyId });
   if (error) throw new Error(error.message);
 }

@@ -11,7 +11,7 @@ import { packById } from "@/lib/packs";
 import { billingEnabled, createCheckoutUrl, createPortalUrl, familyStatus } from "@/lib/billing";
 import { saveKidDay, saveTimezone } from "@/lib/checkin";
 import { grantBonusMinutes } from "@/lib/screentime";
-import { answerTimeRequest, askForMoreTime, cancelBedtimeExtension, grantBedtimeExtension, settlePendingBedtimeWithGrant, settlePendingWithGrant } from "@/lib/more-time";
+import { answerTimeRequest, askForMoreTime, cancelBedtimeExtension, grantBedtimeExtension, grantMinutes } from "@/lib/more-time";
 import { CONCERN_TAGS, type ConcernTag, type ConfirmationVerdict, type TagVote } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
@@ -29,6 +29,7 @@ import { DEFAULT_PROFILE } from "@/lib/db/store";
 import { supabaseAuthClient, supabaseEnabled } from "@/lib/supabase/server";
 import { checksToday, createRequest, finishCheck, getRequest, listPendingRequests, logCheck, logWatchEnd, logWatchStart, resolveRequest } from "@/lib/activity";
 import { planCheck } from "@/lib/check-plan";
+import { PermissionWritesPaused } from "@/lib/maintenance";
 import { authorize, childSettings, getKidScreen, getLibrary, playableFor, screen } from "@/lib/queries";
 import { BudgetExceededError, IncompleteReviewError, reviewVideo } from "@/lib/reviewer";
 import { pushToFamily, removeSubscription, saveSubscription } from "@/lib/push";
@@ -445,8 +446,7 @@ export async function bedtimeExtensionAction(form: FormData) {
   }
   const minutes = Number(form.get("minutes"));
   try {
-    await grantBedtimeExtension(fid, profileId, minutes);
-    await settlePendingBedtimeWithGrant(fid, profileId, minutes); // answers tonight's ask, if any
+    await grantBedtimeExtension(fid, profileId, minutes); // also answers tonight's pending ask, in the same transaction
   } catch (e) { redirect(withParam(back, "error", (e as Error).message)); }
   revalidatePath("/parent", "layout"); revalidatePath("/watch", "layout");
   redirect(withParam(back, "time", `ext-${minutes}`));
@@ -472,8 +472,8 @@ export async function grantMoreTime(form: FormData) {
   const p = await db.getProfile(profileId);
   if (p && p.familyId === fid && [15, 30, 60, -1000].includes(minutes)) {
     const tz = (await db.getFamily(fid)).timezone;
-    await grantBonusMinutes(profileId, minutes, tz);
-    if (minutes > 0) await settlePendingWithGrant(fid, profileId, minutes); // answers today's ask, if any
+    if (minutes > 0) await grantMinutes(fid, profileId, minutes); // adds them and answers today's ask, atomically
+    else await grantBonusMinutes(profileId, minutes, tz);         // "Remove extra time" (only ever stricter)
     if (minutes > 0) await pushToFamily(fid, { title: `+${minutes} minutes for ${p.name}`, body: "Added for today.", url: `/parent/settings?kid=${profileId}`, tag: `more-time-${profileId}` });
   }
   revalidatePath("/parent"); revalidatePath("/parent/settings"); revalidatePath("/watch");
@@ -653,7 +653,10 @@ export async function selectProfile(_prev: PickResult, form: FormData): Promise<
   }
 
   if (v.deviceId === "local") c.set(PROFILE_COOKIE, p.id, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
-  else await setDeviceActiveProfile(v.familyId, v.deviceId, p.id);
+  else {
+    try { await setDeviceActiveProfile(v.familyId, v.deviceId, p.id); }
+    catch (e) { if (e instanceof PermissionWritesPaused) return { error: e.message }; throw e; }
+  }
   revalidatePath("/watch");
   go();
   return null;

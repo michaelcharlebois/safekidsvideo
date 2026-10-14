@@ -353,16 +353,6 @@ export const localBedtimeExtensions = {
   async list(familyId: string, sinceNight: string) {
     return ((await load()).bedtimeExtensions ?? []).filter((e) => e.familyId === familyId && e.night >= sinceNight);
   },
-  async set(e: Omit<BedtimeExtension, "id" | "createdAt" | "updatedAt" | "cancelledAt">): Promise<BedtimeExtension> {
-    const db = await load();
-    db.bedtimeExtensions ??= [];
-    const now = new Date().toISOString();
-    const live = db.bedtimeExtensions.find((x) => x.profileId === e.profileId && x.night === e.night && !x.cancelledAt);
-    if (live) Object.assign(live, { ...e, requestId: e.requestId ?? live.requestId, updatedAt: now });
-    else db.bedtimeExtensions.push({ ...e, id: randomUUID(), createdAt: now, updatedAt: now });
-    await persist(db);
-    return { ...(live ?? db.bedtimeExtensions[db.bedtimeExtensions.length - 1]) };
-  },
   async cancel(familyId: string, profileId: string, night: string): Promise<boolean> {
     const db = await load();
     const live = (db.bedtimeExtensions ?? []).find((x) => x.familyId === familyId && x.profileId === profileId && x.night === night && !x.cancelledAt);
@@ -370,5 +360,61 @@ export const localBedtimeExtensions = {
     live.cancelledAt = new Date().toISOString();
     await persist(db);
     return true;
+  },
+};
+
+/**
+ * Local-mode equivalents of the 0023 functions: answering an ask and granting what it asks for are one write
+ * of the store (both changes or neither), so an approved ask always has its grant.
+ */
+export const localTimeGrants = {
+  async approveBedtime(familyId: string, requestId: string, minutes: 15 | 30 | 45 | 60, cutoffAt: string, baseBedtime: string, night: string): Promise<"done" | "gone" | "expired"> {
+    const db = await load();
+    const r = (db.timeRequests ?? []).find((x) => x.id === requestId && x.familyId === familyId);
+    if (!r || r.kind !== "bedtime" || r.status !== "pending") return "gone";
+    if (r.day !== night) return "expired";
+    const now = new Date().toISOString();
+    db.bedtimeExtensions ??= [];
+    const live = db.bedtimeExtensions.find((x) => x.profileId === r.profileId && x.night === night && !x.cancelledAt);
+    if (live) Object.assign(live, { baseBedtime, extraMinutes: minutes, cutoffAt, requestId, updatedAt: now });
+    else db.bedtimeExtensions.push({ id: randomUUID(), familyId, profileId: r.profileId, night, baseBedtime, extraMinutes: minutes, cutoffAt, requestId, createdAt: now, updatedAt: now });
+    Object.assign(r, { status: "approved", grantedMinutes: minutes, resolvedAt: now });
+    await persist(db);
+    return "done";
+  },
+  async grantBedtime(familyId: string, profileId: string, night: string, baseBedtime: string, minutes: 15 | 30 | 45 | 60, cutoffAt: string): Promise<BedtimeExtension> {
+    const db = await load();
+    if (!(db.profiles ?? []).some((p) => p.id === profileId && p.familyId === familyId)) throw new Error("not a child of this family");
+    const now = new Date().toISOString();
+    db.bedtimeExtensions ??= [];
+    let live = db.bedtimeExtensions.find((x) => x.profileId === profileId && x.night === night && !x.cancelledAt);
+    if (live) Object.assign(live, { baseBedtime, extraMinutes: minutes, cutoffAt, updatedAt: now });
+    else { live = { id: randomUUID(), familyId, profileId, night, baseBedtime, extraMinutes: minutes, cutoffAt, createdAt: now, updatedAt: now }; db.bedtimeExtensions.push(live); }
+    for (const r of db.timeRequests ?? []) if (r.familyId === familyId && r.profileId === profileId && r.kind === "bedtime" && r.day === night && r.status === "pending") Object.assign(r, { status: "approved", grantedMinutes: minutes, resolvedAt: now });
+    await persist(db);
+    return { ...live };
+  },
+  async grantMinutes(familyId: string, profileId: string, minutes: 15 | 30 | 60, today: string): Promise<void> {
+    const db = await load();
+    const p = (db.profiles ?? []).find((x) => x.id === profileId && x.familyId === familyId);
+    if (!p) throw new Error("not a child of this family");
+    p.bonusMinutes = p.bonusDay === today ? (p.bonusMinutes ?? 0) + minutes : minutes;
+    p.bonusDay = today;
+    const now = new Date().toISOString();
+    for (const r of db.timeRequests ?? []) if (r.familyId === familyId && r.profileId === profileId && r.kind === "limit" && r.day === today && r.status === "pending") Object.assign(r, { status: "approved", grantedMinutes: minutes, resolvedAt: now });
+    await persist(db);
+  },
+  async approveMinutes(familyId: string, requestId: string, minutes: 15 | 30 | 60, today: string): Promise<"done" | "gone" | "expired"> {
+    const db = await load();
+    const r = (db.timeRequests ?? []).find((x) => x.id === requestId && x.familyId === familyId);
+    if (!r || r.kind !== "limit" || r.status !== "pending") return "gone";
+    if (r.day !== today) return "expired";
+    const p = (db.profiles ?? []).find((x) => x.id === r.profileId && x.familyId === familyId);
+    if (!p) return "gone";
+    p.bonusMinutes = p.bonusDay === today ? (p.bonusMinutes ?? 0) + minutes : minutes;
+    p.bonusDay = today;
+    Object.assign(r, { status: "approved", grantedMinutes: minutes, resolvedAt: new Date().toISOString() });
+    await persist(db);
+    return "done";
   },
 };
