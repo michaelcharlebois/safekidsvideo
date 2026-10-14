@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { BrandMark } from "@/components/logo";
 import { IconHand, IconHome, IconSearch } from "@/components/icons";
 import { ExitButton } from "./exit-button";
+import { FullscreenButton } from "./fullscreen-button";
 
 /*
  * Kid-screen chrome shared by Home, Search and Who's watching, one per interface. Presentation only.
@@ -50,6 +51,7 @@ export function TabletTopBar({ child, canSearch, canSwitch, active, exitTarget, 
         <Link href="/watch" aria-current={active === "home" ? "page" : undefined} className={pill(active === "home")}><IconHome size={22} />Home</Link>
         {canSearch && <Link href="/watch/search" aria-current={active === "search" ? "page" : undefined} className={pill(active === "search")}><IconSearch size={22} />Search</Link>}
         <ChildChip child={child} canSwitch={canSwitch} />
+        <FullscreenButton />
         <ExitButton target={exitTarget} />
       </nav>
     </header>

@@ -390,12 +390,28 @@ export async function reviewChannelNow(form: FormData) {
 
 // ---- Screen time ----------------------------------------------------------------
 
-export async function askMoreTime() {
+export type MoreTimeResult = { sent: true; already: boolean } | null;
+/**
+ * Time-up screen: "Ask a grown-up for more time". One notification per child per day from a screen: asking
+ * again says it's already been sent instead of buzzing the parent's phone again (and the notification is
+ * tagged per child, so a phone shows one). Only a parent can add time (grantMoreTime).
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- useActionState passes the previous result
+export async function askMoreTime(_prev: MoreTimeResult): Promise<MoreTimeResult> {
   const v = await resolveViewer();
   if (!v.familyId) redirect("/pair");
-  await askForMoreTime(v.familyId, v.profileId);
-  redirect("/watch?asked=time");
+  const pid = v.profileId;
+  if (!pid) redirect("/watch/who");
+  const c = await cookies();
+  const tz = (await db.getFamily(v.familyId)).timezone;
+  const mark = `${pid}:${new Intl.DateTimeFormat("en-CA", { timeZone: tz || "America/Los_Angeles" }).format(new Date())}`;
+  const asked = (c.get(ASKED_TIME_COOKIE)?.value ?? "").split(",");
+  if (asked.includes(mark)) return { sent: true, already: true };
+  await askForMoreTime(v.familyId, pid);
+  c.set(ASKED_TIME_COOKIE, [...asked.filter((x) => x && !x.startsWith(`${pid}:`)).slice(-5), mark].join(","), { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 2 });
+  return { sent: true, already: false };
 }
+const ASKED_TIME_COOKIE = "bf_asked_time";
 
 export async function grantMoreTime(form: FormData) {
   const fid = await requireParent();

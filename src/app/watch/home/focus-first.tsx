@@ -11,7 +11,7 @@ import { useEffect } from "react";
 export function TvFocus() {
   useEffect(() => {
     if (!document.activeElement || document.activeElement === document.body) {
-      const start = document.querySelector<HTMLElement>(".kid-bf.tv .tile a") ?? document.querySelector<HTMLElement>(".kid-bf.tv [data-tv-start]");
+      const start = document.querySelector<HTMLElement>('.kid-bf.tv .tile a, .kid-bf.tv .tile button:not([aria-disabled="true"])') ?? document.querySelector<HTMLElement>(".kid-bf.tv [data-tv-start]");
       start?.focus({ preventScroll: true });
     }
     const onOver = (e: PointerEvent) => {

@@ -22,7 +22,7 @@ const settled = async (page) => { await page.waitForSelector('[aria-busy="true"]
   // 1. Two kids, nobody picked: the TV fails closed to "Who's watching?"
   await kid.goto(`${BASE}/watch`);
   check("no child picked → /watch redirects to Who's watching", kid.url().includes("/watch/who"), kid.url());
-  check("Who's watching says a grown-up enters the PIN", (await kid.innerText("body")).includes("A grown-up enters the PIN"));
+  check("Who's watching says a grown-up enters the PIN", /a grown-up enters the PIN/i.test(await kid.innerText("body")));
   await kid.goto(`${BASE}/watch/yCjJyiqpAuU`);
   check("no child picked → a video URL redirects to Who's watching", kid.url().includes("/watch/who"));
   await kid.screenshot({ path: `${OUT}/01-who.png` });
@@ -173,7 +173,7 @@ const settled = async (page) => { await page.waitForSelector('[aria-busy="true"]
   check("Leo: Maya's approval of the unreviewed video does NOT carry over", !home.includes("XqZsoesa55w"));
   check("Leo: still filtered (violence still blocked for Leo)", !home.includes("e_04ZrNroTo"));
   await kid.goto(`${BASE}/watch/XqZsoesa55w`);
-  check("Leo: opening Maya's approved video by URL → not found", (await kid.innerText("body")).match(/404|not found|could not be found/i) != null);
+  check("Leo: opening Maya's approved video by URL → not found", (await kid.innerText("body")).match(/404|not found|could not be found|isn't here/i) != null && (await kid.locator("[data-player]").count()) === 0);
   await kid.screenshot({ path: `${OUT}/10-leo-home.png` });
 
   // 10. Navigation: five destinations; detail pages belong to Library; old links still land

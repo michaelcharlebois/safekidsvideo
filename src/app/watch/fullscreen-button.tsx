@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { IconCollapse, IconExpand } from "@/components/icons";
 
 /**
  * Ask the browser for real full screen (hides its address bar and tabs). Needs a user
@@ -30,8 +31,8 @@ export function FullscreenButton() {
     } catch { /* some TVs refuse; nothing to do */ }
   };
   return (
-    <button onClick={toggle} className="bigbtn rounded-full bg-white/10 px-4 py-2 text-xl font-extrabold active:scale-95" aria-label={on ? "Exit full screen" : "Full screen"}>
-      {on ? "🡼" : "⛶"}<span className="hidden sm:inline ml-2 text-base">{on ? "Exit" : "Full screen"}</span>
+    <button type="button" onClick={toggle} className="flex h-12 w-12 items-center justify-center rounded-full bg-[rgb(255_249_241/0.1)] text-[var(--kink)] active:scale-95" aria-label={on ? "Exit full screen" : "Full screen"}>
+      {on ? <IconCollapse size={22} /> : <IconExpand size={22} />}
     </button>
   );
 }
