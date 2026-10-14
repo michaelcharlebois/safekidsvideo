@@ -517,7 +517,7 @@ export async function moveChannel(form: FormData) {
   const channelId = String(form.get("channelId") ?? "");
   const dir = form.get("dir") === "up" ? -1 : 1;
   const nextRaw = String(form.get("next") ?? "");
-  const back = isLocalPath(nextRaw) ? nextRaw : `/parent?kid=${profileId}#channels`;
+  const back = isLocalPath(nextRaw) ? nextRaw : `/parent/library?kid=${profileId}&tab=sources`;
   const p = await db.getProfile(profileId);
   if (!p || p.familyId !== fid) redirect("/parent");
   // Current full order = parent's list, then any approved channels not yet in it (same rule the TV uses).
