@@ -46,6 +46,13 @@ Approved with four decisions and refinements. Built in migration 0023, `src/lib/
   - gains kind `bedtime`, whose `day` is the night
   - a 45-minute grant is allowed only for bedtime
   - a unique index allows one bedtime ask per child per night, whatever its status
+- **Grants are single transactions** (server-only SECURITY DEFINER functions; execute revoked from `anon` and `authenticated`):
+  - `approve_bedtime_request` locks the ask, creates or updates tonight's extension and marks the ask approved, together. If creating the extension fails, the ask stays pending. A retry or a second parent gets `gone`; an ask from another night gets `expired`.
+  - `grant_bedtime_extension` (a direct grant from Home or Settings) creates or updates tonight's one extension and answers tonight's pending ask with it.
+  - `approve_minutes_request` and `grant_minutes` do the same for daily minutes.
+  - Every function locks in the same order (the child's pending ask, then the child, then the extension), so a direct grant racing an approval waits rather than deadlocking.
+  - The local store does each in a single write.
+  - Tested in `test/time-grants-db.test.ts` (PGlite, plus real Postgres with ten to twelve parallel connections) and `test/bedtime-server.test.ts` (local).
 - **Rollback** (`0023_bedtime_extensions.down.sql`) drops extensions and bedtime asks, so children fall back to their scheduled bedtime (stricter), and restores 0022's checks.
 
 ## Screens

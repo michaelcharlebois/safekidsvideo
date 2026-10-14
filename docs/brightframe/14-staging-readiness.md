@@ -16,7 +16,7 @@ Production stays untouched throughout. Nothing here merges, migrates production,
 
 ## 1. Migration rehearsal at production size (local, no Supabase)
 1. `scripts/staging-db-check.sh --scale`.
-   - **What it does:** builds a pre-0018 database with synthetic, production-sized data, applies 0018 → 0023 in order (timed), checks nothing is lost, rolls back 0023 → 0018, and compares the whitelist byte-for-byte.
+   - **What it does:** builds a pre-0018 database with synthetic, production-sized data, applies 0018 → 0023 in order (timed), checks nothing is lost, rolls back 0023 → 0018, and checks no child gained access (family-wide sources and restrictions byte-identical; per-child allows restored only where every child had them).
    - **Size:** `BF_SCALE_FAMILIES=8000` gives roughly 18k children, 1.8M viewing rows and 180k permission rows. Measured times are under "Results".
 2. With a data-only production dump (read-only `pg_dump`; keep it local and delete it after): `scripts/staging-db-check.sh prod-data.sql`.
    - **What it does:** runs preflight, applies 0018 → 0023 with timings, then the report, the held-for-review list, the watch-events audit, and the rollback comparison.
@@ -27,6 +27,8 @@ Production stays untouched throughout. Nothing here merges, migrates production,
 **Decide here:** if 0018 takes long at real size, schedule a short maintenance window. 0018 rewrites `whitelist` and backfills profile links; the others are additive.
 
 ## 2. Supabase staging project and an isolated Vercel preview
+**Step-by-step:** `18-staging-runbook.md` (separate Vercel project, the `apply.sh` guarded database steps, the isolation check, and the two-build rollback rehearsal). Synthetic data only, unless you separately approve a production copy.
+
 1. Create a **new** Supabase project, "brightframe-staging". Never point the preview at production.
 2. Load a copy of production data, or the synthetic set. Apply 0001 → 0017 (if starting empty), then **0018 → 0023** in order.
 3. Create a Vercel preview for `feature/brightframe` with environment variables scoped to **Preview** only:
@@ -164,17 +166,29 @@ Work through the Samsung checklist in `06-before-production.md` with the real re
 So the old build must never run against the new schema. A rollback is app + schema together, with permission writes paused in between.
 
 **Procedure.**
-1. **Pause permission writes** on the current build: set `BF_PERMISSION_WRITES_PAUSED=1` in the production environment and redeploy (same build). While paused:
-   - approvals, blocks, channel and video changes, old-record decisions, video requests, more-time and bedtime asks and answers, bedtime extensions and device assignments are refused
+1. **Pause permission writes** on the current build: set `BF_PERMISSION_WRITES_PAUSED=1` in the production environment and redeploy (same build). While paused, every write that can change what a child may watch is refused (`src/lib/maintenance.ts`; the guarded store in `src/lib/db/resolve.ts`):
+   - approvals, Never / Keep hidden, channel and video changes, old-record decisions, reviews and parent flags
+   - viewing mode, content filters, daily minutes, bedtime, extra minutes, the PIN, the family's time zone
+   - creating, editing or deleting a child
+   - device assignment, switching a shared screen to another child, pairing a new screen (revoking a screen still works: it only restricts)
+   - video requests, more-time and bedtime asks and answers, bedtime extensions and their cancellation
    - parents see a banner; children who ask are told to ask a grown-up in person
    - watching and viewing records continue
+   - `test/maintenance.test.ts` attempts each of these while paused and checks that the child's effective permissions (what plays, mode, filters, minutes, bedtime, extra minutes, PIN, children, time state) are identical afterwards.
 2. **Snapshot:** take a database backup / note the restore point. Export the current permissions (`select * from whitelist`, `legacy_grants`, `bedtime_extensions`) for reference.
 3. **Maintenance window, in order.** Fail closed: the new build against the old schema errors (nothing plays), while the old build against the new schema would widen access. So the schema goes first.
    1. Run the rollbacks: 0023 → 0022 → 0021 → 0020 → 0019 → 0018. From here the current build's kid and parent pages fail until step ii, and nothing plays. Expect a few minutes.
    2. Deploy the previous build at once.
    3. Remove `BF_PERMISSION_WRITES_PAUSED` (the old build doesn't read it). Smoke-test: sign in, pair, play.
 4. **What the rollbacks do with changes made since release** (never widening access):
-   - **0018:** pre-release permissions return family-wide, except allows a parent removed (a channel or video removed, an approval undone, an old record dismissed). Restrictions added since (Never / Keep hidden, for any child) return family-wide. Allows created since, which were for one child, are dropped and listed in `rollback_0018_report`.
+   - **0018:** the previous build applies every row to every child, so a row is restored only if it grants nothing a child couldn't watch immediately before the rollback:
+     - Family-wide channels and videos still in place come back.
+     - A per-child allow (approval, auto-clearance, library video) comes back family-wide **only if every child in the family has it**. Otherwise it is dropped and listed in `rollback_0018_report` for a parent to redo by hand. This covers old approvals attributed to one child, allows created since release, and allows removed from one child.
+     - Old approvals still awaiting a decision (`legacy_grants`, which grant nobody) are not restored, and are listed in the report.
+     - Pre-release allows that no child has any more (removed, undone, dismissed) are not restored, and are listed.
+     - Every restriction comes back family-wide: pre-release ones, and Never / Keep hidden set since for any child (stricter for siblings, never looser).
+     - In a one-child family, everything comes back exactly.
+     - Tested on effective permissions, every child × every video, before and after: `test/rollback-rehearsal.test.ts` (Maya-only old approval, held approval, approval dismissed after release, approval removed from one child, one- and two-child families, family-wide restrictions), and at scale in `test/migration-scale.test.ts` (no child gains a video or channel; restrictions unchanged).
    - **0021:** where two children had the same video pending, the earliest request is kept and the others are listed in `rollback_0021_report`.
    - **0022 / 0023:** asks for more time, bedtime asks and tonight's extensions are dropped. Children fall back to their scheduled bedtime and daily minutes, which is stricter.
    - **0020:** `session_id` and `watched_sec` are dropped. Viewing rows stay and are counted by the old rules.
@@ -188,7 +202,7 @@ So the old build must never run against the new schema. A rollback is app + sche
 
 **Production-sized rehearsal** (synthetic, real Postgres 16, `scripts/staging-db-check.sh --scale`):
 
-| Families | Children | Viewing rows | Permission rows | 0018 | 0019 | 0020 | 0021 | 0022 | 0023 | Rollback exact |
+| Families | Children | Viewing rows | Permission rows | 0018 | 0019 | 0020 | 0021 | 0022 | 0023 | Rollback never widens |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 2,000 | ~3,600 | ~360k | ~46k | 1.0 s | <0.1 s | 0.3 s | <0.1 s | <0.1 s | (not run) | Yes |
 | 8,000 | ~14,400 | ~1.44M | ~184k | 5.6 s | <0.1 s | 1.4 s | <0.1 s | <0.1 s | <0.1 s | Yes (0023 → 0018) |
