@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- plain Node script, run outside the app build */
 // Builds kid-screen scenario databases from the UX fixture (local mode). Usage: node kid-fixtures.cjs <scenario> <out.json>
 //   empty   — nothing playable for anyone (no family sources, no exceptions); Maya can search (Open)
 //   waiting — as empty, plus a pending request from Maya
