@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Staging rehearsal for migrations 0018, 0019 and 0020 on a throwaway local Postgres server. Never touches
+# Staging rehearsal for migrations 0018 to 0021 on a throwaway local Postgres server. Never touches
 # Supabase. Needs the Postgres server binaries (initdb, pg_ctl) — e.g. `apt install postgresql`.
 #
 #   scripts/staging-db-check.sh                 # representative synthetic data + real-concurrency PIN tests
@@ -25,7 +25,7 @@ echo "▶ Postgres $("$BIN/postgres" --version | awk '{print $3}') on socket $DI
 export PG_TEST_URL="postgresql://postgres@localhost:$PORT/postgres?host=$DIR"
 
 echo "▶ Real-Postgres tests (representative data rehearsal, concurrency)"
-npx vitest run test/staging-migration.test.ts test/pin-lockout-db.test.ts test/migration-0018.test.ts test/watch-sessions-db.test.ts
+npx vitest run test/staging-migration.test.ts test/pin-lockout-db.test.ts test/migration-0018.test.ts test/watch-sessions-db.test.ts test/child-requests-db.test.ts
 
 if [ "${1:-}" != "" ]; then
   DUMP="$1"

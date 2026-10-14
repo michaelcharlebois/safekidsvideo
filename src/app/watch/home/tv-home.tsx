@@ -3,7 +3,7 @@ import { BrandMark } from "@/components/logo";
 import { IconSearch } from "@/components/icons";
 import { ExitButton } from "../exit-button";
 import { KidCard } from "./kid-card";
-import { FocusFirst } from "./focus-first";
+import { TvFocus } from "./focus-first";
 import type { KidHomeView } from "./view";
 
 /**
@@ -15,12 +15,12 @@ export function TvHome({ view }: { view: KidHomeView }) {
   const { child, shelves, waiting } = view;
   return (
     <div className="kid-bf tv flex-1 px-[5vw] pb-[6vh] pt-[4vh]">
-      <FocusFirst />
+      <TvFocus />
       <header data-nav-row className="flex items-center gap-[1.2vw]">
         <BrandMark tone="dark" size={0} className="h-[3.2vw] w-auto" />
-        <Link href="/watch" aria-current="page" className="bigbtn ml-[1vw] rounded-full bg-[rgb(255_249_241/0.1)] px-[1.6vw] py-[0.8vw] text-[1.5vw] font-extrabold">Home</Link>
+        <Link href="/watch" aria-current="page" data-tv-start={view.canSearch ? undefined : ""} className="bigbtn ml-[1vw] rounded-full bg-[rgb(255_249_241/0.1)] px-[1.6vw] py-[0.8vw] text-[1.5vw] font-extrabold">Home</Link>
         {view.canSearch && (
-          <Link href="/watch/search" className="bigbtn flex items-center gap-[0.6vw] rounded-full px-[1.6vw] py-[0.8vw] text-[1.5vw] font-extrabold text-[var(--kmuted)]"><IconSearch size={0} className="h-[1.5vw] w-[1.5vw]" />Search</Link>
+          <Link href="/watch/search" data-tv-start="" className="bigbtn flex items-center gap-[0.6vw] rounded-full px-[1.6vw] py-[0.8vw] text-[1.5vw] font-extrabold text-[var(--kmuted)]"><IconSearch size={0} className="h-[1.5vw] w-[1.5vw]" />Search</Link>
         )}
         <div className="ml-auto flex items-center gap-[1.2vw]">
           {view.minutesLeft != null && <span className="text-[1.2vw] font-bold text-[var(--kmuted)]">{view.minutesLeft} min left today</span>}
@@ -49,9 +49,9 @@ export function TvHome({ view }: { view: KidHomeView }) {
           ))}
           {waiting.length > 0 && (
             <section aria-label="Waiting for a grown-up">
-              <h2 className="text-[2vw] font-extrabold">Waiting for a grown-up</h2>
+              <h2 className="text-[2vw] font-extrabold">Waiting for a grown-up <span className="text-[var(--kmuted)]">({waiting.length})</span></h2>
               <p className="text-[1.3vw] font-semibold text-[var(--kmuted)]">You asked for these. They&apos;ll show up above if a grown-up says yes.</p>
-              <ul className="mt-[1vh] flex gap-[1.6vw] overflow-hidden">{waiting.slice(0, 4).map((v) => <KidCard key={v.id} v={v} size="tv" waiting />)}</ul>
+              <ul className="shelf" data-nav-row>{waiting.map((v) => <KidCard key={v.id} v={v} size="tv" waiting />)}</ul>
             </section>
           )}
         </div>

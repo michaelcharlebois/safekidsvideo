@@ -3,9 +3,12 @@ import { BrandMark } from "@/components/logo";
 import { IconHand, IconHome, IconSearch } from "@/components/icons";
 import { ExitButton } from "../exit-button";
 import { KidCard } from "./kid-card";
+import { ShowMore } from "./show-more";
 import { askLine, type KidHomeView } from "./view";
 
 const PHONE_PER_SECTION = 4;
+const PHONE_WAITING = 3;
+const TABLET_PER_SECTION = 8;
 
 function ChildChip({ view, compact = false }: { view: KidHomeView; compact?: boolean }) {
   const inner = <><span className={compact ? "text-2xl leading-none" : "text-3xl leading-none"} aria-hidden>{view.child.avatar}</span><span className={compact ? "sr-only" : ""}>{view.child.name}</span></>;
@@ -49,17 +52,17 @@ export function TabletHome({ view }: { view: KidHomeView }) {
           {shelves.map((s) => (
             <section key={s.id} aria-label={s.title}>
               <h2 className="text-xl font-extrabold">{s.title}</h2>
-              <ul className="mt-3 grid grid-cols-3 gap-4 lg:grid-cols-4">
-                {s.videos.slice(0, 8).map((v) => <KidCard key={v.id} v={v} size="grid" />)}
-              </ul>
+              <ShowMore limit={TABLET_PER_SECTION} label={s.title} className="mt-3 grid grid-cols-3 gap-4 lg:grid-cols-4">
+                {s.videos.map((v) => <KidCard key={v.id} v={v} size="grid" />)}
+              </ShowMore>
               {s.comingSoon > 0 && <p className="mt-2 text-sm font-semibold text-[var(--kmuted)]">{s.comingSoon} more coming soon.</p>}
             </section>
           ))}
           {waiting.length > 0 && (
             <section aria-label="Waiting for a grown-up">
-              <h2 className="text-xl font-extrabold">Waiting for a grown-up</h2>
+              <h2 className="text-xl font-extrabold">Waiting for a grown-up <span className="text-[var(--kmuted)]">({waiting.length})</span></h2>
               <p className="text-sm font-semibold text-[var(--kmuted)]">You asked for these. If a grown-up says yes, they&apos;ll show up here to watch.</p>
-              <ul className="mt-3 grid grid-cols-3 gap-4 lg:grid-cols-4">{waiting.map((v) => <KidCard key={v.id} v={v} size="grid" waiting />)}</ul>
+              <ShowMore limit={TABLET_PER_SECTION} label="Waiting for a grown-up" className="mt-3 grid grid-cols-3 gap-4 lg:grid-cols-4">{waiting.map((v) => <KidCard key={v.id} v={v} size="grid" waiting />)}</ShowMore>
             </section>
           )}
         </div>
@@ -98,14 +101,18 @@ export function PhoneHome({ view }: { view: KidHomeView }) {
         {shelves.length === 0 && waiting.length === 0 ? <Empty view={view} /> : (
           <div className="mt-3 space-y-6">
             {shelves.map((s) => (
-              <PhoneSection key={s.id} id={s.id} title={s.title} total={s.videos.length}>
-                {s.videos.map((v, i) => <KidCard key={v.id} v={v} size="row" more={i >= PHONE_PER_SECTION} />)}
-              </PhoneSection>
+              <section key={s.id} aria-label={s.title}>
+                <h2 className="text-lg font-extrabold">{s.title}</h2>
+                <ShowMore limit={PHONE_PER_SECTION} label={s.title} className="mt-2 space-y-2">
+                  {s.videos.map((v) => <KidCard key={v.id} v={v} size="row" />)}
+                </ShowMore>
+              </section>
             ))}
             {waiting.length > 0 && (
               <section aria-label="Waiting for a grown-up">
-                <h2 className="text-lg font-extrabold">Waiting for a grown-up</h2>
-                <ul className="mt-2 space-y-2">{waiting.slice(0, 3).map((v) => <KidCard key={v.id} v={v} size="row" waiting />)}</ul>
+                <h2 className="text-lg font-extrabold">Waiting for a grown-up <span className="text-[var(--kmuted)]">({waiting.length})</span></h2>
+                <p className="text-sm font-semibold text-[var(--kmuted)]">You asked. They&apos;ll move up to your videos if a grown-up says yes.</p>
+                <ShowMore limit={PHONE_WAITING} label="Waiting for a grown-up" className="mt-2 space-y-2">{waiting.map((v) => <KidCard key={v.id} v={v} size="row" waiting />)}</ShowMore>
               </section>
             )}
           </div>
@@ -118,19 +125,5 @@ export function PhoneHome({ view }: { view: KidHomeView }) {
         <Link href="/watch?ask=1" aria-current={view.asking ? "page" : undefined} className={`${tab} ${view.asking ? "text-[var(--kink)]" : "text-[var(--kmuted)]"}`}><IconHand size={24} />Ask</Link>
       </nav>
     </div>
-  );
-}
-
-/** Four per section on a phone; "Show all" reveals the rest in place (no JavaScript needed). */
-function PhoneSection({ id, title, total, children }: { id: string; title: string; total: number; children: React.ReactNode }) {
-  return (
-    <section aria-label={title}>
-      <h2 className="text-lg font-extrabold">{title}</h2>
-      <input type="checkbox" id={`more-${id}`} className="peer sr-only" />
-      <ul className="mt-2 space-y-2 [&_li[data-more]]:hidden peer-checked:[&_li[data-more]]:block">{children}</ul>
-      {total > PHONE_PER_SECTION && (
-        <label htmlFor={`more-${id}`} className="mt-2 flex h-11 cursor-pointer items-center justify-center rounded-full bg-[rgb(255_249_241/0.08)] text-base font-extrabold text-[var(--kmuted)] peer-checked:hidden">Show all {total}</label>
-      )}
-    </section>
   );
 }

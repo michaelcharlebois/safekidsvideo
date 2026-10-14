@@ -7,7 +7,7 @@ import { fmtDuration, type KidVideo } from "./view";
  * Sizes: tv (10-foot, D-pad focus via .tile:focus-within), grid (tablet), row (phone).
  * `waiting` cards aren't links: the child asked and a grown-up hasn't answered.
  */
-export function KidCard({ v, size, waiting = false, more = false }: { v: KidVideo; size: "tv" | "grid" | "row"; waiting?: boolean; more?: boolean }) {
+export function KidCard({ v, size, waiting = false }: { v: KidVideo; size: "tv" | "grid" | "row"; waiting?: boolean }) {
   const thumb = (
     <span className="relative block overflow-hidden rounded-[inherit]">
       <VideoThumb dark src={v.thumb} width={640} height={360} draggable={false} className={`aspect-video w-full object-cover ${waiting ? "opacity-60" : ""}`} />
@@ -22,7 +22,7 @@ export function KidCard({ v, size, waiting = false, more = false }: { v: KidVide
         <span className="min-w-0 text-[1.0625rem] font-bold leading-snug text-[var(--kink)] line-clamp-3">{v.title}</span>
       </span>
     );
-    return <li className="tile overflow-hidden" data-more={more ? "" : undefined}>{waiting ? <div aria-label={`${v.title}, waiting for a grown-up`}>{inner}</div> : <Link href={`/watch/${v.id}`} draggable={false} className="block">{inner}</Link>}</li>;
+    return <li className="tile overflow-hidden">{waiting ? <div aria-label={`${v.title}, waiting for a grown-up`}>{inner}</div> : <Link href={`/watch/${v.id}`} draggable={false} className="block">{inner}</Link>}</li>;
   }
   const title = size === "tv"
     ? <p className="tv-title px-[1vw] py-[0.8vw] text-[1.25vw] font-bold leading-snug text-[var(--kmuted)] line-clamp-2">{v.title}</p>
@@ -30,7 +30,12 @@ export function KidCard({ v, size, waiting = false, more = false }: { v: KidVide
   const body = <>{thumb}{title}</>;
   return (
     <li className="tile overflow-hidden">
-      {waiting ? <div aria-label={`${v.title}, waiting for a grown-up`}>{body}</div> : <Link href={`/watch/${v.id}`} draggable={false} className="block outline-none">{body}</Link>}
+      {waiting
+        ? size === "tv"
+          // Reachable by the remote (so every waiting video can be seen) but it opens nothing.
+          ? <button type="button" aria-disabled="true" aria-label={`${v.title}. Waiting for a grown-up.`} className="block w-full cursor-default text-left outline-none">{body}</button>
+          : <div aria-label={`${v.title}, waiting for a grown-up`}>{body}</div>
+        : <Link href={`/watch/${v.id}`} draggable={false} className="block outline-none">{body}</Link>}
     </li>
   );
 }

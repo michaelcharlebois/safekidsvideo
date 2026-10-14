@@ -70,11 +70,18 @@ Nothing is rewritten, so the change is reversible.
 
 Run it on staging before and after 0020.
 
-## Migration 0020 (not applied)
+## Migration 0020: status and order
 
-- Adds nullable `session_id`, two partial unique indexes and a per-child time index.
-- Additive. Rollback is in `supabase/rollbacks/0020_watch_sessions.down.sql`.
-- **Deploy order:** apply 0020 before (or with) the app. Otherwise new rows fail on the missing column, and are logged and dropped rather than breaking playback.
+**Status: not applied anywhere.** It must stay unapplied on production until the release is approved.
+
+**What it does:** adds nullable `session_id`, two partial unique indexes (one start and one end per session) and a per-child time index. It's additive. The rollback is `supabase/rollbacks/0020_watch_sessions.down.sql`.
+
+**Order matters:**
+1. **0020 must precede any build that writes watch sessions** (this branch's player). That build writes `session_id`. Against a database without the column, every new viewing record is rejected. The error is logged and the record dropped, so playback works but viewing time and daily limits under-count.
+2. Older builds are unaffected by 0020, so it can go in first.
+3. **Release sequence:** rehearse on staging (`scripts/staging-db-check.sh`, then `scripts/staging/watch-events-audit.sql` before and after) → apply 0020 (and 0021) to production → deploy the build.
+
+**0021** makes requests per child (one pending request per child per video, instead of per family). It isn't applied either. Apply it with 0020, before deploying.
 
 ## Tests
 

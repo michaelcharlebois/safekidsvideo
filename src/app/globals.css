@@ -194,7 +194,7 @@ body {
 .kid-mode .kid-bf h1, .kid-mode .kid-bf h2 { font-family: var(--font-display); color: var(--kink); letter-spacing: -0.02em; }
 .kid-mode .kid-bf .tile { background: var(--kbg2); border-radius: 1.25rem; }
 /* TV: 10-foot cards in horizontal rows, a big apricot ring and lift on D-pad focus. */
-.kid-mode .kid-bf.tv .shelf { gap: 1.6vw; padding: 1.2vw 0 2vw; margin: 0 -0.6vw; padding-left: 0.6vw; padding-right: 0.6vw; scroll-padding-left: 0.6vw; }
+.kid-mode .kid-bf.tv .shelf { gap: 1.6vw; padding: 1.4vw 1.6vw 2.2vw; margin: 0 -1.6vw; scroll-padding-left: 1.6vw; }
 .kid-mode .kid-bf.tv .tile { width: 21.5vw; }
 .kid-mode .kid-bf.tv .tile:focus-within { transform: scale(1.06); box-shadow: 0 0 0 0.35vw var(--kfocus), 0 1.6vw 3vw rgb(0 0 0 / 0.55); }
 .kid-mode .kid-bf.tv .tile:focus-within .tv-title { color: #fff; }
@@ -206,3 +206,6 @@ body {
 .kid-mode .kid-bf.tv .dur { font-size: 1vw; padding: 0.2vw 0.5vw; }
 /* Touch layouts put cards in grids and lists, not scrolling rows: let the grid size them. */
 .kid-mode .kid-bf.touch .tile { width: auto; flex: none; scroll-snap-align: none; }
+/* TV: exactly one highlight — the D-pad focus. Hovering never draws a second ring (a pointer moves focus instead). */
+.kid-mode .kid-bf.tv .tile:hover:not(:focus-within) { transform: none; box-shadow: none; }
+.kid-mode .kid-bf.tv .tile button[aria-disabled="true"] { cursor: default; }

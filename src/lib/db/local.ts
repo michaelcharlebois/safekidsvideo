@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Channel, Confirmation, ContentCard, Family, FamilySettings, LegacyGrant, Profile, ReviewerNotes, Video, WhitelistEntry } from "@/lib/types";
+import type { Channel, Confirmation, ContentCard, Family, FamilySettings, LegacyGrant, Profile, ReviewerNotes, Video, WatchRequest, WhitelistEntry } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SETTINGS, mergeSettings, type Store } from "./store";
 
 type Db = {
@@ -18,6 +18,8 @@ type Db = {
   schema?: number;
   whitelistPre0018?: WhitelistEntry[];
   legacyGrants?: LegacyGrant[];
+  /** "Ask a grown-up" requests (local mode only; Supabase keeps them in watch_requests). */
+  requests?: (WatchRequest & { resolvedAt?: string })[];
 };
 
 /** Overridable for tests. */
@@ -267,5 +269,31 @@ export const localStore: Store = {
     g.resolution = resolution;
     await persist(db);
     return g;
+  },
+};
+
+/**
+ * Local-mode requests, with the same rules as the database: one PENDING request per child per video
+ * (a repeat ask is "exists"), resolved once.
+ */
+export const localRequests = {
+  async list(familyId: string) {
+    return ((await load()).requests ?? []).filter((r) => r.familyId === familyId);
+  },
+  async create(r: Omit<WatchRequest, "id" | "createdAt" | "status">): Promise<"created" | "exists"> {
+    const db = await load();
+    db.requests ??= [];
+    if (db.requests.some((x) => x.familyId === r.familyId && x.videoId === r.videoId && (x.profileId ?? null) === (r.profileId ?? null) && x.status === "pending")) return "exists";
+    db.requests.push({ ...r, id: randomUUID(), status: "pending", createdAt: new Date().toISOString() });
+    await persist(db);
+    return "created";
+  },
+  async resolve(familyId: string, id: string, status: "approved" | "denied") {
+    const db = await load();
+    const r = (db.requests ?? []).find((x) => x.id === id && x.familyId === familyId && x.status === "pending");
+    if (!r) return;
+    r.status = status;
+    r.resolvedAt = new Date().toISOString();
+    await persist(db);
   },
 };

@@ -43,7 +43,7 @@ Recommendation: (1) now, (2) before opening sign-ups widely; (3) only if needed.
 ## 3. Still to test on Supabase staging and a real TV
 
 The local walkthrough (31 checks) and the real-Postgres tests can't cover the items below. They need:
-- a Supabase **staging** project restored from production data, with 0018 and 0019 applied
+- a Supabase **staging** project restored from production data, with 0018–0021 applied
 - this branch on a Vercel preview pointed at that project
 
 **Migration rehearsal**
@@ -66,7 +66,7 @@ The local walkthrough (31 checks) and the real-Postgres tests can't cover the it
 - Make a device a child's own from the child page: you return to that child's Screens section with "… is now Maya's own", and the device can't switch. "Make shared" reverses it.
 - Revoke a device mid-session.
 
-**Watch sessions (0020)**
+**Watch sessions (0020) and per-child requests (0021): not applied. Both go to production before the build that needs them, and only after release approval.**
 - Apply 0020, play a video to the end, skip one, leave one with Back: one session each, with the right outcome, in `watch_events`.
 - Run `scripts/staging/watch-events-audit.sql` before and after to size the historical double counting.
 - Daily limit: with a 30-minute limit, a 20-minute show finished once leaves about 10 minutes.

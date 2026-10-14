@@ -9,7 +9,11 @@
 -- Older rows keep session_id null; the app folds them into sessions (src/lib/sessions.ts). Nothing here
 -- rewrites history.
 --
--- Additive and safe to apply before or after deploying the app that writes session_id.
+-- ORDER: apply this BEFORE deploying any build that writes watch sessions (this branch). That build writes
+-- session_id; without this column every new viewing record is rejected (logged and dropped, so viewing
+-- time and limits would under-count). Additive: older builds are unaffected by it.
+-- STATUS: not applied anywhere. Keep it unapplied on production until the release is approved; rehearse on
+-- staging first (scripts/staging-db-check.sh, scripts/staging/watch-events-audit.sql).
 -- Rollback: supabase/rollbacks/0020_watch_sessions.down.sql
 
 alter table watch_events add column if not exists session_id uuid;

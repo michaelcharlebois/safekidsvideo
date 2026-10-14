@@ -3,10 +3,16 @@ import { supabaseAdmin, supabaseEnabled } from "@/lib/supabase/server";
 import { pushToFamily } from "@/lib/push";
 import { db } from "@/lib/db";
 import type { WatchRequest } from "@/lib/types";
+import { localRequests } from "@/lib/db/local";
 
-/* "Ask a grown-up" requests and watch history. Supabase-only; local mode is a quiet no-op. */
+/*
+ * "Ask a grown-up" requests and watch history. Requests work in Supabase and in local mode (lib/db/local.ts
+ * localRequests, same rules); watch history is Supabase-only. Every request is child-scoped: one PENDING
+ * request per child per video, and the parent's phone is only pinged when a new one is created.
+ */
 
 const on = () => supabaseEnabled && !!(process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY);
+const local = () => !supabaseEnabled;
 
 type Row = { id: string; family_id: string; device_id: string | null; profile_id?: string | null; video_id: string; status: WatchRequest["status"]; created_at: string };
 const toReq = (r: Row): WatchRequest => ({
@@ -16,6 +22,7 @@ const toReq = (r: Row): WatchRequest => ({
 export async function createRequest(
   familyId: string, videoId: string, deviceId?: string, reason?: string, profileId?: string,
 ): Promise<"created" | "exists" | "off"> {
+  if (local()) return localRequests.create({ familyId, videoId, profileId, deviceId: deviceId && deviceId !== "local" ? deviceId : undefined });
   if (!on()) return "off";
   const { error } = await supabaseAdmin()
     .from("watch_requests")
@@ -33,6 +40,7 @@ export async function createRequest(
 }
 
 export async function listPendingRequests(familyId: string): Promise<WatchRequest[]> {
+  if (local()) return (await localRequests.list(familyId)).filter((r) => r.status === "pending").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   if (!on()) return [];
   const { data } = await supabaseAdmin()
     .from("watch_requests")
@@ -49,12 +57,14 @@ export async function pendingVideoIds(familyId: string, profileId?: string): Pro
 }
 
 export async function getRequest(familyId: string, requestId: string): Promise<WatchRequest | undefined> {
+  if (local()) return (await localRequests.list(familyId)).find((r) => r.id === requestId);
   if (!on()) return undefined;
   const { data } = await supabaseAdmin().from("watch_requests").select("*").match({ id: requestId, family_id: familyId }).maybeSingle();
   return data ? toReq(data as Row) : undefined;
 }
 
 export async function resolveRequest(familyId: string, requestId: string, status: "approved" | "denied") {
+  if (local()) return localRequests.resolve(familyId, requestId, status);
   if (!on()) return;
   await supabaseAdmin()
     .from("watch_requests")
@@ -139,13 +149,24 @@ export async function pendingCheckIds(familyId: string, profileId?: string): Pro
 
 /** Requests a parent approved in the last 24h — so the kid screen can celebrate them. */
 export async function recentlyApprovedIds(familyId: string, profileId?: string): Promise<Set<string>> {
+  return recentlyResolvedIds(familyId, "approved", profileId);
+}
+
+/** Requests a parent turned down in the last 24h: the kid screen says "not now" instead of offering to ask again. */
+export async function recentlyDeclinedIds(familyId: string, profileId?: string): Promise<Set<string>> {
+  return recentlyResolvedIds(familyId, "denied", profileId);
+}
+
+async function recentlyResolvedIds(familyId: string, status: "approved" | "denied", profileId?: string): Promise<Set<string>> {
+  const sinceMs = Date.now() - 24 * 60 * 60 * 1000;
+  if (local()) return new Set((await localRequests.list(familyId)).filter((r) => r.status === status && r.resolvedAt && Date.parse(r.resolvedAt) >= sinceMs && (!profileId || r.profileId === profileId)).map((r) => r.videoId));
   if (!on()) return new Set();
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const since = new Date(sinceMs).toISOString();
   let q = supabaseAdmin()
     .from("watch_requests")
     .select("video_id")
     .eq("family_id", familyId)
-    .eq("status", "approved")
+    .eq("status", status)
     .gte("resolved_at", since);
   if (profileId) q = q.eq("profile_id", profileId);
   const { data } = await q;
