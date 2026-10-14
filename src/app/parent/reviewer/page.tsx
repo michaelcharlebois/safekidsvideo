@@ -6,7 +6,7 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { feedbackStats, isDisagreement } from "@/lib/learn";
 import { DAILY_BUDGET_USD, spentLast24h } from "@/lib/reviewer";
 import { CONCERN_LABELS, CONCERN_TAGS, VERDICT_LABELS } from "@/lib/types";
-import { Button, Card, TopBar } from "@/components/ui";
+import { Button, Card, Notice, PAGE, PageHeader } from "@/components/ui";
 import { learnNow, saveReviewerNotes } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
@@ -30,15 +30,15 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
   const tagRows = CONCERN_TAGS.map((t) => ({ t, ...(stats.perTag[t] ?? { agree: 0, overcall: 0, missed: 0 }) })).filter((r) => r.agree + r.overcall + r.missed > 0);
 
   return (
-    <>
-      <TopBar title="Reviewer" right={<Link href="/parent" className="text-sm font-bold text-muted hover:text-ink">← Dashboard</Link>} />
-      <main className="mx-auto w-full max-w-3xl px-4 py-6 space-y-4">
-        {sp.learning === "1" && <Card className="p-3 bg-grass text-sm font-bold">Learning in the background — new notes and any re-reviews land within a few minutes. Refresh to see them.</Card>}
-        {sp.saved === "1" && <Card className="p-3 bg-grass text-sm font-bold">Notes saved. Every review from now on uses them.</Card>}
-        {sp.error === "admin" && <Card className="p-3 border-bad/40 bg-bad/5 text-sm font-bold">Only a Brightframe admin can change the shared reviewer notes. Your feedback on individual cards still counts.</Card>}
+    <main className={PAGE}>
+      <PageHeader title="Reviewer accuracy" sub="How parents rate Brightframe's AI reviews, and what it's learning from them. Shared by every family." back={{ href: "/parent/account", label: "Account" }} />
+      <div className="mt-6 max-w-3xl space-y-4">
+        {sp.learning === "1" && <Notice tone="ok">Learning requested. New notes and any re-reviews appear here once they&apos;re stored; refresh later.</Notice>}
+        {sp.saved === "1" && <Notice tone="ok">Notes saved. Every review from now on uses them.</Notice>}
+        {sp.error === "admin" && <Notice tone="bad">Only a Brightframe admin can change the shared reviewer notes. Your feedback on individual reviews still counts.</Notice>}
 
-        <Card className="p-4">
-          <h2 className="font-extrabold">How parents rate the cards <span className="text-muted font-bold">· last 90 days</span></h2>
+        <Card className="p-5">
+          <h2 className="text-lg">How parents rate the reviews <span className="text-sm font-semibold text-muted">· last 90 days</span></h2>
           <div className="mt-3 grid grid-cols-3 gap-2 text-center">
             <Stat label="Accurate" value={pct(stats.agree, stats.confirmations)} sub={`${stats.agree} of ${stats.confirmations}`} />
             <Stat label="Too strict" value={pct(stats.tooStrict, stats.confirmations)} sub={`${stats.tooStrict}`} />
@@ -46,10 +46,10 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
           </div>
           {tagRows.length > 0 && (
             <table className="mt-4 w-full text-sm">
-              <thead><tr className="text-left text-xs uppercase tracking-wide text-muted"><th className="py-1">Tag</th><th>Fair</th><th>Over-called</th><th>Missed</th></tr></thead>
+              <thead><tr className="text-left text-xs font-bold text-muted"><th className="py-1">Concern</th><th>Fair</th><th>Over-called</th><th>Missed</th></tr></thead>
               <tbody>
                 {tagRows.map((r) => (
-                  <tr key={r.t} className="border-t border-line">
+                  <tr key={r.t} className="border-t border-sand">
                     <td className="py-1 font-bold">{CONCERN_LABELS[r.t]}</td><td>{r.agree}</td>
                     <td className={r.overcall > r.agree ? "text-bad font-bold" : ""}>{r.overcall}</td>
                     <td className={r.missed > r.agree ? "text-bad font-bold" : ""}>{r.missed}</td>
@@ -62,8 +62,8 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
         </Card>
 
         {admin && (
-        <Card className="p-4">
-          <h2 className="font-extrabold">Spend <span className="text-muted font-bold">· last 30 days, estimated · admins only</span></h2>
+        <Card className="p-5">
+          <h2 className="text-lg">Spend <span className="text-sm font-semibold text-muted">· last 30 days, estimated · admins only</span></h2>
           <div className="mt-3 grid grid-cols-3 gap-2 text-center">
             <Stat label="Reviews" value={String(spend.reviews)} sub={`${spend.metered} metered`} />
             <Stat label="Total" value={`$${spend.total.toFixed(2)}`} sub={`$${spend.perReview.toFixed(3)} / review`} />
@@ -76,43 +76,52 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
           )}
           <div className="mt-3">
             <div className="flex items-center justify-between text-sm"><span className="font-bold">Last 24 hours</span><span className={last24 >= DAILY_BUDGET_USD ? "font-bold text-bad" : "text-muted"}>${last24.toFixed(2)} of ${DAILY_BUDGET_USD.toFixed(2)}</span></div>
-            <div className="mt-1 h-2 rounded-full bg-line"><div className={`h-2 rounded-full ${last24 >= DAILY_BUDGET_USD ? "bg-bad" : "bg-ink"}`} style={{ width: `${Math.min(100, Math.round((100 * last24) / Math.max(0.01, DAILY_BUDGET_USD)))}%` }} /></div>
+            <div className="mt-1 h-2 rounded-full bg-sand-soft"><div className={`h-2 rounded-full ${last24 >= DAILY_BUDGET_USD ? "bg-bad" : "bg-forest"}`} style={{ width: `${Math.min(100, Math.round((100 * last24) / Math.max(0.01, DAILY_BUDGET_USD)))}%` }} /></div>
             <p className="mt-1 text-xs text-muted">All-in cap across every family and job. When it&apos;s reached, nightly jobs stop and a kid&apos;s &ldquo;Check it&rdquo; becomes a request to the parent instead.</p>
           </div>
         </Card>
         )}
 
-        <Card className="p-4">
+        {admin ? (
+        <Card className="p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="font-extrabold">Calibration notes {notes ? <span className="text-muted font-bold">· v{notes.version} · {notes.source === "learn" ? "learned" : "edited by a parent"}</span> : null}</h2>
+              <h2 className="text-lg">Calibration notes {notes ? <span className="text-muted font-bold">· v{notes.version} · {notes.source === "learn" ? "learned" : "edited by a parent"}</span> : null}</h2>
               <p className="text-sm text-muted">Appended to the reviewer&apos;s instructions on every review. Rewritten nightly from new feedback; disputed cards get re-reviewed with the dispute in hand. Edit by hand if you know something it doesn&apos;t.</p>
             </div>
-            {admin && <form action={learnNow}><Button type="submit" variant="ghost">Learn now</Button></form>}
+            {admin && <form action={learnNow}><Button type="submit" variant="secondary" size="sm">Learn now</Button></form>}
           </div>
           {admin ? (
             <form action={saveReviewerNotes} className="mt-3 space-y-2">
-              <textarea name="notes" rows={10} defaultValue={notes?.notes ?? ""} placeholder={"- Nothing learned yet. Dispute a few cards, then press Learn now — or write rules here, e.g.\n- Channel branding intros and outros are not commercialism."} className="w-full rounded-xl border border-line bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-accent" />
+              <textarea name="notes" rows={10} defaultValue={notes?.notes ?? ""} placeholder={"- Nothing learned yet. Dispute a few cards, then press Learn now — or write rules here, e.g.\n- Channel branding intros and outros are not commercialism."} className="w-full rounded-xl border border-sand bg-surface px-3 py-2 font-mono text-xs outline-none focus:border-forest" />
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted">{history.length > 1 ? `Previous versions: ${history.slice(1).map((h) => `v${h.version}`).join(", ")}` : ""}</span>
                 <Button type="submit">Save notes</Button>
               </div>
             </form>
-          ) : (
-            <pre className="mt-3 whitespace-pre-wrap rounded-xl bg-surface p-3 font-mono text-xs">{notes?.notes ?? "Nothing learned yet."}</pre>
-          )}
+          ) : null}
         </Card>
+        ) : (
+          /* The raw reviewer instructions are technical; parents can look, but they're folded away. */
+          <details className="rounded-[var(--radius-card)] border border-sand bg-surface">
+            <summary className="cursor-pointer px-5 py-4 text-sm font-bold text-forest">Technical: the reviewer&apos;s calibration notes{notes ? ` (v${notes.version})` : ""}</summary>
+            <div className="border-t border-sand px-5 py-4">
+              <p className="text-sm text-muted">Added to the reviewer&apos;s instructions on every review, and rewritten from parents&apos; feedback.</p>
+              <pre className="mt-3 whitespace-pre-wrap rounded-xl bg-ivory p-3 font-mono text-xs">{notes?.notes ?? "Nothing learned yet."}</pre>
+            </div>
+          </details>
+        )}
 
-        <Card className="p-4">
-          <h2 className="font-extrabold">Recent disputes</h2>
+        <Card className="p-5">
+          <h2 className="text-lg">Recent disputes</h2>
           {disputes.length === 0 ? <p className="mt-1 text-sm text-muted">None in the last 30 days.</p> : (
-            <ul className="mt-2 divide-y divide-line text-sm">
+            <ul className="mt-2 divide-y divide-sand text-sm">
               {disputes.map((d) => {
                 const vid = videos.get(d.videoId);
                 const votes = Object.entries(d.tagVotes ?? {}).filter(([, x]) => x !== "agree").map(([t, x]) => `${CONCERN_LABELS[t as keyof typeof CONCERN_LABELS]} ${x}`);
                 return (
                   <li key={d.id} className="py-2">
-                    <Link href={`/parent/video/${d.videoId}`} className="font-bold hover:underline">{vid?.title ?? d.videoId}</Link>
+                    <Link href={`/parent/video/${d.videoId}`} className="font-bold text-forest hover:underline">{vid?.title ?? d.videoId}</Link>
                     <p className="text-muted">{VERDICT_LABELS[d.verdict]}{votes.length ? ` · ${votes.join(", ")}` : ""}{d.ageVote && d.ageVote !== "right" ? ` · age too ${d.ageVote === "younger" ? "cautious" : "permissive"}` : ""}{d.note ? ` · “${d.note}”` : ""}</p>
                   </li>
                 );
@@ -120,8 +129,8 @@ export default async function ReviewerPage(props: PageProps<"/parent/reviewer">)
             </ul>
           )}
         </Card>
-      </main>
-    </>
+      </div>
+    </main>
   );
 }
 
@@ -141,9 +150,9 @@ function spendByDay(cards: { reviewer: { reviewedAt: string }; usage?: { costUsd
 
 function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className="rounded-xl bg-surface p-3">
-      <p className="text-2xl font-extrabold">{value}</p>
-      <p className="text-xs font-bold">{label}</p>
+    <div className="rounded-xl border border-sand bg-ivory p-3">
+      <p className="text-2xl font-extrabold text-forest">{value}</p>
+      <p className="text-xs font-bold text-ink">{label}</p>
       <p className="text-xs text-muted">{sub}</p>
     </div>
   );

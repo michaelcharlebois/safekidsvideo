@@ -8,7 +8,7 @@ import { channelReport, channelSlug } from "@/lib/channel-report";
 import { blockedReasons, canPlay, getLibrary } from "@/lib/queries";
 import { backLink } from "@/lib/back";
 import { ChannelReportView } from "@/components/channel-report-view";
-import { Button, Card, Notice, Pill, TopBar } from "@/components/ui";
+import { Button, Card, Notice, Pill } from "@/components/ui";
 import { reviewChannelNow, toggleWhitelist } from "@/app/actions";
 import { localDay, watchEventsSince, type WatchEvent } from "@/lib/checkin";
 import type { VideoWithCard } from "@/lib/types";
@@ -38,7 +38,7 @@ export default async function ChannelPage(props: PageProps<"/parent/channel/[id]
   const backlog = rows.filter((x) => (!x.v.card || x.v.card.reviewer.model === "sample") && (x.v.durationSeconds ?? 0) <= 20 * 60).length;
   return (
     <>
-      <TopBar title="Channel" right={<Link href={back.href} className="text-sm font-bold text-muted hover:text-ink">← {back.label}</Link>} />
+      <div className="mx-auto w-full max-w-3xl px-4 pt-5"><Link href={back.href} className="inline-flex items-center gap-1 text-sm font-bold text-muted hover:text-forest">‹ {back.label}</Link></div>
       <main className="mx-auto w-full max-w-3xl px-4 py-6 space-y-4">
         <div className="flex items-start gap-3">
           {r.channel.thumbnailUrl && <Image src={r.channel.thumbnailUrl} alt="" width={64} height={64} unoptimized className="h-16 w-16 rounded-full object-cover bg-line" />}

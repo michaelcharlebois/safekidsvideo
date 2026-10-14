@@ -2,17 +2,26 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { listActiveCodes, listDevices, resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
-import { Button, Card, Pill, TopBar } from "@/components/ui";
+import { Button, Card, Notice, PAGE, PageHeader, SectionHeader } from "@/components/ui";
+import { IconTv } from "@/components/icons";
 import { assignDeviceAction, newPairingCode, unpairDevice } from "@/app/actions";
 import { db } from "@/lib/db";
 import { pinIsSet } from "@/lib/pin";
 
 export const dynamic = "force-dynamic";
 
+/** Screens: pair a TV or tablet, make it one child's own or shared, disconnect it. Needs a family account. */
 export default async function DevicesPage(props: PageProps<"/parent/devices">) {
-  if (!supabaseEnabled) redirect("/parent");
   const v = await resolveViewer();
-  if (v.role !== "parent") redirect("/login?next=/parent/devices");
+  if (v.role !== "parent") redirect(supabaseEnabled ? "/login?next=/parent/devices" : "/unlock?next=/parent/devices");
+  if (!supabaseEnabled) {
+    return (
+      <main className={PAGE}>
+        <PageHeader title="Screens" sub="TVs and tablets your children watch on." back={{ href: "/parent/account", label: "Account" }} />
+        <Card className="mt-6 p-5 text-sm text-muted">Connecting TVs and tablets needs a family account. In this local mode, this browser is the kid screen: <Link href="/watch" className="font-bold text-forest underline">open it</Link>.</Card>
+      </main>
+    );
+  }
   const [codes, devices, profiles, fam] = await Promise.all([listActiveCodes(v.familyId), listDevices(v.familyId), db.listProfiles(v.familyId), db.getSettings(v.familyId)]);
   const active = devices.filter((d) => !d.revoked_at);
   const sp = await props.searchParams;
@@ -20,65 +29,65 @@ export default async function DevicesPage(props: PageProps<"/parent/devices">) {
   const pinReady = pinIsSet(fam.pinHash);
 
   return (
-    <>
-      <TopBar title="Devices" right={<Link href="/parent" className="text-sm font-bold text-muted hover:text-ink">← Library</Link>} />
-      <main className="mx-auto w-full max-w-2xl px-4 py-6 space-y-4">
-        <Card className="p-4">
-          <h2 className="font-extrabold">Connect a kid&apos;s device</h2>
-          <p className="text-sm text-muted">
-            On the tablet or TV, open this site and go to <b>/pair</b>. Then type one of these codes. Codes last 10 minutes and work once.
-          </p>
-          {codes.length > 0 && (
-            <ul className="mt-3 flex flex-wrap gap-3">
-              {codes.map((c) => (
-                <li key={c.code} className="rounded-xl bg-sun px-5 py-3 text-2xl sm:text-3xl font-extrabold tracking-[0.2em]">{c.code}</li>
+    <main className={PAGE}>
+      <PageHeader title="Screens" sub="TVs and tablets your children watch on." back={{ href: "/parent/account", label: "Account" }} />
+      <div className="mt-4 space-y-3">
+        {sp.saved && <Notice tone="ok">Saved.</Notice>}
+        {typeof sp.error === "string" && <Notice tone="bad">{sp.error}</Notice>}
+        {multi && !pinReady && <Notice tone="warn"><b>Shared screens are locked</b> until you set a family PIN. <Link href="/parent/kids#family" className="font-bold text-forest underline">Set it on Kids</Link></Notice>}
+      </div>
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <Card as="section" className="overflow-hidden">
+          <div className="border-b border-sand px-5 py-4">
+            <SectionHeader icon={<IconTv />} title="Connected screens" sub={multi ? "A child's own screen always opens as that child. A shared screen (like the living-room TV) asks for the family PIN to choose or switch children." : undefined} />
+          </div>
+          {active.length === 0 ? <p className="px-5 py-6 text-sm text-muted">No screens connected yet. Make a code to pair one.</p> : (
+            <ul className="divide-y divide-sand">
+              {active.map((d) => (
+                <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-bold text-forest">{d.name}</p>
+                    <p className="text-xs text-muted">
+                      {d.last_seen_at ? `Last used ${new Date(d.last_seen_at).toLocaleDateString()}` : "Not used yet"}
+                      {!d.assigned_profile_id && multi && d.active_profile_id ? ` · watching as ${profiles.find((p) => p.id === d.active_profile_id)?.name}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {multi && (
+                      <form action={assignDeviceAction} className="flex items-center gap-1.5">
+                        <input type="hidden" name="deviceId" value={d.id} />
+                        <label className="sr-only" htmlFor={`who-${d.id}`}>Who uses {d.name}</label>
+                        <select id={`who-${d.id}`} name="profileId" defaultValue={d.assigned_profile_id ?? ""} className="h-9 rounded-full border border-sand bg-surface px-3 text-sm font-semibold">
+                          <option value="">Shared (PIN to switch)</option>
+                          {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}&apos;s own</option>)}
+                        </select>
+                        <Button type="submit" variant="secondary" size="sm">Save</Button>
+                      </form>
+                    )}
+                    <details className="relative">
+                      <summary className="cursor-pointer list-none rounded-full px-3 py-2 text-sm font-bold text-muted hover:bg-sand-soft hover:text-bad">Disconnect</summary>
+                      <div className="absolute right-0 z-10 mt-1 w-60 space-y-2 rounded-[var(--radius-card)] border border-sand bg-surface p-3 shadow-[var(--shadow-raised)]">
+                        <p>Disconnect <b>{d.name}</b>? It stops working until it&apos;s paired again.</p>
+                        <form action={unpairDevice}><input type="hidden" name="deviceId" value={d.id} /><Button type="submit" variant="danger" size="sm">Disconnect</Button></form>
+                      </div>
+                    </details>
+                  </div>
+                </li>
               ))}
             </ul>
           )}
-          <form action={newPairingCode} className="mt-3">
-            <Button type="submit">{codes.length ? "Make another code" : "Make a code"}</Button>
-          </form>
         </Card>
 
-        <Card className="p-4">
-          <h2 className="font-extrabold">Connected devices</h2>
-          {multi && <p className="text-sm text-muted">A <b>personal</b> device always shows one child&apos;s screen. A <b>shared</b> screen (like the living-room TV) needs your PIN to choose or switch kids.</p>}
-          {multi && !pinReady && <p className="mt-2 rounded-xl bg-sun/40 p-2 text-sm font-bold">Shared screens are locked until you set a family PIN on <Link href="/parent/kids#family" className="underline">Kids</Link>.</p>}
-          {sp.saved && <p className="mt-2 text-sm font-bold text-ok">Saved.</p>}{typeof sp.error === "string" && <p className="mt-2 text-sm font-bold text-bad">{sp.error}</p>}
-          {active.length === 0 && <p className="text-sm text-muted mt-1">None yet.</p>}
-          <ul className="mt-2 divide-y divide-line">
-            {active.map((d) => (
-              <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
-                <div>
-                  <span className="font-bold">{d.name}</span>{" "}
-                  <Pill className="bg-line">
-                    {d.last_seen_at ? `seen ${new Date(d.last_seen_at).toLocaleDateString()}` : "not used yet"}
-                  </Pill>
-                  {!d.assigned_profile_id && multi && d.active_profile_id && (
-                    <span className="ml-1 text-xs text-muted">watching as {profiles.find((p) => p.id === d.active_profile_id)?.name}</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {multi && (
-                    <form action={assignDeviceAction} className="flex items-center gap-1">
-                      <input type="hidden" name="deviceId" value={d.id} />
-                      <select name="profileId" defaultValue={d.assigned_profile_id ?? ""} className="rounded-full border border-line bg-bg px-2 py-1 text-xs">
-                        <option value="">Shared (PIN to switch)</option>
-                        {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}&apos;s device</option>)}
-                      </select>
-                      <Button type="submit" variant="ghost" className="text-xs px-2.5 py-1">Save</Button>
-                    </form>
-                  )}
-                  <form action={unpairDevice}>
-                    <input type="hidden" name="deviceId" value={d.id} />
-                    <Button type="submit" variant="danger" className="text-xs px-3 py-1">Disconnect</Button>
-                  </form>
-                </div>
-              </li>
-            ))}
-          </ul>
+        <Card as="section" className="p-5">
+          <SectionHeader title="Connect a screen" sub="On the TV or tablet, open Brightframe and go to /pair, then type a code. Codes last 10 minutes and work once." />
+          {codes.length > 0 && (
+            <ul className="mt-4 flex flex-wrap gap-2">
+              {codes.map((c) => <li key={c.code} className="rounded-xl bg-apricot-soft px-4 py-2.5 font-mono text-2xl font-extrabold tracking-[0.2em] text-forest">{c.code}</li>)}
+            </ul>
+          )}
+          <form action={newPairingCode} className="mt-4"><Button type="submit">{codes.length ? "Make another code" : "Make a code"}</Button></form>
         </Card>
-      </main>
-    </>
+      </div>
+    </main>
   );
 }

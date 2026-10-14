@@ -1,7 +1,8 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { CONCERN_LABELS, FORMAT_LABELS, type ConcernFinding, type ContentCard, type VideoWithCard } from "@/lib/types";
 import { STATUS_LABEL, type PlayStatus } from "@/lib/status";
-import { IconAlert, IconBan, IconChannels, IconClock, IconEyeOff, IconPlayCircle, IconShield } from "@/components/icons";
+import { IconAlert, IconBan, IconChannels, IconChevron, IconClock, IconEyeOff, IconPlayCircle, IconShield } from "@/components/icons";
 import { foundConcerns } from "@/lib/gate";
 
 /*
@@ -163,6 +164,25 @@ export function CardSummary({ v, blocked }: { v: VideoWithCard; blocked: string[
 }
 
 /** Page title row for parent sub-pages. The app nav lives in the parent layout; this just names the page. */
+/** The standard page heading: optional back link, title, one line of context, optional action. */
+export function PageHeader({ title, sub, back, action }: { title: ReactNode; sub?: ReactNode; back?: { href: string; label: string }; action?: ReactNode }) {
+  return (
+    <header>
+      {back && <Link href={back.href} className="mb-2 inline-flex items-center gap-1 text-sm font-bold text-muted hover:text-forest"><IconChevron size={16} className="rotate-180" />{back.label}</Link>}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-title sm:text-display">{title}</h1>
+          {sub && <p className="text-sm text-muted sm:text-base">{sub}</p>}
+        </div>
+        {action}
+      </div>
+    </header>
+  );
+}
+
+/** Page width and padding shared by parent pages. */
+export const PAGE = "mx-auto w-full max-w-[76rem] px-4 pb-10 pt-5 sm:px-6 lg:px-10 lg:pt-10";
+
 export function TopBar({ title, right }: { title: string; right?: ReactNode }) {
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pt-5 lg:px-8 flex items-center justify-between gap-3">

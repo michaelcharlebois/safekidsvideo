@@ -1,9 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { billingEnabled, familyStatus, PRICE_DISPLAY, TRIAL_DAYS } from "@/lib/billing";
-import { Button, Card, TopBar } from "@/components/ui";
+import { Button, Card, Notice, PAGE, PageHeader } from "@/components/ui";
 import { openPortal, startCheckout } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
@@ -21,14 +20,14 @@ export default async function BillingPage(props: PageProps<"/parent/billing">) {
     : status.state === "canceled" ? "Subscription ended"
     : "Free";
   return (
-    <>
-      <TopBar title="Billing" right={<Link href="/parent" className="text-sm font-bold text-muted hover:text-ink">← Dashboard</Link>} />
-      <main className="mx-auto w-full max-w-xl px-4 py-6 space-y-4">
-        {sp.ok === "1" && <Card className="p-3 bg-grass text-sm font-bold">Thanks — you&apos;re subscribed. It can take a few seconds to show below.</Card>}
-        <Card className="p-5 space-y-3">
-          <p className="text-accent font-extrabold text-sm tracking-widest uppercase">Your plan</p>
-          <h1 className="text-2xl font-extrabold">{headline}</h1>
-          {!billingEnabled && <p className="text-sm text-muted">Billing isn&apos;t switched on for this deployment yet — everything&apos;s free while we test.</p>}
+      <main className={PAGE}>
+      <PageHeader title="Plan" sub="One subscription covers every child and every screen." back={{ href: "/parent/account", label: "Account" }} />
+      <div className="mt-6 max-w-2xl space-y-4">
+        {sp.ok === "1" && <Notice tone="ok">Thanks, you&apos;re subscribed. It can take a few seconds to show here.</Notice>}
+        <Card className="space-y-3 p-5">
+          <p className="text-sm font-bold text-muted">Your plan</p>
+          <h2 className="text-2xl">{headline}</h2>
+          {!billingEnabled && <p className="text-sm text-muted">Billing isn&apos;t switched on for this deployment yet. Everything is free while Brightframe is in testing.</p>}
           {billingEnabled && (
             <>
               <p className="text-sm text-muted">
@@ -41,17 +40,17 @@ export default async function BillingPage(props: PageProps<"/parent/billing">) {
                   <form action={startCheckout}><Button type="submit">Subscribe · {PRICE_DISPLAY}</Button></form>
                 )}
                 {family.stripeCustomerId && (
-                  <form action={openPortal}><Button type="submit" variant="ghost">{status.state === "past_due" ? "Update payment" : "Manage subscription"}</Button></form>
+                  <form action={openPortal}><Button type="submit" variant="secondary">{status.state === "past_due" ? "Update payment" : "Manage subscription"}</Button></form>
                 )}
               </div>
             </>
           )}
         </Card>
-        <Card className="p-4 text-sm text-muted space-y-1">
-          <p><b className="text-ink">What you&apos;re paying for:</b> an AI reviewer that watches every video end to end before your kid sees it, a locked viewer for the TV, and the shared library of parent-confirmed cards that gets better every night.</p>
-          <p>Questions? <a className="underline" href="mailto:hello@siftkids.com">hello@siftkids.com</a></p>
+        <Card className="space-y-1 p-5 text-sm text-muted">
+          <p><b className="text-ink">What you&apos;re paying for:</b> an AI reviewer that watches every video end to end before your kid sees it, a locked viewer for the TV, and the shared library of parent-confirmed reviews that improves as parents give feedback.</p>
+          <p>Questions? <a className="font-bold text-forest underline" href="mailto:hello@siftkids.com">hello@siftkids.com</a></p>
         </Card>
-      </main>
-    </>
+      </div>
+    </main>
   );
 }
