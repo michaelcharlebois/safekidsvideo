@@ -4,6 +4,7 @@ import { pushToFamily } from "@/lib/push";
 import { db } from "@/lib/db";
 import type { WatchRequest } from "@/lib/types";
 import { localRequests, localWatchEvents } from "@/lib/db/local";
+import { assertPermissionWritesOpen } from "@/lib/maintenance";
 
 /*
  * "Ask a grown-up" requests and watch history. Requests work in Supabase and in local mode (lib/db/local.ts
@@ -22,6 +23,7 @@ const toReq = (r: Row): WatchRequest => ({
 export async function createRequest(
   familyId: string, videoId: string, deviceId?: string, reason?: string, profileId?: string,
 ): Promise<"created" | "exists" | "off"> {
+  assertPermissionWritesOpen();
   if (local()) return localRequests.create({ familyId, videoId, profileId, deviceId: deviceId && deviceId !== "local" ? deviceId : undefined });
   if (!on()) return "off";
   const { error } = await supabaseAdmin()
@@ -64,6 +66,7 @@ export async function getRequest(familyId: string, requestId: string): Promise<W
 }
 
 export async function resolveRequest(familyId: string, requestId: string, status: "approved" | "denied") {
+  assertPermissionWritesOpen();
   if (local()) return localRequests.resolve(familyId, requestId, status);
   if (!on()) return;
   await supabaseAdmin()

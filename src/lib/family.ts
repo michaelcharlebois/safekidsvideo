@@ -1,4 +1,5 @@
 import "server-only";
+import { assertPermissionWritesOpen } from "@/lib/maintenance";
 import { cookies } from "next/headers";
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { DEFAULT_FAMILY_ID, STORE_KIND } from "@/lib/db";
@@ -154,6 +155,7 @@ export async function listDevices(familyId: string) {
 
 /** Personal device (a child) or shared (null). The composite FK rejects a child from another family. */
 export async function assignDevice(familyId: string, deviceId: string, profileId: string | null) {
+  assertPermissionWritesOpen();
   const { error } = await supabaseAdmin().from("devices")
     .update({ assigned_profile_id: profileId, active_profile_id: null })
     .match({ id: deviceId, family_id: familyId });

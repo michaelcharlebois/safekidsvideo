@@ -1,4 +1,4 @@
-// Production-sized rehearsal of migrations 0018 → 0022 on a real Postgres server (scripts/staging-db-check.sh
+// Production-sized rehearsal of migrations 0018 → 0023 on a real Postgres server (scripts/staging-db-check.sh
 // --scale). Generates a large pre-0018 database in SQL — BF_SCALE_FAMILIES families (default 2,000) with 1–3
 // children, ~23 permission rows and ~100 viewing rows per child, requests, checks and devices — then applies
 // each migration in order, timing it, checks that nothing is lost, and rolls everything back to an identical
@@ -9,9 +9,9 @@ import { migrate, rollbackSql, sql } from "./db-helpers";
 
 const PG_URL = process.env.PG_TEST_URL;
 const N = Number(process.env.BF_SCALE_FAMILIES ?? 2000);
-const MIGRATIONS = ["0018_child_scope", "0019_pin_attempts", "0020_watch_sessions", "0021_child_requests", "0022_time_requests"];
+const MIGRATIONS = ["0018_child_scope", "0019_pin_attempts", "0020_watch_sessions", "0021_child_requests", "0022_time_requests", "0023_bedtime_extensions"];
 
-describe.skipIf(!PG_URL || !process.env.BF_SCALE)(`migrations 0018–0022 at scale (${N} families)`, () => {
+describe.skipIf(!PG_URL || !process.env.BF_SCALE)(`migrations 0018–0023 at scale (${N} families)`, () => {
   const name = `bf_scale_${Date.now()}`;
   let admin: pg.Client, db: pg.Client;
   const timings: Record<string, number> = {};
@@ -106,16 +106,18 @@ describe.skipIf(!PG_URL || !process.env.BF_SCALE)(`migrations 0018–0022 at sca
     const f = (await db.query("select f.id, p.id pid from families f join profiles p on p.family_id = f.id limit 1")).rows[0];
     await db.query(`insert into time_requests (family_id, profile_id, day) values ($1, $2, current_date)`, [f.id, f.pid]);
     await expect(db.query(`insert into time_requests (family_id, profile_id, day) values ($1, $2, current_date)`, [f.id, f.pid])).rejects.toThrow(/duplicate|unique/i);
+    await db.query(`insert into bedtime_extensions (family_id, profile_id, night, base_bedtime, extra_minutes, cutoff_at) values ($1, $2, current_date, '19:30', 30, current_date + interval '20 hours')`, [f.id, f.pid]);
     const s = "aaaaaaaa-0000-4000-8000-000000000001";
     await db.query(`insert into watch_events (family_id, video_id, profile_id, completed, session_id) values ($1, 'v0000000001', $2, false, $3)`, [f.id, f.pid, s]);
     await expect(db.query(`insert into watch_events (family_id, video_id, profile_id, completed, session_id) values ($1, 'v0000000001', $2, false, $3)`, [f.id, f.pid, s])).rejects.toThrow(/duplicate|unique/i);
   });
 
-  it("rolls back 0022 → 0018 to the exact pre-migration whitelist", async () => {
+  it("rolls back 0023 → 0018 to the exact pre-migration whitelist", async () => {
     await db.query("delete from watch_events where session_id is not null");
     for (const m of [...MIGRATIONS].reverse()) await db.query(rollbackSql(`${m}.down.sql`));
     expect(await wlHash()).toEqual(before);
     expect(await count("select count(*) n from watch_events")).toBe(events0);
     expect((await db.query("select to_regclass('time_requests') r")).rows[0].r).toBeNull();
+    expect((await db.query("select to_regclass('bedtime_extensions') r")).rows[0].r).toBeNull();
   });
 });

@@ -5,6 +5,7 @@ import { listPendingRequests } from "@/lib/activity";
 import { pendingDecisions, requestsFrom } from "@/lib/inbox";
 import { pendingTimeRequests } from "@/lib/more-time";
 import { ParentNav, type NavKid } from "./parent-nav";
+import { permissionWritesPaused } from "@/lib/maintenance";
 
 /**
  * Shell for every parent page: sidebar on desktop, top bar + bottom tabs on a phone.
@@ -31,7 +32,12 @@ export default async function ParentLayout({ children }: LayoutProps<"/parent">)
       <Suspense fallback={null}>
         <ParentNav badge={badge} kids={kids} defaultKidId={defaultKidId} />
       </Suspense>
-      <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {permissionWritesPaused() && (
+          <p role="status" className="bg-apricot-soft px-4 py-2 text-center text-sm font-bold text-forest">Brightframe is being updated. Approvals, blocks and other permission changes are paused for a few minutes; watching isn&apos;t affected.</p>
+        )}
+        {children}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Staging rehearsal for migrations 0018 to 0022 on a throwaway local Postgres server. Never touches
+# Staging rehearsal for migrations 0018 to 0023 on a throwaway local Postgres server. Never touches
 # Supabase. Needs the Postgres server binaries (initdb, pg_ctl) — e.g. `apt install postgresql`.
 #
 #   scripts/staging-db-check.sh                 # representative synthetic data + real-concurrency tests
@@ -27,10 +27,10 @@ echo "▶ Postgres $("$BIN/postgres" --version | awk '{print $3}') on socket $DI
 export PG_TEST_URL="postgresql://postgres@localhost:$PORT/postgres?host=$DIR"
 
 echo "▶ Real-Postgres tests (representative data rehearsal, concurrency)"
-npx vitest run test/staging-migration.test.ts test/pin-lockout-db.test.ts test/migration-0018.test.ts test/watch-sessions-db.test.ts test/child-requests-db.test.ts test/time-requests-db.test.ts
+npx vitest run test/staging-migration.test.ts test/pin-lockout-db.test.ts test/migration-0018.test.ts test/watch-sessions-db.test.ts test/child-requests-db.test.ts test/time-requests-db.test.ts test/bedtime-extensions-db.test.ts test/rollback-rehearsal.test.ts
 
 if [ "${1:-}" = "--scale" ]; then
-  echo "▶ Production-sized rehearsal (${BF_SCALE_FAMILIES:-2000} families): 0018 → 0022, timed, then rolled back"
+  echo "▶ Production-sized rehearsal (${BF_SCALE_FAMILIES:-2000} families): 0018 → 0023, timed, then rolled back"
   BF_SCALE=1 npx vitest run test/migration-scale.test.ts --reporter=verbose --disable-console-intercept
   shift
 fi
@@ -63,13 +63,13 @@ SQL
   echo "▶ Preflight (before 0018)"; "${PSQL[@]}" -P pager=off -f scripts/staging/preflight.sql
   "${PSQL[@]}" -c "create table _wl_before as select family_id, kind, target_id, created_at from whitelist" >/dev/null
   echo "▶ Watch-events audit (before 0020)"; "${PSQL[@]}" -P pager=off -f scripts/staging/watch-events-audit.sql || true
-  for m in 0018_child_scope 0019_pin_attempts 0020_watch_sessions 0021_child_requests 0022_time_requests; do
+  for m in 0018_child_scope 0019_pin_attempts 0020_watch_sessions 0021_child_requests 0022_time_requests 0023_bedtime_extensions; do
     t0=$(date +%s%N); "${PSQL[@]}" -f "supabase/migrations/$m.sql" >/dev/null; echo "  applied $m in $(( ($(date +%s%N) - t0) / 1000000 )) ms"
   done
   echo "▶ Report"; "${PSQL[@]}" -P pager=off -f scripts/staging/report.sql
   echo "▶ Held for review (first 25)"; "${PSQL[@]}" -P pager=off -c "select family_id, kind, target_id, array_length(candidate_profile_ids,1) as candidates from legacy_grants order by family_id limit 25"
-  echo "▶ Rolling back (0022 → 0018) and comparing"
-  for m in 0022_time_requests 0021_child_requests 0020_watch_sessions; do "${PSQL[@]}" -f "supabase/rollbacks/$m.down.sql" >/dev/null; done
+  echo "▶ Rolling back (0023 → 0018) and comparing"
+  for m in 0023_bedtime_extensions 0022_time_requests 0021_child_requests 0020_watch_sessions; do "${PSQL[@]}" -f "supabase/rollbacks/$m.down.sql" >/dev/null; done
   "${PSQL[@]}" -f supabase/rollbacks/0019_pin_attempts.down.sql >/dev/null
   "${PSQL[@]}" -f supabase/rollbacks/0018_child_scope.down.sql >/dev/null
   DIFF=$("${PSQL[@]}" -At -c "select count(*) from ((table _wl_before except select family_id, kind, target_id, created_at from whitelist) union all (select family_id, kind, target_id, created_at from whitelist except table _wl_before)) d")

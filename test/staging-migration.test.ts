@@ -169,11 +169,15 @@ describe.skipIf(!PG_URL)("staging rehearsal: 0018 + 0019 on representative data 
     expect(res).toEqual([true, true, true, true, true, false, false]);
   });
 
-  it("rolls back (0019 then 0018) to the exact pre-migration whitelist", async () => {
+  it("rolls back (0019 then 0018) to the pre-migration whitelist, keeping restrictions added since", async () => {
     await db.query(rollbackSql("0019_pin_attempts.down.sql"));
     await db.query(rollbackSql("0018_child_scope.down.sql"));
     const after = (await db.query("select family_id, kind, target_id, created_at::text from whitelist order by family_id, kind, target_id")).rows;
-    expect(after).toEqual(before);
+    // Exactly the pre-migration whitelist, plus the one restriction added after migrating (the upsert test's
+    // block, for one child and family-wide): a rollback carries restrictions back family-wide, never looser.
+    const added = after.filter((r) => r.target_id === "vUpsert0000");
+    expect(added.map((r) => r.kind)).toEqual(["block"]);
+    expect(after.filter((r) => r.target_id !== "vUpsert0000")).toEqual(before);
     expect((await db.query("select to_regclass('legacy_grants') r")).rows[0].r).toBeNull();
   });
 });
