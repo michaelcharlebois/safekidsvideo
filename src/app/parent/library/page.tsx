@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import { VideoThumb } from "@/components/video-thumb";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { db } from "@/lib/db";
@@ -8,8 +8,8 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { getLibrary } from "@/lib/queries";
 import { reviewEligibility } from "@/lib/gate";
 import { holdExplanation } from "@/lib/explain";
-import { filterLibrary, groupByChannel, isLibraryFilter, LIBRARY_FILTERS, libraryCounts, libraryFor, type LibraryFilter, type LibraryItem } from "@/lib/library";
-import { STATUS_LABEL } from "@/lib/status";
+import { filterLibrary, GROUP_LABEL, groupByChannel, isLibraryFilter, LIBRARY_FILTERS, LIBRARY_GROUPS, libraryCounts, libraryFor, statusesOf, type LibraryFilter, type LibraryItem } from "@/lib/library";
+import { STATUS_LABEL, type PlayStatus } from "@/lib/status";
 import { listPendingRequests } from "@/lib/activity";
 import { detailHref } from "@/lib/back";
 import type { FamilySettings, Profile } from "@/lib/types";
@@ -28,7 +28,7 @@ export const maxDuration = 300; // "Review 10 now" runs in the background within
 const PAGE = 30;
 const PER_GROUP = 4;
 const thumb = (v: { id: string; thumbnailUrl?: string }) => v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`;
-const FILTER_LABEL: Record<LibraryFilter, string> = { all: "All", ...Object.fromEntries(LIBRARY_FILTERS.slice(1).map((f) => [f, STATUS_LABEL[f as Exclude<LibraryFilter, "all">]])) } as Record<LibraryFilter, string>;
+const FILTER_LABEL = { all: "All", ...Object.fromEntries(LIBRARY_FILTERS.slice(1).map((f) => [f, STATUS_LABEL[f as PlayStatus]])), ...GROUP_LABEL } as Record<LibraryFilter, string>;
 
 /** What a filter means, in one or two sentences, shown above its list. */
 function filterNote(f: LibraryFilter, name: string): string | null {
@@ -40,6 +40,8 @@ function filterNote(f: LibraryFilter, name: string): string | null {
     case "reviewing": return `No AI review is stored for these yet. They won't play for ${name} until a review passes, or until you allow one.`;
     case "hidden": return `You chose Keep hidden for these. Unlike a filter, it stays even if ${name}'s settings or the review change later. ${name} can still ask for them.`;
     case "blocked": return `You chose Never for these. ${name} can't watch them or ask for them.`;
+    case "ready": return `Everything on ${name}'s screen: videos that pass the AI review and ${name}'s settings, and videos you allowed for ${name}.`;
+    case "held_any": return `Everything ${name}'s settings hold back automatically, including videos whose AI review couldn't be relied on. Nothing here needs you; each video says why, and you can make an exception after reading it.`;
     default: return null;
   }
 }
@@ -143,14 +145,14 @@ export default async function LibraryPage(props: PageProps<"/parent/library">) {
         <section aria-label={`${name}'s videos`} className="mt-4">
           {/* ---- filters ---- */}
           <ScrollRow label="Filter by status" activeKey={filter} className="-mx-4 px-4 sm:mx-0 sm:px-0">
-            {LIBRARY_FILTERS.map((f) => (
+            {LIBRARY_FILTERS.map((f) => { const on = f === filter || (f !== "all" && filter in LIBRARY_GROUPS && (statusesOf(filter) ?? []).includes(f as PlayStatus)); return (
               <li key={f} className="snap-start">
-                <Link href={href({ status: f === "all" ? undefined : f, group: undefined })} data-active={f === filter ? "" : undefined} aria-current={f === filter ? "true" : undefined}
-                  className={`inline-flex h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-bold ${f === filter ? "border-forest bg-forest text-ivory" : counts[f] ? "border-sand bg-surface text-ink hover:border-forest/40" : "border-sand/70 bg-transparent text-muted"}`}>
-                  {FILTER_LABEL[f]} <span className={f === filter ? "opacity-80" : "text-muted"}>{counts[f]}</span>
+                <Link href={href({ status: f === "all" ? undefined : f, group: undefined })} data-active={on ? "" : undefined} aria-current={on ? "true" : undefined}
+                  className={`inline-flex h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-bold ${on ? "border-forest bg-forest text-ivory" : counts[f] ? "border-sand bg-surface text-ink hover:border-forest/40" : "border-sand/70 bg-transparent text-muted"}`}>
+                  {FILTER_LABEL[f]} <span className={on ? "opacity-80" : "text-muted"}>{counts[f]}</span>
                 </Link>
               </li>
-            ))}
+            ); })}
           </ScrollRow>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -177,6 +179,7 @@ export default async function LibraryPage(props: PageProps<"/parent/library">) {
             </p>
           )}
 
+          {filter in LIBRARY_GROUPS && <p className="mt-3 text-sm font-bold text-forest">{FILTER_LABEL[filter]}: {counts[filter]} video{counts[filter] === 1 ? "" : "s"}</p>}
           {filterNote(filter, name) && <p className="mt-3 rounded-[var(--radius-card)] bg-sand-soft px-4 py-3 text-sm text-ink">{filterNote(filter, name)}</p>}
           {filter === "reviewing" && counts.reviewing > 0 && process.env.GEMINI_API_KEY && (
             <form action={reviewNextBatch} className="mt-2 text-sm text-muted">
@@ -292,7 +295,7 @@ export default async function LibraryPage(props: PageProps<"/parent/library">) {
                   <ul className="divide-y divide-sand">
                     {addedItems.map((i) => (
                       <li key={i.v.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                        <Link href={detailHref(`/parent/video/${i.v.id}`, "library", kid.id)} className="shrink-0"><Image src={thumb(i.v)} alt="" width={128} height={72} unoptimized className="aspect-video w-24 rounded-lg object-cover" /></Link>
+                        <Link href={detailHref(`/parent/video/${i.v.id}`, "library", kid.id)} className="shrink-0"><VideoThumb src={thumb(i.v)} width={128} height={72} className="aspect-video w-24 rounded-lg object-cover" /></Link>
                         <div className="min-w-0 flex-1">
                           <Link href={detailHref(`/parent/video/${i.v.id}`, "library", kid.id)} className="block text-sm font-bold leading-snug text-forest hover:underline line-clamp-2">{i.v.title}</Link>
                           <StatusBadge status={i.status} className="mt-1 py-0.5" />
@@ -417,7 +420,7 @@ function Row({ i, kid, settings, here, familyBlocked, familyHidden, asked, decid
     <li id={`v-${v.id}`} className="scroll-mt-28 px-4 py-4 sm:px-5 sm:py-3.5">
       <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-x-4 sm:gap-y-2">
         <Link href={video} className="relative block self-start overflow-hidden rounded-xl bg-sand-soft sm:row-span-2" aria-label={`Open ${v.title}`}>
-          <Image src={thumb(v)} alt="" width={320} height={180} unoptimized className={`aspect-video w-full object-cover ${status === "plays" || status === "allowed" ? "" : "opacity-80"}`} />
+          <VideoThumb src={thumb(v)} width={320} height={180} className={`aspect-video w-full object-cover ${status === "plays" || status === "allowed" ? "" : "opacity-80"}`} />
           {v.durationSeconds ? <span className="absolute bottom-1 right-1 rounded bg-forest-900/85 px-1 text-[11px] font-bold text-ivory">{Math.floor(v.durationSeconds / 60)}:{String(v.durationSeconds % 60).padStart(2, "0")}</span> : null}
         </Link>
         <div className="min-w-0 space-y-1.5">

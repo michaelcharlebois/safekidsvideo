@@ -7,8 +7,17 @@ import type { Channel, FamilySettings, VideoWithCard } from "@/lib/types";
 
 /** Library filters, in display order. Every status a library video can have, plus "all". */
 export const LIBRARY_FILTERS = ["all", "plays", "allowed", "held", "uncertain", "reviewing", "hidden", "blocked"] as const;
-export type LibraryFilter = (typeof LIBRARY_FILTERS)[number];
-export const isLibraryFilter = (x: unknown): x is LibraryFilter => typeof x === "string" && (LIBRARY_FILTERS as readonly string[]).includes(x);
+/**
+ * Groups for the numbers Home shows, so a count and the list it opens always match:
+ *   ready    — everything that plays for the child (Plays + Allowed by you)
+ *   held_any — everything their settings hold back automatically (Held back + Couldn't be sure)
+ */
+export const LIBRARY_GROUPS = { ready: ["plays", "allowed"], held_any: ["held", "uncertain"] } as const satisfies Record<string, readonly PlayStatus[]>;
+export const GROUP_LABEL: Record<keyof typeof LIBRARY_GROUPS, string> = { ready: "Plays and Allowed by you", held_any: "Held back and Couldn't be sure" };
+export type LibraryFilter = (typeof LIBRARY_FILTERS)[number] | keyof typeof LIBRARY_GROUPS;
+export const isLibraryFilter = (x: unknown): x is LibraryFilter => typeof x === "string" && ((LIBRARY_FILTERS as readonly string[]).includes(x) || x in LIBRARY_GROUPS);
+/** The statuses a filter shows (a group shows several). */
+export const statusesOf = (f: LibraryFilter): readonly PlayStatus[] | null => (f === "all" ? null : f in LIBRARY_GROUPS ? LIBRARY_GROUPS[f as keyof typeof LIBRARY_GROUPS] : [f as PlayStatus]);
 
 export type LibraryItem = { v: VideoWithCard; status: PlayStatus; reasons: string[] };
 
@@ -20,9 +29,10 @@ export function libraryFor(lib: VideoWithCard[], s: FamilySettings): LibraryItem
 }
 
 export function libraryCounts(items: LibraryItem[]): Record<LibraryFilter, number> {
-  const c = Object.fromEntries(LIBRARY_FILTERS.map((f) => [f, 0])) as Record<LibraryFilter, number>;
+  const c = Object.fromEntries([...LIBRARY_FILTERS, ...Object.keys(LIBRARY_GROUPS)].map((f) => [f, 0])) as Record<LibraryFilter, number>;
   c.all = items.length;
   for (const i of items) if (i.status in c) c[i.status as LibraryFilter]++;
+  for (const [g, members] of Object.entries(LIBRARY_GROUPS)) c[g as LibraryFilter] = members.reduce((a, m) => a + c[m], 0);
   return c;
 }
 
@@ -30,7 +40,7 @@ export function libraryCounts(items: LibraryItem[]): Record<LibraryFilter, numbe
 export function filterLibrary(items: LibraryItem[], o: { filter?: LibraryFilter; channelId?: string; q?: string }): LibraryItem[] {
   const q = o.q?.trim().toLowerCase();
   return items.filter((i) =>
-    (!o.filter || o.filter === "all" || i.status === o.filter)
+    (!o.filter || (statusesOf(o.filter) ?? [i.status]).includes(i.status))
     && (!o.channelId || i.v.channelId === o.channelId)
     && (!q || i.v.title.toLowerCase().includes(q) || (i.v.channel?.title ?? "").toLowerCase().includes(q)));
 }

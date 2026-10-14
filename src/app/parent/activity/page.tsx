@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import { VideoThumb } from "@/components/video-thumb";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { db } from "@/lib/db";
@@ -139,7 +139,7 @@ export default async function ActivityPage(props: PageProps<"/parent/activity">)
                     <ul className="mt-2 space-y-2">
                       {d.items.slice(0, 6).map((i, n) => (
                         <li key={`${i.video.id}-${n}`} className="flex items-center gap-3">
-                          <Image src={thumb(i.video)} alt="" width={96} height={54} unoptimized className="aspect-video w-20 shrink-0 rounded-lg bg-sand-soft object-cover" />
+                          <VideoThumb src={thumb(i.video)} width={96} height={54} className="aspect-video w-20 shrink-0 rounded-lg bg-sand-soft object-cover" />
                           <span className="min-w-0 flex-1">
                             <Link href={detailHref(`/parent/video/${i.video.id}`, "library", kid.id)} className="block text-sm font-semibold leading-snug text-ink hover:underline line-clamp-2">{i.video.title}</Link>
                             <span className="text-xs text-muted">{channels.find((c) => c.id === i.video.channelId)?.title ?? i.video.channelId} · ~{i.minutes} min{i.ended ? ` · ${i.ended === "left" ? "left early" : i.ended}` : ""}</span>
@@ -178,7 +178,7 @@ export default async function ActivityPage(props: PageProps<"/parent/activity">)
                   <ul className="mt-2 divide-y divide-sand">
                     {s.topVideos.map(({ video, plays, minutes }) => (
                       <li key={video.id} className="flex items-center gap-3 py-2 text-sm">
-                        <Image src={thumb(video)} alt="" width={96} height={54} unoptimized className="aspect-video w-16 shrink-0 rounded-lg bg-sand-soft object-cover" />
+                        <VideoThumb src={thumb(video)} width={96} height={54} className="aspect-video w-16 shrink-0 rounded-lg bg-sand-soft object-cover" />
                         <Link href={detailHref(`/parent/video/${video.id}`, "library", kid.id)} className="min-w-0 flex-1 font-semibold hover:underline line-clamp-2">{video.title}</Link>
                         <span className="shrink-0 text-xs text-muted">{plays}×, {minutes} min</span>
                       </li>

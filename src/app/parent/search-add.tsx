@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import Image from "next/image";
+import { VideoThumb } from "@/components/video-thumb";
 import Link from "next/link";
 import { addByUrl, parentSearch, type AddResult } from "@/app/actions";
 import { Button } from "@/components/ui";
@@ -93,7 +94,7 @@ function ChannelRow({ c, approved }: { c: ChannelHit; approved: boolean }) {
 function VideoRow({ v, approved }: { v: VideoMeta; approved: boolean }) {
   return (
     <li className="flex items-center gap-3 py-2">
-      <Image src={v.thumbnailUrl} alt="" width={128} height={72} unoptimized className="w-24 sm:w-32 shrink-0 rounded-lg aspect-video object-cover bg-line" />
+      <VideoThumb src={v.thumbnailUrl} width={128} height={72} className="w-24 sm:w-32 shrink-0 rounded-lg aspect-video object-cover bg-line" />
       <div className="min-w-0 flex-1">
         <p className="font-extrabold leading-snug line-clamp-2">{v.title}</p>
         <p className="text-xs text-muted truncate">{v.channelTitle}{v.durationSeconds ? ` · ${fmtDur(v.durationSeconds)}` : ""}</p>

@@ -1,6 +1,9 @@
 // Library selector: one child's full inventory, with every status the gate can give, filters, search and
 // channel grouping. Statuses come only from the gate.
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { readyFor } from "@/lib/kid-home";
 import { buildLibrary, canPlay } from "@/lib/gate";
 import { filterLibrary, groupByChannel, isLibraryFilter, libraryCounts, libraryFor } from "@/lib/library";
 import type { Channel } from "@/lib/types";
@@ -58,9 +61,25 @@ describe("Library for one child", () => {
     expect(leoStatus.mine).toBeUndefined(); // Maya's allow isn't Leo's
   });
 
+  it("Home's numbers are exactly the Library lists they open", () => {
+    const c = libraryCounts(items);
+    expect(c.ready).toBe(c.plays + c.allowed);
+    expect(c.held_any).toBe(c.held + c.uncertain);
+    expect(filterLibrary(items, { filter: "ready" }).map((i) => i.status).sort()).toEqual(["allowed", "plays", "plays"]);
+    expect(filterLibrary(items, { filter: "held_any" }).map((i) => i.status).sort()).toEqual(["held", "uncertain"]);
+    // "Ready" is the kid screen's playable set
+    expect(c.ready).toBe(readyFor(lib(MAYA), maya()).length);
+    const home = readFileSync(path.resolve(import.meta.dirname, "../src/app/parent/page.tsx"), "utf8");
+    expect(home).toMatch(/status=ready/);
+    expect(home).toMatch(/status=held_any/);
+    expect(home).not.toMatch(/status=plays"|status=held"/);
+  });
+
   it("only known filters are accepted from the URL", () => {
     expect(isLibraryFilter("held")).toBe(true);
     expect(isLibraryFilter("outside")).toBe(false);
+    expect(isLibraryFilter("ready")).toBe(true);
+    expect(isLibraryFilter("held_any")).toBe(true);
     expect(isLibraryFilter(undefined)).toBe(false);
   });
 });

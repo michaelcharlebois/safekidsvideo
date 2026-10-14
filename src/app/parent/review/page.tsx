@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import { VideoThumb } from "@/components/video-thumb";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { db } from "@/lib/db";
@@ -183,7 +183,7 @@ function InboxCard({ item, v, child, settings, profiles, next }: {
           <div className="flex gap-3 sm:gap-4">
             {v && (
               <Link href={detailHref(`/parent/video/${v.id}`, "review", child?.id)} className="relative block w-28 shrink-0 overflow-hidden rounded-xl bg-sand-soft sm:w-44" aria-label={`Open ${v.title}`}>
-                <Image src={thumb(v)} alt="" width={320} height={180} unoptimized className="aspect-video w-full object-cover" />
+                <VideoThumb src={thumb(v)} width={320} height={180} className="aspect-video w-full object-cover" />
                 {v.durationSeconds ? <span className="absolute bottom-1.5 right-1.5 rounded bg-forest-900/85 px-1 text-[11px] font-bold text-ivory">{Math.floor(v.durationSeconds / 60)}:{String(v.durationSeconds % 60).padStart(2, "0")}</span> : null}
               </Link>
             )}

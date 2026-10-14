@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import { VideoThumb } from "@/components/video-thumb";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { db } from "@/lib/db";
@@ -70,8 +70,9 @@ export default async function ParentPage(props: PageProps<"/parent">) {
     taste: tasteFrom(events.filter((e) => e.profileId === kid.id || !e.profileId), byId),
   });
   const counts = libraryCounts(libraryFor(lib, settings));
-  const ready = home.playable.length; // = plays + allowed
-  const heldBack = counts.held + counts.uncertain;
+  // Each count is exactly the Library filter it opens (lib/library.ts groups).
+  const ready = counts.ready;
+  const heldBack = counts.held_any;
   // Requests: this child's, plus older ones that never recorded a child. Never automatic holds.
   const decisions = forChild(pendingDecisions({ requests: allRequests, childIds: [kid.id], legacy: [] }), kid.id);
   const requests = allRequests.filter((r) => decisions.some((d) => d.kind === "request" && d.requestId === r.id) && byId.has(r.videoId));
@@ -131,13 +132,13 @@ export default async function ParentPage(props: PageProps<"/parent">) {
 
       {/* ---- counts, each a door ---- */}
       <section aria-label={`${kid.name} at a glance`} className="mt-6 grid grid-cols-3 gap-2.5 sm:gap-3">
-        <StatTile href={lib_("&status=plays")} icon={<IconPlayCircle />} tone="ok" value={ready} label="Ready to watch" sub="Reviewed and within the rules" />
+        <StatTile href={lib_("&status=ready")} icon={<IconPlayCircle />} tone="ok" value={ready} label="Ready to watch" sub="Within the rules, or allowed by you" />
         <StatTile href={lib_("&status=reviewing")} icon={<IconClock />} tone="pending" value={counts.reviewing} label="Awaiting review" sub="No AI review stored yet" />
         <StatTile href={`/parent/review?kid=${kid.id}`} icon={<IconHand />} tone={requests.length ? "warn" : "quiet"} value={requests.length} label={requests.length === 1 ? "Request" : "Requests"} sub={requests.length ? "Waiting on you" : `Nothing ${kid.name} asked for`} />
       </section>
       {heldBack > 0 && (
         <p className="mt-2 text-sm text-muted">
-          {heldBack} video{heldBack === 1 ? " is" : "s are"} held back by {kid.name}&apos;s settings, as intended. <Link href={lib_("&status=held")} className="font-bold text-forest underline decoration-sand underline-offset-4">See them in Library</Link>
+          {heldBack} video{heldBack === 1 ? " is" : "s are"} held back by {kid.name}&apos;s settings, as intended. <Link href={lib_("&status=held_any")} className="font-bold text-forest underline decoration-sand underline-offset-4">See them in Library</Link>
         </p>
       )}
 
@@ -157,7 +158,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                 return (
                   <article key={r.id} className="grid gap-4 border-b border-sand px-5 py-5 last:border-b-0 sm:grid-cols-[14rem_minmax(0,1fr)]">
                     <Link href={detailHref(`/parent/video/${v.id}`, "home", kid.id)} className="relative block overflow-hidden rounded-xl bg-sand-soft">
-                      <Image src={thumb(v)} alt="" width={320} height={180} unoptimized className="aspect-video w-full object-cover" />
+                      <VideoThumb src={thumb(v)} width={320} height={180} className="aspect-video w-full object-cover" />
                       {v.durationSeconds ? <span className="absolute bottom-2 right-2 rounded-md bg-forest-900/85 px-1.5 py-0.5 text-xs font-bold text-ivory">{Math.floor(v.durationSeconds / 60)}:{String(v.durationSeconds % 60).padStart(2, "0")}</span> : null}
                     </Link>
                     <div className="min-w-0">
@@ -216,7 +217,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                         {sh.videos.slice(0, 4).map((v, i) => (
                           <Link key={v.id} href={detailHref(`/parent/video/${v.id}`, "home", kid.id)} className={`group overflow-hidden rounded-xl bg-forest ring-1 ring-ivory/10 hover:ring-2 hover:ring-apricot ${i >= 2 ? "hidden sm:block" : ""}`}>
-                            <Image src={thumb(v)} alt="" width={240} height={135} unoptimized className="aspect-video w-full object-cover" />
+                            <VideoThumb dark src={thumb(v)} width={240} height={135} className="aspect-video w-full object-cover" />
                             <p className="truncate px-2.5 py-2 text-xs font-semibold text-ivory/85">{v.title}</p>
                           </Link>
                         ))}
@@ -243,7 +244,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
                   {home.keepWatching.slice(0, 3).map((v) => (
                     <li key={v.id}>
                       <Link href={detailHref(`/parent/video/${v.id}`, "home", kid.id)} className="flex items-center gap-3 rounded-xl p-1 hover:bg-sand-soft">
-                        <Image src={thumb(v)} alt="" width={96} height={54} unoptimized className="aspect-video w-20 shrink-0 rounded-lg object-cover" />
+                        <VideoThumb src={thumb(v)} width={96} height={54} className="aspect-video w-20 shrink-0 rounded-lg object-cover" />
                         <span className="min-w-0 text-sm font-semibold leading-snug text-ink line-clamp-2">{v.title}</span>
                       </Link>
                     </li>
@@ -256,9 +257,9 @@ export default async function ParentPage(props: PageProps<"/parent">) {
           <Card as="section" className="p-5">
             <SectionHeader icon={<IconChannels />} title="Library" sub={`${counts.all} video${counts.all === 1 ? "" : "s"} from ${sources} family source${sources === 1 ? "" : "s"}.`} />
             <ul className="mt-3 divide-y divide-sand text-sm">
-              <SummaryRow href={lib_("&status=plays")} icon={<IconPlayCircle size={18} />} label={`Ready for ${kid.name}`} value={ready} />
+              <SummaryRow href={lib_("&status=ready")} icon={<IconPlayCircle size={18} />} label={`Ready for ${kid.name}`} value={ready} />
               <SummaryRow href={lib_("&status=reviewing")} icon={<IconClock size={18} />} label="Awaiting review" value={counts.reviewing} />
-              <SummaryRow href={lib_("&status=held")} icon={<IconAlert size={18} />} label="Held back by settings" value={heldBack} />
+              <SummaryRow href={lib_("&status=held_any")} icon={<IconAlert size={18} />} label="Held back by settings" value={heldBack} />
             </ul>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link href={lib_()} className={buttonClass("secondary", "sm")}>Open Library</Link>

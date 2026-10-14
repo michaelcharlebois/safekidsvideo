@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { VideoThumb } from "@/components/video-thumb";
 import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
@@ -93,7 +94,7 @@ export default async function ChannelPage(props: PageProps<"/parent/channel/[id]
           <ul className="mt-2 divide-y divide-line">
             {[...rows].sort((a, b) => (watching.perVideo.get(b.v.id)?.plays ?? 0) - (watching.perVideo.get(a.v.id)?.plays ?? 0)).map(({ v: x, blocked }) => (
               <li key={x.id} className="flex items-center gap-3 py-2 text-sm">
-                <Image src={x.thumbnailUrl ?? `https://i.ytimg.com/vi/${x.id}/hqdefault.jpg`} alt="" width={96} height={54} unoptimized className="w-20 shrink-0 rounded-lg aspect-video object-cover bg-line" />
+                <VideoThumb src={x.thumbnailUrl ?? `https://i.ytimg.com/vi/${x.id}/hqdefault.jpg`} width={96} height={54} className="w-20 shrink-0 rounded-lg aspect-video object-cover bg-line" />
                 <div className="min-w-0 flex-1">
                   <Link href={`/parent/video/${x.id}`} className="font-bold hover:underline line-clamp-1">{x.title}</Link>
                   <div className="mt-0.5 flex flex-wrap gap-1 text-xs">

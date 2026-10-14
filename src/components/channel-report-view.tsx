@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import { VideoThumb } from "@/components/video-thumb";
 import { Card, Stars } from "@/components/ui";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMAT_LABELS, type VideoFormat } from "@/lib/types";
 import type { ChannelReport } from "@/lib/channel-report";
@@ -61,7 +61,7 @@ export function ChannelReportView({ r, videoHref }: { r: ChannelReport; videoHre
               <ul className="mt-2 space-y-2 text-sm">
                 {r.bestPicks.map((v) => (
                   <li key={v.id} className="flex items-center gap-2">
-                    <Image src={v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`} alt="" width={96} height={54} unoptimized className="w-20 shrink-0 rounded-lg aspect-video object-cover bg-line" />
+                    <VideoThumb src={v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`} width={96} height={54} className="w-20 shrink-0 rounded-lg aspect-video object-cover bg-line" />
                     <span className="min-w-0"><TitleLink href={videoHref(v.id)}>{v.title}</TitleLink><span className="block text-xs text-muted">{r.cards.get(v.id)?.parentRecommendation}</span></span>
                   </li>
                 ))}
