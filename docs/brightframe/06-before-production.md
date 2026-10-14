@@ -66,11 +66,17 @@ The local walkthrough (31 checks) and the real-Postgres tests can't cover the it
 - Make a device a child's own from the child page: you return to that child's Screens section with "… is now Maya's own", and the device can't switch. "Make shared" reverses it.
 - Revoke a device mid-session.
 
+**Watch sessions (0020)**
+- Apply 0020, play a video to the end, skip one, leave one with Back: one session each, with the right outcome, in `watch_events`.
+- Run `scripts/staging/watch-events-audit.sql` before and after to size the historical double counting.
+- Daily limit: with a 30-minute limit, a 20-minute show finished once leaves about 10 minutes.
+
 **Child settings**
 - Save each section separately and confirm the others are untouched on Supabase. Columns differ from local mode, so the local test isn't enough.
 - Extra time today, then bedtime crossing midnight in the family's time zone.
 
 **Samsung TV (Tizen wrapper), real remote**
+- The new TV Home: focus starts on the first video; arrows, OK and Return behave as in `scripts/e2e/kid-home.sh`; text is readable at 3 m; safe-area margins clear the bezel.
 - Who's watching and the PIN pad.
 - Home rows: left/right within a row, up/down between rows.
 - Back and Return.

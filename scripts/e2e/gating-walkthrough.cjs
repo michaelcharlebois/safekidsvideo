@@ -14,7 +14,7 @@ const settled = async (page) => { await page.waitForSelector('[aria-busy="true"]
 
 (async () => {
   const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {});
-  const tv = await browser.newContext({ viewport: { width: 1280, height: 720 } }); // the shared TV
+  const tv = await browser.newContext({ viewport: { width: 1280, height: 720 }, userAgent: "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/537.36 (KHTML, like Gecko) 76.0.3809.146/6.0 TV Safari/537.36" }); // the shared TV (Samsung Tizen)
   const parentCtx = await browser.newContext({ viewport: { width: 420, height: 900 } }); // the parent's phone
   const kid = await tv.newPage();
   const parent = await parentCtx.newPage();

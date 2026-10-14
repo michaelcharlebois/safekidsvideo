@@ -177,3 +177,32 @@ body {
 .kid-mode .tile:active { transform: scale(0.98); }
 .kid-mode .bigbtn:focus,
 .kid-mode input:focus { box-shadow: 0 0 0 5px var(--kfocus); outline: none; }
+
+/* ---- Brightframe kid theme (Home first; player/search/request follow after review) ----
+   Forest ground, ivory text, apricot for focus and "a grown-up said yes". Plus Jakarta Sans.
+   Lives inside .kid-mode so the shared kid plumbing (remote nav, no text selection) still applies. */
+.kid-mode .kid-bf {
+  --kbg: #082219;
+  --kbg2: #0f3d2e;
+  --kink: #fff9f1;
+  --kmuted: #c9d8c3;   /* 10.6:1 on --kbg */
+  --kfocus: #ff9f6e;
+  font-family: var(--font-sans);
+  background: radial-gradient(120% 70% at 85% -10%, rgb(255 159 110 / 0.14) 0%, transparent 55%), var(--kbg);
+  color: var(--kink);
+}
+.kid-mode .kid-bf h1, .kid-mode .kid-bf h2 { font-family: var(--font-display); color: var(--kink); letter-spacing: -0.02em; }
+.kid-mode .kid-bf .tile { background: var(--kbg2); border-radius: 1.25rem; }
+/* TV: 10-foot cards in horizontal rows, a big apricot ring and lift on D-pad focus. */
+.kid-mode .kid-bf.tv .shelf { gap: 1.6vw; padding: 1.2vw 0 2vw; margin: 0 -0.6vw; padding-left: 0.6vw; padding-right: 0.6vw; scroll-padding-left: 0.6vw; }
+.kid-mode .kid-bf.tv .tile { width: 21.5vw; }
+.kid-mode .kid-bf.tv .tile:focus-within { transform: scale(1.06); box-shadow: 0 0 0 0.35vw var(--kfocus), 0 1.6vw 3vw rgb(0 0 0 / 0.55); }
+.kid-mode .kid-bf.tv .tile:focus-within .tv-title { color: #fff; }
+.kid-mode .kid-bf.tv .bigbtn:focus { box-shadow: 0 0 0 0.3vw var(--kfocus); background: rgb(255 249 241 / 0.16); }
+/* Touch: no hover lift (it sticks on touch screens); a press state instead. */
+.kid-mode .kid-bf.touch .tile:hover, .kid-mode .kid-bf.touch .tile:focus-within { transform: none; box-shadow: none; }
+.kid-mode .kid-bf.touch .tile:active { transform: scale(0.98); }
+.kid-mode .kid-bf.touch a:focus-visible { outline: 3px solid var(--kfocus); outline-offset: 3px; }
+.kid-mode .kid-bf.tv .dur { font-size: 1vw; padding: 0.2vw 0.5vw; }
+/* Touch layouts put cards in grids and lists, not scrolling rows: let the grid size them. */
+.kid-mode .kid-bf.touch .tile { width: auto; flex: none; scroll-snap-align: none; }

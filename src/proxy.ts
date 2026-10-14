@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { PARENT_COOKIE } from "@/lib/auth";
+import { isKidUi, KID_UI_COOKIE } from "@/lib/form-factor";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -10,6 +11,18 @@ const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT
  * Supabase mode: refresh the auth session cookie on every request and require a user for /parent.
  */
 export async function proxy(req: NextRequest) {
+  return rememberKidUi(req, await route(req));
+}
+
+/** Kid screen: ?ui=tv|tablet|phone remembers an interface choice (presentation only); ?ui=auto forgets it. */
+function rememberKidUi(req: NextRequest, res: NextResponse) {
+  const ui = req.nextUrl.pathname.startsWith("/watch") ? req.nextUrl.searchParams.get("ui") : null;
+  if (ui === "auto") res.cookies.delete(KID_UI_COOKIE);
+  else if (ui && isKidUi(ui)) res.cookies.set(KID_UI_COOKIE, ui, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+  return res;
+}
+
+async function route(req: NextRequest): Promise<NextResponse> {
   const wantsParent = req.nextUrl.pathname.startsWith("/parent");
 
   if (!url || !key) {

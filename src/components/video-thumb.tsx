@@ -22,7 +22,7 @@ export function VideoThumb({ src, className = "", width = 320, height = 180, dar
   if (failed) {
     return (
       <span role="img" aria-label="No picture available" className={`flex items-center justify-center ${dark ? "bg-forest" : "bg-sand-soft"} ${className}`}>
-        <BrandMark size={Math.max(18, Math.round(height / 5))} tone={dark ? "dark" : "color"} className="opacity-40" />
+        <BrandMark size={Math.max(18, Math.round(height / 5))} tone={dark ? "dark" : "color"} className="h-[32%] w-auto opacity-40" />
       </span>
     );
   }

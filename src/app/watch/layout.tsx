@@ -22,7 +22,7 @@ export default async function WatchLayout({ children }: LayoutProps<"/watch">) {
   return (
     <div className="kid-mode kid-pane flex-1 flex flex-col" data-scroll-pane>
       <RemoteNav />
-      <KidHeader>
+      <KidHeader homeHasOwn={!(time && !time.allowed)}>
         <Link href="/watch" className="bigbtn flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xl font-extrabold active:scale-95">
           <span className="text-2xl leading-none">🏠</span><span className="hidden sm:inline">Home</span>
         </Link>
