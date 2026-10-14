@@ -10,23 +10,25 @@ Production stays untouched throughout. Nothing here merges, migrates production,
   - 0020 watch sessions + `watched_sec`
   - 0021 per-child requests
   - 0022 more-time requests
-- **Rollbacks:** each migration has one in `supabase/rollbacks/`.
-- **Pending your approval, not built:** the one-night bedtime extension (`13-bedtime-extension-proposal.md`). Until then, bedtime offers no extra time.
+  - 0023 one-night bedtime extensions and bedtime asks
+- **Final migration order:** 0018 → 0019 → 0020 → 0021 → 0022 → 0023, all before the build that uses them. Rollback order is the reverse, and only as part of the coordinated rollback below.
+- **Rollbacks:** each migration has one in `supabase/rollbacks/`. The 0018 and 0021 rollbacks never widen access and report what they couldn't carry back.
 
 ## 1. Migration rehearsal at production size (local, no Supabase)
 1. `scripts/staging-db-check.sh --scale`.
-   - **What it does:** builds a pre-0018 database with synthetic, production-sized data, applies 0018 → 0022 in order (timed), checks nothing is lost, rolls back 0022 → 0018, and compares the whitelist byte-for-byte.
+   - **What it does:** builds a pre-0018 database with synthetic, production-sized data, applies 0018 → 0023 in order (timed), checks nothing is lost, rolls back 0023 → 0018, and compares the whitelist byte-for-byte.
    - **Size:** `BF_SCALE_FAMILIES=8000` gives roughly 18k children, 1.8M viewing rows and 180k permission rows. Measured times are under "Results".
 2. With a data-only production dump (read-only `pg_dump`; keep it local and delete it after): `scripts/staging-db-check.sh prod-data.sql`.
-   - **What it does:** runs preflight, applies 0018 → 0022 with timings, then the report, the held-for-review list, the watch-events audit, and the rollback comparison.
+   - **What it does:** runs preflight, applies 0018 → 0023 with timings, then the report, the held-for-review list, the watch-events audit, and the rollback comparison.
    - **Pass:** the rollback restores the whitelist exactly. `legacy_grants` is the expected size. No migration needs more than a short maintenance window.
-3. Version-1 reviews: run `scripts/staging/v1-reviews.sql` against the dump to size the re-review job. It's read-only.
+3. Version-1 reviews: run `scripts/staging/v1-reviews.sql` against the dump to size the re-review job. It's read-only. (They are valid at the gate today; see step 3.)
+4. **Coordinated rollback rehearsal:** `test/rollback-rehearsal.test.ts`, which runs in the script. It migrates, makes post-release permission changes, rolls back 0023 → 0018, and checks the rollback never widens access. Repeat it once on the production dump before release (step 10.3).
 
 **Decide here:** if 0018 takes long at real size, schedule a short maintenance window. 0018 rewrites `whitelist` and backfills profile links; the others are additive.
 
 ## 2. Supabase staging project and an isolated Vercel preview
 1. Create a **new** Supabase project, "brightframe-staging". Never point the preview at production.
-2. Load a copy of production data, or the synthetic set. Apply 0001 → 0017 (if starting empty), then **0018 → 0022** in order.
+2. Load a copy of production data, or the synthetic set. Apply 0001 → 0017 (if starting empty), then **0018 → 0023** in order.
 3. Create a Vercel preview for `feature/brightframe` with environment variables scoped to **Preview** only:
    - Supabase staging URL and keys
    - `GEMINI_API_KEY` (with a low `DAILY_REVIEW_BUDGET_USD`)
@@ -48,10 +50,23 @@ Production stays untouched throughout. Nothing here merges, migrates production,
 
 ## 3. Old version-1 AI reviews and legacy permissions
 1. In staging, open Review. Old approvals that 0018 couldn't attribute appear as "Old approval record" with the candidate children. Resolve a few: Allow for one child, and Don't allow.
-2. Check that a v1 review never makes a video play by itself: version-1 cards show "Couldn't be sure" until re-reviewed.
+2. **Version-1 reviews: what the code actually does.** `reviewEligibility()` never looks at `reviewer.version`. A version-1 card is eligible whenever it has:
+   - a real (non-sample) model
+   - a complete, well-formed finding for every concern category
+   - confidence of at least the minimum
+
+   So a clean version-1 card **does** let a library video play, and its findings hold videos back exactly like version 2. It is *not* shown as "Couldn't be sure" because of its version. Regression tests: `test/v1-review-policy.test.ts`.
+
+   The risk (`06-before-production.md` §1) is that a version-1 card may have recorded an unassessed category as "absent". The plan is to re-review them, library videos first, not to block them by version. Check on staging:
+   - pick a version-1 card with a library video: it plays for a child whose rules it fits
+   - one with a blocked tag at intensity 2 is held back
+   - a low-confidence one says "Couldn't be sure"
 3. Run the re-review job on a small batch, within budget. Statuses update in Library.
 
-**Pass:** no child gains access to anything that was family-wide-held before. Library counts match Home.
+**Pass:**
+- No child gains access to anything that was family-wide-held before.
+- Library counts match Home.
+- Version-1 cards behave as described, not as "held".
 
 ## 4. Real YouTube search, review and playback
 1. **Search** on TV, tablet and phone with the real API (safe search strict, embeddable only). Check the states: Ready, Check it (Open), Ask a grown-up (Ask first), Waiting, Not this time, Not this one.
@@ -69,7 +84,15 @@ Production stays untouched throughout. Nothing here merges, migrates production,
    - Allow for the child: Home shows "A grown-up said yes!".
    - Decline: Search shows "Not this time".
    - Two children asking for the same video get separate requests and separate notifications.
-3. **More time (daily limit):**
+3. **Bedtime extension:**
+   - Set a bedtime 2 minutes ahead and play: "N minutes until bedtime" appears, and playback stops at bedtime.
+   - At bedtime the child asks to stay up; the parent sees the actual cutoffs ("10:23 PM tonight") and approves one. The child's screens come back with "Staying up until …".
+   - A second ask that night is refused.
+   - Cancel from parent Home: the player stops within a minute, or at once on wake.
+   - Change the recurring bedtime: tonight's authorized cutoff stays.
+   - With the daily minutes also used up, the Review card says an extension alone won't restore playback.
+   - Put a TV to sleep past the cutoff: on wake it stops at once.
+4. **More time (daily limit):**
    - **Push path:** set a 5-minute limit, watch past it, then ask. The push arrives and Review shows the ask. +15 restores playback on every screen within about 15 s.
    - **Without push:** unsubscribe and repeat. The ask still appears in Review.
    - **Cross-device:** ask from the TV, then from a tablet as the same child. There's one request, and both screens say Waiting.
@@ -125,22 +148,51 @@ Work through the Samsung checklist in `06-before-production.md` with the real re
 - [ ] **Push:** a failure never changes what's stored. Dead subscriptions are removed.
 - [ ] **Dependencies:** `npm audit`, with no criticals.
 - [ ] **Production release order** (each step only after explicit approval):
-  1. production backup
-  2. apply 0018 → 0022 (in the maintenance window if step 1 says so)
+  1. production backup (point-in-time recovery enabled; note the restore point)
+  2. apply 0018 → 0023 (in the maintenance window if step 1 says so)
   3. deploy the build
-  4. smoke test (sign in, pair, play, ask)
+  4. smoke test (sign in, pair, play, ask, extend bedtime)
   5. connect brightframekids.com last
-- [ ] **Rollback plan:** redeploy the previous build first, then run the rollbacks in reverse order (0022 → 0018). 0020's rollback drops `session_id` and `watched_sec`; new viewing rows keep counting under the old rules.
+
+## 10. Coordinated production rollback (rehearse before release)
+
+**Why it needs coordinating.** The previous production build isn't compatible with the new permission schema:
+- It writes family-wide approvals with no child. After 0018 those are rejected (`whitelist_child_kinds`).
+- It reads the whitelist ignoring `profile_id`. With the new schema in place, every allow made for one child would apply to the whole family. That **widens** access for siblings.
+- Its request flow assumes one pending request per family per video (pre-0021).
+
+So the old build must never run against the new schema. A rollback is app + schema together, with permission writes paused in between.
+
+**Procedure.**
+1. **Pause permission writes** on the current build: set `BF_PERMISSION_WRITES_PAUSED=1` in the production environment and redeploy (same build). While paused:
+   - approvals, blocks, channel and video changes, old-record decisions, video requests, more-time and bedtime asks and answers, bedtime extensions and device assignments are refused
+   - parents see a banner; children who ask are told to ask a grown-up in person
+   - watching and viewing records continue
+2. **Snapshot:** take a database backup / note the restore point. Export the current permissions (`select * from whitelist`, `legacy_grants`, `bedtime_extensions`) for reference.
+3. **Maintenance window, in order.** Fail closed: the new build against the old schema errors (nothing plays), while the old build against the new schema would widen access. So the schema goes first.
+   1. Run the rollbacks: 0023 → 0022 → 0021 → 0020 → 0019 → 0018. From here the current build's kid and parent pages fail until step ii, and nothing plays. Expect a few minutes.
+   2. Deploy the previous build at once.
+   3. Remove `BF_PERMISSION_WRITES_PAUSED` (the old build doesn't read it). Smoke-test: sign in, pair, play.
+4. **What the rollbacks do with changes made since release** (never widening access):
+   - **0018:** pre-release permissions return family-wide, except allows a parent removed (a channel or video removed, an approval undone, an old record dismissed). Restrictions added since (Never / Keep hidden, for any child) return family-wide. Allows created since, which were for one child, are dropped and listed in `rollback_0018_report`.
+   - **0021:** where two children had the same video pending, the earliest request is kept and the others are listed in `rollback_0021_report`.
+   - **0022 / 0023:** asks for more time, bedtime asks and tonight's extensions are dropped. Children fall back to their scheduled bedtime and daily minutes, which is stricter.
+   - **0020:** `session_id` and `watched_sec` are dropped. Viewing rows stay and are counted by the old rules.
+5. **Afterwards:**
+   - Check that `rollback_0018_report` and `rollback_0021_report` contain what you expect, and tell affected parents which approvals to redo.
+   - Drop the report tables once handled.
+6. **Rehearsed by:** `test/rollback-rehearsal.test.ts` (in `scripts/staging-db-check.sh`), the scale rehearsal (0023 → 0018 at 8,000 families), and `test/maintenance.test.ts` (the pause).
+   - Before release, also run the whole procedure on the staging project, with the old build deployed to a second preview.
 
 ## Results (this round, local)
 
 **Production-sized rehearsal** (synthetic, real Postgres 16, `scripts/staging-db-check.sh --scale`):
 
-| Families | Children | Viewing rows | Permission rows | 0018 | 0019 | 0020 | 0021 | 0022 | Rollback exact |
-|---|---|---|---|---|---|---|---|---|---|
-| 2,000 | ~3,600 | ~360k | ~46k | 1.0 s | <0.1 s | 0.3 s | <0.1 s | <0.1 s | Yes |
-| 8,000 | ~14,400 | ~1.44M | ~184k | 4.0 s | <0.1 s | 1.3 s | <0.1 s | <0.1 s | Yes |
-| 20,000 | ~36,000 | ~3.6M | ~460k | 11.4 s | <0.1 s | 3.0 s | <0.1 s | <0.1 s | Yes |
+| Families | Children | Viewing rows | Permission rows | 0018 | 0019 | 0020 | 0021 | 0022 | 0023 | Rollback exact |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 2,000 | ~3,600 | ~360k | ~46k | 1.0 s | <0.1 s | 0.3 s | <0.1 s | <0.1 s | (not run) | Yes |
+| 8,000 | ~14,400 | ~1.44M | ~184k | 5.6 s | <0.1 s | 1.4 s | <0.1 s | <0.1 s | <0.1 s | Yes (0023 → 0018) |
+| 20,000 | ~36,000 | ~3.6M | ~460k | 11.4 s | <0.1 s | 3.0 s | <0.1 s | <0.1 s | (not run) | Yes |
 
 **Found and fixed by the rehearsal:** 0018's attribution looked up every old approval's request and check history with no index on `(family_id, video_id)`.
 - At 8,000 families it took **4.6 minutes**, inside one transaction holding the whitelist.

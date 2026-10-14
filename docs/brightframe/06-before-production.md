@@ -66,7 +66,7 @@ The local walkthrough (31 checks) and the real-Postgres tests can't cover the it
 - Make a device a child's own from the child page: you return to that child's Screens section with "… is now Maya's own", and the device can't switch. "Make shared" reverses it.
 - Revoke a device mid-session.
 
-**Watch sessions (0020), per-child requests (0021) and more-time requests (0022): not applied. All go to production before the build that needs them, and only after release approval. Full ordered plan: `14-staging-readiness.md`.**
+**Watch sessions (0020), per-child requests (0021), more-time requests (0022) and bedtime extensions (0023): not applied. All go to production before the build that needs them, and only after release approval. Full ordered plan: `14-staging-readiness.md`.**
 - 0022: ask for more time from two screens as one child (one request); answer in Review; the ask still arrives with no push subscription.
 - Apply 0020, play a video to the end, skip one, leave one with Back, and close the app mid-video: one session each, with the right outcome, in `watch_events`.
 - Pause for a minute and seek ahead before leaving: `watched_sec` is the time actually played, `ended_at_sec` the playhead.
