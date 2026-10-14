@@ -55,6 +55,13 @@ create policy "own legacy grants" on legacy_grants for all
   using (family_id in (select id from families where owner_user_id = auth.uid()))
   with check (family_id in (select id from families where owner_user_id = auth.uid()));
 
+-- Lookup indexes for the attribution below (and for per-child request/check queries afterwards). Without
+-- them each old approval scans every request and check: the production-sized rehearsal took minutes.
+create index if not exists watch_requests_family_video_idx on watch_requests (family_id, video_id);
+create index if not exists kid_checks_family_video_idx on kid_checks (family_id, video_id);
+create index if not exists profiles_family_idx on profiles (family_id);
+analyze watch_requests; analyze kid_checks; analyze profiles;
+
 create temp table _legacy_attrib on commit drop as
 select
   w.family_id, w.kind, w.target_id, w.created_at,

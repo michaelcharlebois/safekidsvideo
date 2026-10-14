@@ -33,6 +33,9 @@ insert into whitelist (family_id, kind, target_id, created_at)
 alter table whitelist add constraint whitelist_pkey primary key (family_id, kind, target_id);
 
 alter table profiles drop constraint if exists profiles_id_family_key;
+drop index if exists watch_requests_family_video_idx;
+drop index if exists kid_checks_family_video_idx;
+drop index if exists profiles_family_idx;
 drop table if exists whitelist_pre_0018;
 
 commit;
