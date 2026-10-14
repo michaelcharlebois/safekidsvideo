@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { nextVideo, recordWatchEnd, recordWatchStart } from "@/app/actions";
-import { IconBack, IconBack10, IconFwd10, IconHome, IconNext, IconPause, IconPlay } from "@/components/icons";
+import { kidTimeNow, nextVideo, recordWatchEnd, recordWatchStart } from "@/app/actions";
+import { IconBack, IconBack10, IconFwd10, IconHome, IconMoon, IconNext, IconPause, IconPlay } from "@/components/icons";
 import { PlaybackClock } from "@/lib/playback";
 import { arrowDir, isBack, isEnter } from "../remote-nav";
 import { clearLedger, isLocked, leavingCounts, leavingOutcome, loadLedger, saveLedger, type Ledger, type SkipConfig } from "./skip-ledger";
@@ -34,8 +34,8 @@ const fmt = (s: number) => { const t = Math.max(0, Math.floor(s)); return `${Mat
  * - Viewing is one session per playback with BOTH where the playhead ended and how long it actually played
  *   (lib/playback.ts). Skips and the screen-time countdown use playing time, so seeking can't game them.
  */
-export function Player({ playlist, index, remainingMinutes, skip, ui, fromSearch = false }: {
-  playlist: Item[]; index: number; remainingMinutes?: number; skip?: SkipConfig; ui: "tv" | "touch"; fromSearch?: boolean;
+export function Player({ playlist, index, remainingMinutes, stopsAt, skip, ui, fromSearch = false }: {
+  playlist: Item[]; index: number; remainingMinutes?: number; stopsAt?: string; skip?: SkipConfig; ui: "tv" | "touch"; fromSearch?: boolean;
 }) {
   const router = useRouter();
   const tv = ui === "tv";
@@ -263,11 +263,11 @@ export function Player({ playlist, index, remainingMinutes, skip, ui, fromSearch
   const advance = async () => {
     try {
       const n = await nextVideo(current.id, order);
-      if (!n) { router.push("/watch"); return; }
+      if (!n) { toKidHome(); return; } // nothing allowed now (often: time's up)
       if (n.id === current.id) setReplays((r) => r + 1);
       else setCurrent(n);
     } catch {
-      router.push("/watch");
+      toKidHome();
     }
   };
   useEffect(() => { advanceRef.current = () => { void advance(); }; });
@@ -361,16 +361,56 @@ export function Player({ playlist, index, remainingMinutes, skip, ui, fromSearch
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reveal, current.id]);
 
-  // Screen time: counts down PLAYING time from what the server said was left; at zero, home (which shows "all done").
-  const [secondsLeft, setSecondsLeft] = useState<number | null>(remainingMinutes != null ? remainingMinutes * 60 : null);
+  // ---- limits during playback ----
+  // Daily minutes count down PLAYING time from what the server last said was left. Bedtime is a wall-clock
+  // instant (tonight's scheduled bedtime, or the later cutoff a parent authorized): checked against the clock
+  // every second, so a device that slept past it stops as soon as it wakes. The server is asked again every
+  // minute and whenever the screen wakes, so a parent's cancellation or a new limit applies mid-video.
+  const [limitBase, setLimitBase] = useState<{ minutes: number; clockAt: number } | null>(remainingMinutes != null ? { minutes: remainingMinutes, clockAt: 0 } : null);
+  const [stopAt, setStopAt] = useState<number | null>(stopsAt ? Date.parse(stopsAt) : null);
+  const [left, setLeft] = useState<{ limitSec: number | null; bedtimeSec: number | null }>({ limitSec: remainingMinutes != null ? remainingMinutes * 60 : null, bedtimeSec: null });
+  const stopped = useRef(false);
+  const stopForTime = useCallback(() => {
+    if (stopped.current) return;
+    stopped.current = true;
+    const s = session.current;
+    if (s && !s.ended) endSession(s.videoId, "left", playerRef.current?.getCurrentTime?.() ?? 0);
+    playerRef.current?.pauseVideo?.();
+    toKidHome(); // the server shows the calm time-up screen
+  }, []);
   useEffect(() => {
-    if (remainingMinutes == null) return;
-    const t = setInterval(() => setSecondsLeft(remainingMinutes * 60 - screenClock.current.seconds(now())), 1000);
+    const tick = () => {
+      const limitSec = limitBase ? limitBase.minutes * 60 - (screenClock.current.seconds(now()) - limitBase.clockAt) : null;
+      const bedtimeSec = stopAt != null ? (stopAt - Date.now()) / 1000 : null;
+      setLeft({ limitSec, bedtimeSec });
+      if ((limitSec != null && limitSec <= 0) || (bedtimeSec != null && bedtimeSec <= 0)) stopForTime();
+    };
+    tick();
+    const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [remainingMinutes]);
-  const timeUp = secondsLeft != null && secondsLeft <= 0;
-  useEffect(() => { if (timeUp) router.push("/watch"); }, [timeUp, router]);
-  const minutesLeft = secondsLeft != null ? Math.max(0, Math.ceil(secondsLeft / 60)) : null;
+  }, [limitBase, stopAt, stopForTime]);
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const r = await kidTimeNow();
+        if (!r.allowed) { stopForTime(); return; }
+        setStopAt(r.stopsAt ? Date.parse(r.stopsAt) : null);
+        setLimitBase(r.remainingMinutes != null ? { minutes: r.remainingMinutes, clockAt: screenClock.current.seconds(now()) } : null);
+      } catch { /* offline: keep the last known limits; the clock still enforces bedtime */ }
+    };
+    const onWake = () => { if (document.visibilityState === "visible") void check(); };
+    const t = setInterval(check, 60_000);
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("pageshow", onWake);
+    window.addEventListener("focus", onWake);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onWake); window.removeEventListener("pageshow", onWake); window.removeEventListener("focus", onWake); };
+  }, [stopForTime]);
+  const minutesLeft = left.limitSec != null ? Math.max(0, Math.ceil(left.limitSec / 60)) : null;
+  const bedtimeMinutes = left.bedtimeSec != null && left.bedtimeSec > 0 ? Math.ceil(left.bedtimeSec / 60) : null;
+  // One gentle heads-up in the last five minutes: whichever comes first, bedtime or the daily minutes.
+  const warning = bedtimeMinutes != null && bedtimeMinutes <= 5 && (minutesLeft == null || bedtimeMinutes <= minutesLeft)
+    ? `${bedtimeMinutes} minute${bedtimeMinutes === 1 ? "" : "s"} until bedtime`
+    : minutesLeft != null && minutesLeft <= 5 ? `${minutesLeft} minute${minutesLeft === 1 ? "" : "s"} left today` : null;
 
   const shown = visible || paused || needsTap || !!lockMsg;
   const backLabel = fromSearch ? "Back" : "Home";
@@ -399,9 +439,9 @@ export function Player({ playlist, index, remainingMinutes, skip, ui, fromSearch
         style={{ WebkitTapHighlightColor: "transparent" }}
       />
 
-      {minutesLeft != null && minutesLeft <= 5 && (
-        <div role="status" className={`pointer-events-none absolute rounded-full bg-[var(--kfocus)] font-extrabold text-[#2a1206] shadow-lg ${tv ? "right-[4vw] top-[4vh] px-[1.4vw] py-[0.6vw] text-[1.4vw]" : "right-4 top-4 px-4 py-2 text-base"}`}>
-          {minutesLeft} minute{minutesLeft === 1 ? "" : "s"} left today
+      {warning && (
+        <div role="status" data-time-warning className={`pointer-events-none absolute flex items-center gap-[0.5em] rounded-full bg-[rgb(8_34_25/0.88)] font-extrabold text-[var(--kink)] shadow-lg ring-1 ring-[rgb(255_159_110/0.6)] ${tv ? "right-[4vw] top-[4vh] px-[1.4vw] py-[0.6vw] text-[1.4vw]" : "right-4 top-[max(1rem,env(safe-area-inset-top))] px-4 py-2 text-base"}`}>
+          <IconMoon size={0} className={tv ? "h-[1.4vw] w-[1.4vw] text-[var(--kfocus)]" : "h-5 w-5 text-[var(--kfocus)]"} />{warning}
         </div>
       )}
 
@@ -478,6 +518,15 @@ export function Player({ playlist, index, remainingMinutes, skip, ui, fromSearch
       </div>
     </main>
   );
+}
+
+/**
+ * Back to the kid Home with a full page load. The time-up screen lives in the kid layout, which a client-side
+ * navigation from the player would keep as it was; a fresh load makes the server decide what to show.
+ */
+function toKidHome() {
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full load is the point: the layout must be re-decided by the server
+  window.location.assign("/watch");
 }
 
 /** A session id; crypto.randomUUID isn't available on plain-http TV browsers. */

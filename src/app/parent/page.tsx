@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { pendingTimeRequests } from "@/lib/more-time";
-import { TimeRequestCard } from "@/app/parent/time-request-card";
+import { TimeRequestCard, TonightCard } from "@/app/parent/time-request-card";
+import { childTime, timeNotice } from "@/lib/tonight";
 import { VideoThumb } from "@/components/video-thumb";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
@@ -63,8 +64,12 @@ export default async function ParentPage(props: PageProps<"/parent">) {
     watchEventsSince(fid, new Date(Date.now() - 30 * 86_400_000).toISOString()), // eslint-disable-line react-hooks/purity -- server component
     minutesUsedToday(fid, kid.id, family.timezone),
   ]);
-  // Today's stored ask for more time from this child (push links here and to Review).
-  const timeAsk = (await pendingTimeRequests(fid)).find((t) => t.profileId === kid.id);
+  // This child's stored asks (more minutes today, a later bedtime tonight), and tonight's times for answering
+  // them or extending bedtime directly.
+  const timeAsks = (await pendingTimeRequests(fid)).filter((t) => t.profileId === kid.id);
+  const tonight = await childTime(fid, settings, family.timezone);
+  const timeNote = typeof sp.time === "string" ? timeNotice(sp.time, kid.name) : null;
+  const timeError = typeof sp.error === "string" ? sp.error : null;
   const byId = new Map(lib.map((v) => [v.id, v]));
 
   // The kid screen, from the SAME selector the kid home uses (lib/kid-home.ts); counts from Library's.
@@ -120,7 +125,10 @@ export default async function ParentPage(props: PageProps<"/parent">) {
       {billing.ok && billing.state === "trial" && (billing.daysLeft ?? 99) <= 7 && (
         <Notice className="mt-5">{billing.daysLeft} day{billing.daysLeft === 1 ? "" : "s"} left in your free trial. <Link href="/parent/billing" className="font-bold text-forest underline">Keep Brightframe going</Link></Notice>
       )}
-      {timeAsk && <div className="mt-5"><TimeRequestCard req={timeAsk} child={kid} next={`/parent?kid=${kid.id}`} tz={family.timezone} usedMinutes={usedToday} limitMinutes={settings.dailyMinutes} /></div>}
+      {timeNote && <Notice tone="ok" className="mt-5">{timeNote}</Notice>}
+      {timeError && <Notice tone="bad" className="mt-5">{timeError}</Notice>}
+      {timeAsks.map((t) => <div key={t.id} className="mt-5"><TimeRequestCard req={t} child={kid} next={`/parent?kid=${kid.id}`} tz={family.timezone} ctx={tonight} /></div>)}
+      {tonight.bedtime && <div className="mt-3"><TonightCard child={kid} next={`/parent?kid=${kid.id}`} ctx={tonight} /></div>}
 
       {/* ---- counts, each a door ---- */}
       <section aria-label={`${kid.name} at a glance`} className="mt-6 grid grid-cols-3 gap-2.5 sm:gap-3">

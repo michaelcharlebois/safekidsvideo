@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { IconHand } from "@/components/icons";
-import { PhoneTabs, PhoneTopBar, TabletTopBar } from "../chrome";
+import { PhoneTabs, PhoneTopBar, StayingUp, TabletTopBar } from "../chrome";
 import { KidCard } from "./kid-card";
 import { ShowMore } from "./show-more";
 import { askLine, type KidHomeView } from "./view";
@@ -28,6 +28,7 @@ export function TabletHome({ view }: { view: KidHomeView }) {
         <IconHand size={22} className="text-[var(--kfocus)]" />
         <p className="flex-1 text-base font-semibold text-[var(--kink)]">{askLine(view.mode)}</p>
         {view.canSearch && <Link href="/watch/search" className="flex h-11 items-center rounded-full bg-[var(--kfocus)] px-5 font-extrabold text-[#2a1206]">Find a video</Link>}
+        {view.stayingUpUntil && <StayingUp until={view.stayingUpUntil} />}
         {view.minutesLeft != null && <span className="rounded-full bg-[rgb(255_249_241/0.1)] px-3 py-1.5 text-sm font-bold text-[var(--kmuted)]">{view.minutesLeft} min left today</span>}
       </div>
 
@@ -60,7 +61,7 @@ export function PhoneHome({ view }: { view: KidHomeView }) {
   const { shelves, waiting } = view;
   return (
     <div className="kid-bf touch flex flex-1 flex-col">
-      <PhoneTopBar child={view.child} canSwitch={view.canSwitch} exitTarget={view.exitTarget} title={`Hi, ${view.child.name}!`} sub={view.minutesLeft != null ? `${view.minutesLeft} min left today` : undefined} />
+      <PhoneTopBar child={view.child} canSwitch={view.canSwitch} exitTarget={view.exitTarget} title={`Hi, ${view.child.name}!`} sub={[view.stayingUpUntil ? `Staying up until ${view.stayingUpUntil}` : null, view.minutesLeft != null ? `${view.minutesLeft} min left today` : null].filter(Boolean).join(" · ") || undefined} />
 
       <div className="flex-1 px-4 pb-24">
         {view.asking && (

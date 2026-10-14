@@ -2,20 +2,33 @@ import "server-only";
 import { db } from "@/lib/db";
 import { localDay, watchEventsSince, type WatchEvent } from "@/lib/checkin";
 import { attributedTo, sessionSeconds, sessionsFrom } from "@/lib/sessions";
+import { bedtimeNow, nightOf } from "@/lib/bedtime";
+import { listExtensions } from "@/lib/bedtime-store";
 import type { FamilySettings, Video } from "@/lib/types";
 
 /* Screen-time limits: minutes per day + a "done for the day" time, per kid, with parent-granted bonus minutes. */
 
 export type TimeState =
-  | { allowed: true; remainingMinutes?: number; bedtime?: string }
-  | { allowed: false; reason: "limit" | "bedtime"; usedMinutes: number; limitMinutes?: number; bedtime?: string };
-
-function minutesOfDay(hhmm: string, tz?: string, d = new Date()): { now: number; at: number } {
-  const [h, m] = hhmm.split(":").map(Number);
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz || "America/Los_Angeles", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
-  const nh = Number(parts.find((p) => p.type === "hour")?.value ?? 0) % 24, nm = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
-  return { now: nh * 60 + nm, at: h * 60 + m };
-}
+  | {
+      allowed: true; remainingMinutes?: number; bedtime?: string;
+      /** When videos stop tonight (ISO): the scheduled bedtime, or a later cutoff a parent authorized. */
+      stopsAt?: string;
+      /** Set when tonight has a bedtime extension (the cutoff, ISO). */
+      extendedUntil?: string;
+      night: string;
+    }
+  | {
+      allowed: false; reason: "limit" | "bedtime"; usedMinutes: number; limitMinutes?: number; bedtime?: string;
+      night: string;
+      /** Bedtime: the daily minutes are also used up (a later bedtime alone wouldn't bring videos back). */
+      limitReached?: boolean;
+      /** Minutes of tonight's extension (0 if none), for whether a bedtime ask is still possible. */
+      extensionMinutes: number;
+      /** Bedtime: when videos come back stopped (the cutoff that applied tonight, ISO). */
+      stoppedAt?: string;
+      /** Daily limit: when bedtime starts tonight, if it hasn't yet (ISO). */
+      stopsAt?: string;
+    };
 
 /**
  * Minutes this child has watched today, from viewing sessions (lib/sessions.ts) — the same count Activity
@@ -42,22 +55,27 @@ export function usedMinutesOn(events: WatchEvent[], videoById: Map<string, Video
   return Math.round(sec / 60);
 }
 
-export async function timeState(familyId: string, settings: FamilySettings, tz?: string): Promise<TimeState> {
-  const today = localDay(tz);
-  if (settings.bedtime) {
-    const { now, at } = minutesOfDay(settings.bedtime, tz);
-    // "Done for the day" applies from bedtime until 4am.
-    if (now >= at || now < 4 * 60) {
-      const used = settings.dailyMinutes ? await minutesUsedToday(familyId, settings.profileId, tz) : 0;
-      return { allowed: false, reason: "bedtime", usedMinutes: used, limitMinutes: settings.dailyMinutes, bedtime: settings.bedtime };
-    }
-  }
-  if (!settings.dailyMinutes) return { allowed: true, bedtime: settings.bedtime };
+/**
+ * Whether this child may watch right now, on the server. Bedtime (with tonight's extension, lib/bedtime.ts)
+ * is checked first and is never lifted by extra minutes; then the daily minutes (plus today's bonus), which
+ * an extension never adds to.
+ */
+export async function timeState(familyId: string, settings: FamilySettings, tz?: string, now = new Date()): Promise<TimeState> {
+  const today = localDay(tz, now);
+  const night = nightOf(now, tz);
+  const exts = settings.bedtime && settings.profileId ? (await listExtensions(familyId, night)).filter((e) => e.profileId === settings.profileId) : [];
+  const b = bedtimeNow(now, settings.bedtime, tz, exts);
+  const extensionMinutes = b.extension?.extraMinutes ?? 0;
   const bonus = settings.bonusDay === today ? settings.bonusMinutes ?? 0 : 0;
-  const limit = settings.dailyMinutes + bonus;
-  const used = await minutesUsedToday(familyId, settings.profileId, tz);
-  if (used >= limit) return { allowed: false, reason: "limit", usedMinutes: used, limitMinutes: limit, bedtime: settings.bedtime };
-  return { allowed: true, remainingMinutes: limit - used, bedtime: settings.bedtime };
+  const limit = settings.dailyMinutes ? settings.dailyMinutes + bonus : undefined;
+  const used = limit ? await minutesUsedToday(familyId, settings.profileId, tz) : 0;
+  if (b.inBedtime) {
+    return { allowed: false, reason: "bedtime", usedMinutes: used, limitMinutes: limit, bedtime: settings.bedtime, night, extensionMinutes,
+      limitReached: limit != null && used >= limit, stoppedAt: b.stopsAt?.toISOString() };
+  }
+  const stopsAt = b.stopsAt && b.end && now < b.end ? b.stopsAt.toISOString() : undefined;
+  if (limit != null && used >= limit) return { allowed: false, reason: "limit", usedMinutes: used, limitMinutes: limit, bedtime: settings.bedtime, night, extensionMinutes, stopsAt };
+  return { allowed: true, remainingMinutes: limit != null ? limit - used : undefined, bedtime: settings.bedtime, night, stopsAt, extendedUntil: b.extension ? stopsAt : undefined };
 }
 
 export async function grantBonusMinutes(profileId: string, minutes: number, tz?: string) {

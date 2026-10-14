@@ -25,7 +25,7 @@ export default async function WatchLayout({ children }: LayoutProps<"/watch">) {
     <div className="kid-mode kid-pane flex-1 flex flex-col" data-scroll-pane>
       <RemoteNav />
       {time && !time.allowed
-        ? <TimeUp time={time} name={settings?.profileName} ui={await kidUi()} ask={timeAskState(time.reason, await listTimeRequests(viewer.familyId!), settings!.profileId!, localDay(family?.timezone))} exitTarget={supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent"} />
+        ? <TimeUp time={time} name={settings?.profileName} ui={await kidUi()} ask={timeAskState(time.reason, await listTimeRequests(viewer.familyId!), settings!.profileId!, { today: localDay(family?.timezone), night: time.night, extensionMinutes: time.extensionMinutes })} exitTarget={supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent"} />
         : children}
     </div>
   );

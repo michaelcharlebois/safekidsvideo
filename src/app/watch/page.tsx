@@ -9,6 +9,7 @@ import { watchEventsSince } from "@/lib/checkin";
 import { attributedTo } from "@/lib/sessions";
 import { tasteFrom } from "@/lib/arrange";
 import { timeState } from "@/lib/screentime";
+import { clockTime } from "@/lib/bedtime";
 import { supabaseEnabled } from "@/lib/supabase/server";
 import { chooseKidUi, KID_UI_COOKIE } from "@/lib/form-factor";
 import type { VideoWithCard } from "@/lib/types";
@@ -62,6 +63,7 @@ export default async function WatchPage(props: PageProps<"/watch">) {
     // Asked for and not answered yet. Never playable from Home (and only listed if it isn't playable anyway).
     waiting: [...pending].filter((id) => !playable.has(id)).map((id) => byId.get(id)).filter((v): v is VideoWithCard => !!v).map(card),
     minutesLeft: time.allowed ? time.remainingMinutes : undefined,
+    stayingUpUntil: time.allowed && time.extendedUntil ? clockTime(new Date(time.extendedUntil), family.timezone) : undefined,
     exitTarget: supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent",
     asking: sp.ask === "1",
   };

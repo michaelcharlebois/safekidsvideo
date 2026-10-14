@@ -27,5 +27,5 @@ export default async function PlayPage(props: PageProps<"/watch/[id]">) {
     : undefined;
   const sp = await props.searchParams;
   const ui = await kidUi(sp.ui);
-  return <Player playlist={playlist} index={i} remainingMinutes={time.remainingMinutes} skip={skip} ui={ui === "tv" ? "tv" : "touch"} fromSearch={sp.from === "search"} />;
+  return <Player playlist={playlist} index={i} remainingMinutes={time.remainingMinutes} stopsAt={time.stopsAt} skip={skip} ui={ui === "tv" ? "tv" : "touch"} fromSearch={sp.from === "search"} />;
 }

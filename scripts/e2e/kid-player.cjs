@@ -6,40 +6,7 @@
 // playhead position, one start + one end per session, repeat plays, end of video → server-picked next,
 // app closure. Restrictions: seeking ahead doesn't dodge a skip; out of skips → "finish this one first";
 // a parent's "Never" on the next video takes effect at auto-advance. Touch: big controls.
-const { OUT, MAYA, check, launch, parent, kid, go, press, samsungReturn, done } = require("./kid-common.cjs");
-
-const FAKE_YT = () => {
-  // Record each beacon's body synchronously (a page that's going away can't be inspected afterwards).
-  const B = window.Blob;
-  window.Blob = function (parts, opts) { const b = new B(parts, opts); b.__text = (parts || []).join(""); return b; };
-  window.Blob.prototype = B.prototype;
-  const send = navigator.sendBeacon?.bind(navigator);
-  if (send) navigator.sendBeacon = (url, data) => { try { const l = JSON.parse(localStorage.getItem("beacons") || "[]"); l.push({ url: String(url), body: data?.__text ?? null }); localStorage.setItem("beacons", JSON.stringify(l)); } catch { /* */ } return send(url, data); };
-  const dur = () => Number(sessionStorage.getItem("fakeDur") || 60);
-  window.__yt = { log: [] };
-  window.YT = {
-    PlayerState: { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 },
-    Player: class {
-      constructor(el, opts) {
-        this.opts = opts; this.id = opts.videoId; this.t = 0; this.state = -1; this.dur = dur(); this.last = performance.now();
-        window.__yt.player = this;
-        setTimeout(() => { opts.events.onReady?.({ target: this }); this.playVideo(); }, 80);
-        this.timer = setInterval(() => this._tick(), 100);
-      }
-      _tick() { const n = performance.now(); if (this.state === 1) { this.t += (n - this.last) / 1000; if (this.t >= this.dur) { this.t = this.dur; this._set(0); } } this.last = n; }
-      _set(s) { this.state = s; window.__yt.log.push([this.id, s, Math.round(this.t)]); this.opts.events.onStateChange?.({ data: s, target: this }); }
-      getVideoData() { return { video_id: this.id }; }
-      getPlayerState() { return this.state; }
-      getCurrentTime() { this._tick(); return this.t; }
-      getDuration() { return this.dur; }
-      playVideo() { this._tick(); this._set(1); }
-      pauseVideo() { this._tick(); this._set(2); }
-      seekTo(s) { this._tick(); const was = this.state; this.t = Math.max(0, Math.min(this.dur, s)); if (was === 1) { this._set(3); setTimeout(() => this._set(1), 150); } }
-      loadVideoById(id) { this._tick(); this.id = id; this.t = 0; this.dur = dur(); this._set(-1); setTimeout(() => this._set(1), 120); }
-      destroy() { clearInterval(this.timer); }
-    },
-  };
-};
+const { OUT, MAYA, check, launch, parent, kid, go, press, samsungReturn, done, FAKE_YT } = require("./kid-common.cjs");
 
 /** Capture viewing records: server actions (by their arguments) and the beacon. */
 function recorder(ctx) {

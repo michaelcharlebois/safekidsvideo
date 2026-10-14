@@ -48,4 +48,38 @@ const focusedContrast = (p) => p.evaluate(() => {
   return { text: (el.textContent || "").trim().slice(0, 40), color: cs.color, background: cs.backgroundColor, ratio: Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 10) / 10 };
 });
 const done = () => { console.log(`${results.filter(Boolean).length}/${results.length} checks passed`); process.exit(results.every(Boolean) ? 0 : 1); };
-module.exports = { BASE, OUT, MAYA, SAMSUNG, check, launch, parent, kid, go, active, press, samsungReturn, db, done, focusedContrast };
+/** A scripted stand-in for the YouTube IFrame API (same methods and events; video time runs in real time). */
+const FAKE_YT = () => {
+  // Record each beacon's body synchronously (a page that's going away can't be inspected afterwards).
+  const B = window.Blob;
+  window.Blob = function (parts, opts) { const b = new B(parts, opts); b.__text = (parts || []).join(""); return b; };
+  window.Blob.prototype = B.prototype;
+  const send = navigator.sendBeacon?.bind(navigator);
+  if (send) navigator.sendBeacon = (url, data) => { try { const l = JSON.parse(localStorage.getItem("beacons") || "[]"); l.push({ url: String(url), body: data?.__text ?? null }); localStorage.setItem("beacons", JSON.stringify(l)); } catch { /* */ } return send(url, data); };
+  const dur = () => Number(sessionStorage.getItem("fakeDur") || 60);
+  window.__yt = { log: [] };
+  window.YT = {
+    PlayerState: { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 },
+    Player: class {
+      constructor(el, opts) {
+        this.opts = opts; this.id = opts.videoId; this.t = 0; this.state = -1; this.dur = dur(); this.last = performance.now();
+        window.__yt.player = this;
+        setTimeout(() => { opts.events.onReady?.({ target: this }); this.playVideo(); }, 80);
+        this.timer = setInterval(() => this._tick(), 100);
+      }
+      _tick() { const n = performance.now(); if (this.state === 1) { this.t += (n - this.last) / 1000; if (this.t >= this.dur) { this.t = this.dur; this._set(0); } } this.last = n; }
+      _set(s) { this.state = s; window.__yt.log.push([this.id, s, Math.round(this.t)]); this.opts.events.onStateChange?.({ data: s, target: this }); }
+      getVideoData() { return { video_id: this.id }; }
+      getPlayerState() { return this.state; }
+      getCurrentTime() { this._tick(); return this.t; }
+      getDuration() { return this.dur; }
+      playVideo() { this._tick(); this._set(1); }
+      pauseVideo() { this._tick(); this._set(2); }
+      seekTo(s) { this._tick(); const was = this.state; this.t = Math.max(0, Math.min(this.dur, s)); if (was === 1) { this._set(3); setTimeout(() => this._set(1), 150); } }
+      loadVideoById(id) { this._tick(); this.id = id; this.t = 0; this.dur = dur(); this._set(-1); setTimeout(() => this._set(1), 120); }
+      destroy() { clearInterval(this.timer); }
+    },
+  };
+};
+
+module.exports = { FAKE_YT, BASE, OUT, MAYA, SAMSUNG, check, launch, parent, kid, go, active, press, samsungReturn, db, done, focusedContrast };

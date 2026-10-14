@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { BrandMark } from "@/components/logo";
-import { IconHand, IconHome, IconSearch } from "@/components/icons";
+import { IconHand, IconHome, IconMoon, IconSearch } from "@/components/icons";
 import { ExitButton } from "./exit-button";
 import { FullscreenButton } from "./fullscreen-button";
 
@@ -12,8 +12,8 @@ import { FullscreenButton } from "./fullscreen-button";
 export type KidChild = { name: string; avatar: string };
 export type Tab = "home" | "search" | "ask" | null;
 
-export function TvTopBar({ child, canSearch, canSwitch, active, minutesLeft, exitTarget, startOn }: {
-  child?: KidChild; canSearch: boolean; canSwitch: boolean; active: Tab; minutesLeft?: number; exitTarget: string; startOn?: "home" | "search";
+export function TvTopBar({ child, canSearch, canSwitch, active, minutesLeft, exitTarget, startOn, stayingUpUntil }: {
+  child?: KidChild; canSearch: boolean; canSwitch: boolean; active: Tab; minutesLeft?: number; exitTarget: string; startOn?: "home" | "search"; stayingUpUntil?: string;
 }) {
   const pill = (on: boolean) => `bigbtn flex items-center gap-[0.6vw] rounded-full px-[1.6vw] py-[0.8vw] text-[1.5vw] font-extrabold ${on ? "bg-[rgb(255_249_241/0.1)]" : "text-[var(--kmuted)]"}`;
   return (
@@ -22,6 +22,7 @@ export function TvTopBar({ child, canSearch, canSwitch, active, minutesLeft, exi
       <Link href="/watch" aria-current={active === "home" ? "page" : undefined} data-tv-start={startOn === "home" ? "" : undefined} className={`${pill(active === "home")} ml-[1vw]`}>Home</Link>
       {canSearch && <Link href="/watch/search" aria-current={active === "search" ? "page" : undefined} data-tv-start={startOn === "search" ? "" : undefined} className={pill(active === "search")}><IconSearch size={0} className="h-[1.5vw] w-[1.5vw]" />Search</Link>}
       <div className="ml-auto flex items-center gap-[1.2vw]">
+        {stayingUpUntil && <StayingUp until={stayingUpUntil} tv />}
         {minutesLeft != null && <span className="text-[1.2vw] font-bold text-[var(--kmuted)]">{minutesLeft} min left today</span>}
         {child && (canSwitch
           ? <Link href="/watch/who" className="bigbtn flex items-center gap-[0.6vw] rounded-full bg-[rgb(255_249_241/0.1)] py-[0.5vw] pl-[0.5vw] pr-[1.4vw] text-[1.4vw] font-extrabold"><span className="text-[2vw] leading-none" aria-hidden>{child.avatar}</span>{child.name}</Link>
@@ -80,5 +81,14 @@ export function PhoneTabs({ canSearch, active }: { canSearch: boolean; active: T
       {canSearch && <Link href="/watch/search" aria-current={active === "search" ? "page" : undefined} className={tab(active === "search")}><IconSearch size={24} />Search</Link>}
       <Link href="/watch?ask=1" aria-current={active === "ask" ? "page" : undefined} className={tab(active === "ask")}><IconHand size={24} />Ask</Link>
     </nav>
+  );
+}
+
+/** A grown-up said yes to staying up later tonight: a quiet chip with the cutoff they authorized. */
+export function StayingUp({ until, tv = false }: { until: string; tv?: boolean }) {
+  return (
+    <span className={`inline-flex items-center gap-[0.4em] rounded-full bg-[rgb(255_159_110/0.16)] font-extrabold text-[var(--kink)] ${tv ? "px-[1vw] py-[0.4vw] text-[1.2vw]" : "px-3 py-1.5 text-sm"}`}>
+      <IconMoon size={0} className={tv ? "h-[1.2vw] w-[1.2vw] text-[var(--kfocus)]" : "h-4 w-4 text-[var(--kfocus)]"} />Staying up until {until}
+    </span>
   );
 }

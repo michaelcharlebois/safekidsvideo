@@ -29,6 +29,10 @@ main kid-who.cjs
 timeup kid-timeup.cjs
 limit kid-moretime.cjs
 limit-decline kid-moretime.cjs
+bedtime-ask kid-bedtime.cjs
+bedtime-decline kid-bedtime.cjs
+bedtime-limit kid-bedtime.cjs
+bedtime-soon kid-bedtime.cjs
 LIST
 echo "screenshots: $OUT"
 exit $fail

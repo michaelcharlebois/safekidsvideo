@@ -12,8 +12,9 @@ import type { TimeAskState } from "@/lib/time-requests";
  * Time's up (the daily limit) or done for the day (the "done by" time). Calm, short, and clear about what
  * happens next: videos come back tomorrow, or a grown-up can add time. The limit itself is enforced on the
  * server (the layout shows this instead of any kid page, Who's watching included, as before; the player and
- * nextVideo check it too). For the daily limit the child can ask for more time: a stored request a parent
- * answers in Review. Bedtime offers no extra minutes (they wouldn't lift it).
+ * nextVideo check it too). The child can ask once: for more minutes (daily limit) or to stay up a little
+ * longer (bedtime, once per night) — stored requests a parent answers in Review. Extra minutes never lift
+ * bedtime, and a later bedtime never adds minutes.
  */
 export function TimeUp({ time, name, ui, exitTarget, ask }: {
   time: Extract<TimeState, { allowed: false }>; name?: string; ui: KidUiChoice; exitTarget: string; ask: TimeAskState;
@@ -21,9 +22,8 @@ export function TimeUp({ time, name, ui, exitTarget, ask }: {
   const tv = ui === "tv";
   const rest = time.reason === "bedtime";
   const title = rest ? `Time to rest${name ? `, ${name}` : ""}` : `That's all for today${name ? `, ${name}` : ""}!`;
-  // Bedtime is its own restriction: extra minutes don't lift it, so this screen doesn't offer to ask for them.
   const line = rest
-    ? "Videos are done for today. They'll be back tomorrow."
+    ? time.extensionMinutes > 0 ? "Your extra time is over. Videos come back tomorrow." : "Videos are done for today. They'll be back tomorrow."
     : `You watched ${time.usedMinutes >= 1 ? `about ${time.usedMinutes} minutes` : "your videos"} today. Videos come back tomorrow.`;
   const Icon = rest ? IconMoon : IconClock;
   return (
@@ -41,7 +41,7 @@ export function TimeUp({ time, name, ui, exitTarget, ask }: {
         <h1 className={`font-extrabold ${tv ? "mt-[4vh] text-[3.4vw]" : "mt-6 text-3xl sm:text-4xl"}`}>{title}</h1>
         <p className={`max-w-xl font-semibold text-[var(--kmuted)] ${tv ? "mt-[1.5vh] max-w-[50vw] text-[1.7vw]" : "mt-3 text-lg"}`}>{line}</p>
         <div className={tv ? "mt-[5vh] flex flex-col items-center gap-[2vh]" : "mt-8 flex w-full max-w-sm flex-col items-stretch gap-3"} data-nav-row>
-          {ask !== "not-offered" && <AskMoreTime tv={tv} initial={ask} />}
+          {ask !== "not-offered" && ask !== "fulfilled" && <AskMoreTime tv={tv} initial={ask} kind={time.reason} />}
         </div>
       </main>
     </div>

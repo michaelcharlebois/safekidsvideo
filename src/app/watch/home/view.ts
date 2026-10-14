@@ -13,6 +13,8 @@ export type KidHomeView = {
   /** Videos this child asked for that a grown-up hasn't answered. Shown, never playable from here. */
   waiting: KidVideo[];
   minutesLeft?: number;
+  /** Tonight's bedtime extension, as a clock time ("8:00 PM"), when a grown-up has granted one. */
+  stayingUpUntil?: string;
   exitTarget: string;
   asking: boolean; // the phone "Ask" sheet is open
 };

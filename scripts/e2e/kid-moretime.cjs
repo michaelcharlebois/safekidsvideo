@@ -28,7 +28,8 @@ const until = async (fn, ms = 8000) => { const t = Date.now(); while (Date.now()
   // TV asks.
   await press(tv, "Enter"); await tv.waitForTimeout(900);
   a = await active(tv);
-  check("asking: \"Sent! Waiting for a grown-up\", shown once the request is stored; focus stays", /Sent! Waiting for a grown-up/.test(a.text) && todays().length === 1 && todays()[0].status === "pending", JSON.stringify(a) + JSON.stringify(todays()));
+  const sentFocusable = await tv.evaluate(() => [...document.querySelectorAll("a, button, [tabindex]")].some((el) => /Waiting for a grown-up/.test(el.textContent || "")));
+  check("asking: \"Sent! Waiting for a grown-up\", shown once the request is stored, as a status (nothing pressable)", /Sent! Waiting for a grown-up/.test(await tv.innerText(".kid-bf")) && !sentFocusable && todays().length === 1 && todays()[0].status === "pending", JSON.stringify(a) + JSON.stringify(todays()));
   await tv.screenshot({ path: `${OUT}/timeup-limit-tv-sent.png` });
   // The tablet still shows the old button; pressing it doesn't make a second request.
   await tab.locator('button[type="submit"]', { hasText: "Ask a grown-up for more time" }).click(); await tab.waitForTimeout(900);

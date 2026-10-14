@@ -11,7 +11,7 @@ import { packById } from "@/lib/packs";
 import { billingEnabled, createCheckoutUrl, createPortalUrl, familyStatus } from "@/lib/billing";
 import { saveKidDay, saveTimezone } from "@/lib/checkin";
 import { grantBonusMinutes } from "@/lib/screentime";
-import { answerTimeRequest, askForMoreTime, settlePendingWithGrant } from "@/lib/more-time";
+import { answerTimeRequest, askForMoreTime, cancelBedtimeExtension, grantBedtimeExtension, settlePendingBedtimeWithGrant, settlePendingWithGrant } from "@/lib/more-time";
 import { CONCERN_TAGS, type ConcernTag, type ConfirmationVerdict, type TagVote } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
@@ -392,11 +392,12 @@ export async function reviewChannelNow(form: FormData) {
 
 // ---- Screen time ----------------------------------------------------------------
 
-export type MoreTimeResult = { state: "pending" | "declined" | "not-offered" | "unavailable"; justSent: boolean } | null;
+export type MoreTimeResult = { state: "pending" | "declined" | "fulfilled" | "not-offered" | "unavailable"; justSent: boolean } | null;
 /**
- * Time-up screen: "Ask a grown-up for more time". Stored as a request (lib/more-time.ts): one pending ask per
- * child per day across every screen; the parent answers it in Review. The kid sees the stored state, not
- * whether a notification went out. Never adds time by itself.
+ * Time-up screen: "Ask a grown-up for more time" (daily minutes) or "Ask to stay up a little longer"
+ * (bedtime). Stored as a request (lib/more-time.ts) the parent answers in Review: one pending minutes ask per
+ * child per day, one bedtime ask per child per night. The kid sees the stored state, not whether a
+ * notification went out. Never adds time or moves bedtime by itself.
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- useActionState passes the previous result
 export async function askMoreTime(_prev: MoreTimeResult): Promise<MoreTimeResult> {
@@ -412,10 +413,11 @@ export async function askMoreTime(_prev: MoreTimeResult): Promise<MoreTimeResult
   return out === "created" ? { state: "pending", justSent: true } : { state: out, justSent: false };
 }
 
-/** Parent: answer a more-time request (approve with 15/30/60 minutes, or decline). */
+/** Parent: answer an ask (minutes: 15/30/60; bedtime: 15/30/45/60 past tonight's bedtime), or decline it. */
 export async function answerTimeRequestAction(form: FormData) {
   const fid = await requireParent();
   const id = String(form.get("requestId") ?? "");
+  const kind = form.get("kind") === "bedtime" ? "bedtime" : "limit";
   const decision = form.get("decision") === "approve" ? "approve" : "deny";
   const minutes = Number(form.get("minutes"));
   const next = String(form.get("next") ?? "");
@@ -424,7 +426,43 @@ export async function answerTimeRequestAction(form: FormData) {
   try { out = await answerTimeRequest(fid, id, decision, decision === "approve" ? minutes : undefined); }
   catch (e) { redirect(withParam(back, "error", (e as Error).message)); }
   revalidatePath("/parent", "layout"); revalidatePath("/watch", "layout");
-  redirect(out === "done" ? withParam(back, "time", decision === "approve" ? `added-${minutes}` : "declined") : withParam(back, "error", out === "expired" ? "That request was for an earlier day." : "That request was already answered."));
+  if (out !== "done") redirect(withParam(back, "error", out === "expired" ? (kind === "bedtime" ? "That ask was for an earlier night." : "That request was for an earlier day.") : "That request was already answered."));
+  redirect(withParam(back, "time", decision === "deny" ? (kind === "bedtime" ? "ext-declined" : "declined") : kind === "bedtime" ? `ext-${minutes}` : `added-${minutes}`));
+}
+
+/** Parent: let a child watch later tonight (15/30/45/60 past bedtime), change it, or cancel it. */
+export async function bedtimeExtensionAction(form: FormData) {
+  const fid = await requireParent();
+  const profileId = String(form.get("profileId") ?? "");
+  const next = String(form.get("next") ?? "");
+  const back = isLocalPath(next) ? next : `/parent?kid=${profileId}`;
+  const p = await db.getProfile(profileId);
+  if (!p || p.familyId !== fid) redirect(withParam(back, "error", "That isn't one of your children."));
+  if (form.get("cancel") === "1") {
+    await cancelBedtimeExtension(fid, profileId);
+    revalidatePath("/parent", "layout"); revalidatePath("/watch", "layout");
+    redirect(withParam(back, "time", "ext-cancelled"));
+  }
+  const minutes = Number(form.get("minutes"));
+  try {
+    await grantBedtimeExtension(fid, profileId, minutes);
+    await settlePendingBedtimeWithGrant(fid, profileId, minutes); // answers tonight's ask, if any
+  } catch (e) { redirect(withParam(back, "error", (e as Error).message)); }
+  revalidatePath("/parent", "layout"); revalidatePath("/watch", "layout");
+  redirect(withParam(back, "time", `ext-${minutes}`));
+}
+
+/**
+ * The player's server check (every minute, and whenever the screen wakes): may this child still watch, and
+ * when does tonight's bedtime stop videos? A parent's cancellation or a new limit shows up here.
+ */
+export async function kidTimeNow(): Promise<{ allowed: boolean; stopsAt?: string; remainingMinutes?: number }> {
+  const v = await resolveViewer();
+  if (!v.familyId || !v.profileId) return { allowed: false };
+  const settings = await childSettings(v.familyId, v.profileId);
+  if (!settings) return { allowed: false };
+  const t = await timeState(v.familyId, settings, (await db.getFamily(v.familyId)).timezone);
+  return t.allowed ? { allowed: true, stopsAt: t.stopsAt, remainingMinutes: t.remainingMinutes } : { allowed: false };
 }
 
 export async function grantMoreTime(form: FormData) {

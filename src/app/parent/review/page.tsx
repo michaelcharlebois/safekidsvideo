@@ -5,11 +5,12 @@ import type { ReactNode } from "react";
 import { db } from "@/lib/db";
 import { resolveViewer } from "@/lib/family";
 import { supabaseEnabled } from "@/lib/supabase/server";
-import { blockedReasons, getLibrariesFor } from "@/lib/queries";
+import { blockedReasons, childSettings, getLibrariesFor } from "@/lib/queries";
 import { REASON, reviewEligibility } from "@/lib/gate";
 import { listPendingRequests } from "@/lib/activity";
 import { pendingTimeRequests } from "@/lib/more-time";
 import { TimeRequestCard } from "@/app/parent/time-request-card";
+import { childTime, timeNotice } from "@/lib/tonight";
 import { forChild, inboxOrder, isChildRequest, pendingDecisions, type InboxItem } from "@/lib/inbox";
 import type { FamilySettings, Profile, VideoWithCard } from "@/lib/types";
 import { Button, buttonClass, Card, EmptyState, Notice } from "@/components/ui";
@@ -45,7 +46,11 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
   const items = kidFilter ? forChild(all, kidFilter.id) : all;
   // "More time" asks: today's pending ones (lib/more-time.ts), per child like everything else here.
   const timeShown = kidFilter ? timeAsks.filter((t) => t.profileId === kidFilter.id) : timeAsks;
-  const timeNote = str("time");
+  const timeNote = str("time") ? timeNotice(str("time")) : null;
+  const timeCtx = new Map(await Promise.all([...new Set(timeShown.map((t) => t.profileId))].map(async (pid) => {
+    const s = await childSettings(fid, pid);
+    return [pid, s ? await childTime(fid, s, family.timezone) : null] as const;
+  })));
   const shown = str("all") === "1" ? items : items.slice(0, PAGE);
   // Only the videos on this page are joined with their reviews and grants (no catalogue scan).
   const children = await getLibrariesFor(fid, shown.map((i) => i.videoId));
@@ -80,7 +85,7 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
         <h1 className="text-title sm:text-display">Review</h1>
         <p className="text-sm text-muted sm:text-base">
           {all.length + timeAsks.length === 0 ? "Nothing is waiting on you."
-            : [timeAsks.length ? `${timeAsks.length} ask${timeAsks.length === 1 ? "" : "s"} for more time` : null, asked ? `${asked} request${asked === 1 ? "" : "s"} from your children` : null, older ? `${older} older record${older === 1 ? "" : "s"} to sort out` : null].filter(Boolean).join(", ") + "."}
+            : [timeAsks.length ? `${timeAsks.length} ask${timeAsks.length === 1 ? "" : "s"} for more time or a later bedtime` : null, asked ? `${asked} request${asked === 1 ? "" : "s"} from your children` : null, older ? `${older} older record${older === 1 ? "" : "s"} to sort out` : null].filter(Boolean).join(", ") + "."}
         </p>
       </header>
 
@@ -106,10 +111,10 @@ export default async function ReviewPage(props: PageProps<"/parent/review">) {
           </details>
         )}
         {error && <Notice tone="bad">{error}</Notice>}
-        {timeNote && <Notice tone="ok">{timeNote === "declined" ? "Declined. They won't be able to ask again today." : `Added ${timeNote.replace("added-", "")} minutes for today.`}</Notice>}
+        {timeNote && <Notice tone="ok">{timeNote}</Notice>}
         {timeShown.length > 0 && (
           <section aria-label="Asks for more time" className="space-y-3">
-            {timeShown.map((t) => { const c = profiles.find((p) => p.id === t.profileId); return c ? <TimeRequestCard key={t.id} req={t} child={c} next={here} tz={family.timezone} /> : null; })}
+            {timeShown.map((t) => { const c = profiles.find((p) => p.id === t.profileId), ctx = timeCtx.get(t.profileId); return c && ctx ? <TimeRequestCard key={t.id} req={t} child={c} next={here} tz={family.timezone} ctx={ctx} /> : null; })}
           </section>
         )}
         {confirm && <UnreviewedConfirm childName={confirm.kid.name} title={confirm.video.title} reason={confirm.reason} action={confirm.action} fields={confirm.fields} cancelHref={here} />}

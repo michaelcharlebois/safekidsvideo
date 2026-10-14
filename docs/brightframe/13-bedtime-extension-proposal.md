@@ -1,93 +1,76 @@
-# Proposal: a one-night bedtime extension (for approval — not implemented)
+# One-night bedtime extension (approved and implemented)
 
-## The problem
-`timeState()` checks bedtime ("done for the day") before the daily limit, and bonus minutes only raise the daily limit. So "+15 minutes" granted at 7:40 pm, after a 7:30 bedtime, changes nothing: the child still sees "Time to rest". Until now the bedtime screen still offered "Ask a grown-up for more time", which promised something a parent couldn't deliver.
+Approved with four decisions and refinements. Built in migration 0023, `src/lib/bedtime.ts`, `src/lib/bedtime-store.ts` and `src/lib/more-time.ts`. **Not applied anywhere.**
 
-**Already changed in this round (no new permission):**
-- The bedtime screen no longer offers to ask for more time. It says videos are done for today and come back tomorrow.
-- Extra minutes still never lift bedtime. That behaviour is unchanged.
-- The daily-limit screen keeps its Ask button, now as a stored request (see `14-staging-readiness.md`).
+## The rules
+- **Separate from daily minutes:**
+  - A bedtime extension never adds viewing minutes.
+  - Extra minutes never lift bedtime.
+  - If the minutes are also used up, an extension alone doesn't restore playback. The child sees the daily-limit screen and can ask for minutes separately. The parent's card says so and offers minutes explicitly.
+- **Size:** 15, 30, 45 or 60 minutes past that night's scheduled bedtime. At most 60 per night; changing it replaces the amount, never adds to it.
+- **Asking:**
+  - A child may ask once per night ("Ask to stay up a little longer").
+  - The ask is stored and child-scoped. Push is a best-effort heads-up.
+  - Once the ask is pending, declined or fulfilled, a second one that night is refused, and the database enforces it.
+  - Parents can always grant, change or cancel directly.
+- **The authorized cutoff is the specific time the parent saw:**
+  - Each choice is labelled with it: "10:23 PM tonight", or "Let Maya watch until 10:23 PM tonight" on Home.
+  - It's stored as an absolute instant (`cutoff_at`).
+  - If the recurring bedtime later moves earlier, tonight still runs to the authorized cutoff. If it moves later, the later bedtime wins.
+- **Nights:**
+  - A night is named by the evening's family-local date and ends at 04:00. The extension expires then by itself.
+  - Bedtimes after midnight (for example 00:30) belong to the night before. This also fixes an old bug where such a bedtime blocked the whole evening.
+  - Daylight saving: everything is in absolute instants. A nonexistent spring-forward time resolves to just after the gap; a repeated fall-back time resolves to its first occurrence.
+- **Enforcement:**
+  - **Server:** every kid page (layout), the player page, and `nextVideo` call `timeState()`.
+  - **Player:**
+    - stops at the effective cutoff using the wall clock, so a device that slept past it stops as soon as it wakes
+    - shows "N minutes until bedtime" in the last five minutes
+    - asks the server again every minute and whenever the screen wakes, so a cancellation applies mid-video
+  - **Back to Home:** a full page load, so the server decides what shows next.
+  - **No grace period** to finish the current video.
+- **Multiple devices:** all state is on the server, per child. Every screen sees the same ask, the same answer and the same cutoff.
 
-## Proposed semantics
+## Data (0023)
+- **`bedtime_extensions`** has one live row per child per night (a unique index):
+  - `night`
+  - `base_bedtime`: the bedtime when granted
+  - `extra_minutes`: 15/30/45/60
+  - `cutoff_at`
+  - `request_id`
+  - `granted_by`
+  - `cancelled_at`
 
-**What it is.** A parent can let one child stay up later **tonight only**, by 15, 30, 45 or 60 minutes past that child's bedtime. The recurring bedtime setting isn't touched.
+  There's a family foreign key, RLS with select for the owner, and a check that the cutoff is within the night.
+- **`time_requests`:**
+  - gains kind `bedtime`, whose `day` is the night
+  - a 45-minute grant is allowed only for bedtime
+  - a unique index allows one bedtime ask per child per night, whatever its status
+- **Rollback** (`0023_bedtime_extensions.down.sql`) drops extensions and bedtime asks, so children fall back to their scheduled bedtime (stricter), and restores 0022's checks.
 
-**What it isn't:**
-- It doesn't add daily minutes. If the daily limit runs out during the extension, the daily-limit screen shows (and the child can ask for minutes, as today).
-- Bonus minutes still don't lift bedtime.
-- It's never automatic, and never granted by the child or a device: only a signed-in parent (or the parent PIN area in local mode) grants it.
+## Screens
+- **Child, at bedtime:**
+  - "Time to rest, Maya"
+  - the ask button, then a status line: "Sent! Waiting for a grown-up" / "A grown-up said not tonight". It's not a button, so on a TV nothing focusable appears actionable.
+  - After an extension ends: "Your extra time is over. Videos come back tomorrow." No second ask.
+- **Child, extended:** a quiet "Staying up until 10:23 PM" chip on Home (TV top bar, tablet chip, phone subtitle).
+- **Parent:**
+  - **Review card:** each choice shows its actual cutoff, plus Not tonight. When the minutes are also used up, it explains that and offers "Add 15/30/60 min today" separately.
+  - **Home "Tonight" card:** the usual bedtime or "Maya can watch until … tonight (usual bedtime …)", with direct grant or change and "Cancel tonight's extension".
 
-**When it applies.**
-- Bedtime currently runs from the bedtime until 4:00 am, in the family's time zone.
-- A *night* is the evening's date: from 4:00 am on day D until 4:00 am on day D+1 is night D.
-- An extension for night D moves that night's start from `bedtime` to `bedtime + N minutes`.
-  - It's capped so the start never passes 3:59 am.
-  - Bedtimes after midnight (such as 00:30) are handled in minutes since 4:00 am, so there's no wrap-around bug.
-
-**Expiry.** It expires on its own at 4:00 am, when the night changes. No job is needed; an extension for an earlier night simply doesn't match.
-
-**Several grants in one night.** One extension per child per night. Granting again replaces the amount, for example 15 → 30. The total is capped at 60 minutes.
-
-**Relative, not absolute.** The extension is stored as minutes past bedtime. If a parent changes tonight's bedtime after granting, the extension follows the new bedtime. Parent screens always show the resulting time ("Tonight: until 8:00 pm").
-
-**Cancelling.** A parent can cancel tonight's extension. It takes effect at the child's next server check (page load, next video) and in the player at once, as below.
-
-## Data model (new migration, 0023, not written yet)
-```sql
-create table bedtime_extensions (
-  id uuid primary key default gen_random_uuid(),
-  family_id uuid not null references families (id) on delete cascade,
-  profile_id uuid not null,
-  night date not null,                         -- the evening's family-local date
-  extra_minutes integer not null check (extra_minutes in (15, 30, 45, 60)),
-  granted_by uuid,                             -- auth user id (null in local mode)
-  request_id uuid references time_requests (id) on delete set null,
-  created_at timestamptz not null default now(),
-  cancelled_at timestamptz,
-  foreign key (profile_id, family_id) references profiles (id, family_id) on delete cascade
-);
-create unique index bedtime_extensions_one_per_night on bedtime_extensions (profile_id, night) where cancelled_at is null;
-```
-
-**Kid requests.** `time_requests.kind` gains `'bedtime'` in the same migration. It reuses the stored-request flow just built:
-- one pending ask per child per night
-- answered in Review
-- push only as a heads-up
-
-**Why a table and not profile columns** (like `bonusMinutes`):
-- It keeps an audit trail of who allowed what and when.
-- It links to the request that prompted it.
-- It can't leak into the next night.
-
-## Parent controls
-- **Review:** a bedtime ask shows "Maya is asking to stay up a bit later tonight (bedtime 7:30 pm)", with +15 / +30 / +60 and Not tonight.
-- **Child settings → Screen time:** "Tonight only: stay up until…" with +15 / +30 / +45 / +60 and Cancel tonight's extension. The recurring bedtime field is separate and unchanged.
-- **Parent Home:** "Bedtime tonight 7:30 → 8:00 (extended)" while an extension is active.
-
-## Kid experience
-- **Bedtime screen:** "Time to rest, Maya", with "Ask a grown-up to stay up a little longer" (once per night).
-  - The ask shows the stored state: Waiting for a grown-up, or "A grown-up said not tonight".
-  - It refreshes on its own while waiting.
-- **When granted:** the screen returns to Home with a quiet "Until 8:00 pm" chip. At five minutes before the end, the player shows "5 minutes until bedtime".
-- **Player at the boundary:**
-  - Today the player only enforces the daily-limit countdown. A bedtime reached mid-video is only enforced at the next video.
-  - Proposed: the player also receives tonight's effective bedtime and stops there, ending the session as "left". That covers both the normal bedtime and the end of an extension.
-  - Option for you: let the current video finish if it ends within 5 minutes of the boundary.
-
-## Edge cases
-| Case | Behaviour |
-|---|---|
-| Daily limit runs out during an extension | Daily-limit screen (can ask for minutes). The extension still bounds the night |
-| Minutes approved after bedtime started | Minutes are added for today. Bedtime still applies; the Review card says so ("bedtime starts 7:30 pm") |
-| Bedtime turned off tonight | Extension ignored (nothing to extend) |
-| Granted after 4:00 am for "last night" | Refused: that night is over |
-| Time-zone change or DST night | Family-local wall clock, as bedtime is today. On a fall-back night the window may run an hour longer in real time; accepted, and documented |
-| Two screens | Server-side, per child: every screen sees the same state at its next check |
-| Switching to a sibling | Each child has their own bedtime and extension; switching still needs the PIN |
-| Parent cancels | Takes effect at the next check; the player re-checks at the boundary |
-
-## Questions for you
-1. Steps of 15 / 30 / 45 / 60, capped at 60 per night, OK?
-2. Should the kid be able to ask for a bedtime extension at all, or should parents only grant it from Settings?
-3. At the boundary mid-video: stop at once, or let a video that ends within 5 minutes finish?
-4. One ask per night, even after an approved extension runs out?
+## Tests
+- `bedtime.test.ts` (16): nights and the rollover, after-midnight bedtimes, time zones, DST gap and overlap, the cutoff staying put when bedtime changes, a later bedtime winning, expiry, cancellation, no bedtime, the cap, passed choices.
+- `bedtime-extensions-db.test.ts` (6, PGlite): one live extension per child per night, the allowed steps, cutoff within the night, the family foreign key, one bedtime ask per night after denial, 45 only for bedtime, rollback.
+- `bedtime-server.test.ts` (9, local store): what the server enforces, duplicate asks, stale answers, declined then granted directly, the daily-limit interaction in both directions, a changed recurring bedtime, cancellation, the cap, refusals.
+- `time-requests.test.ts`: bedtime ask states and expiry after midnight.
+- **Browser walkthroughs** (`kid-bedtime.cjs`, four fixtures, 38 checks):
+  - the ask on TV with a phone open
+  - parent approval with actual cutoffs
+  - both screens extended
+  - the recurring bedtime moved
+  - cancellation stopping the player
+  - declined then granted directly
+  - minutes also used up
+  - the five-minute warning
+  - stopping after a simulated sleep/wake
+  - the server refusing playback after bedtime

@@ -13,7 +13,7 @@ export function TvHome({ view }: { view: KidHomeView }) {
   return (
     <div className="kid-bf tv flex-1 px-[5vw] pb-[6vh] pt-[4vh]">
       <TvFocus />
-      <TvTopBar child={child} canSearch={view.canSearch} canSwitch={view.canSwitch} active="home" minutesLeft={view.minutesLeft} exitTarget={view.exitTarget} startOn={view.canSearch ? "search" : "home"} />
+      <TvTopBar child={child} canSearch={view.canSearch} canSwitch={view.canSwitch} active="home" minutesLeft={view.minutesLeft} stayingUpUntil={view.stayingUpUntil} exitTarget={view.exitTarget} startOn={view.canSearch ? "search" : "home"} />
 
       {shelves.length === 0 && waiting.length === 0 ? (
         <div className="mt-[14vh] text-center">

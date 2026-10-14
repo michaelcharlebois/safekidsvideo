@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Channel, Confirmation, ContentCard, Family, FamilySettings, LegacyGrant, Profile, ReviewerNotes, Video, WatchRequest, WhitelistEntry } from "@/lib/types";
 import type { TimeRequest } from "@/lib/time-requests";
+import type { BedtimeExtension } from "@/lib/bedtime";
 import type { RawWatchEvent } from "@/lib/sessions";
 import { DEFAULT_PROFILE, DEFAULT_SETTINGS, mergeSettings, type Store } from "./store";
 
@@ -24,6 +25,8 @@ type Db = {
   requests?: (WatchRequest & { resolvedAt?: string })[];
   /** "More time" requests (local mode; Supabase: time_requests, migration 0022). */
   timeRequests?: TimeRequest[];
+  /** One-night bedtime extensions (local mode; Supabase: bedtime_extensions, migration 0023). */
+  bedtimeExtensions?: BedtimeExtension[];
   /** Viewing records (local mode; Supabase: watch_events), so limits and Activity work offline too. */
   watchEvents?: (RawWatchEvent & { familyId: string })[];
 };
@@ -312,13 +315,14 @@ export const localTimeRequests = {
   async create(r: Omit<TimeRequest, "id" | "createdAt" | "status">): Promise<"created" | "exists"> {
     const db = await load();
     db.timeRequests ??= [];
-    if (db.timeRequests.some((x) => x.profileId === r.profileId && x.kind === r.kind && x.day === r.day && x.status === "pending")) return "exists";
+    // Daily minutes: one PENDING ask per child per day. Bedtime: one ask per child per night, whatever its outcome.
+    if (db.timeRequests.some((x) => x.profileId === r.profileId && x.kind === r.kind && x.day === r.day && (r.kind === "bedtime" || x.status === "pending"))) return "exists";
     db.timeRequests.push({ ...r, id: randomUUID(), status: "pending", createdAt: new Date().toISOString() });
     await persist(db);
     return "created";
   },
   /** Answer a pending request; returns it, or undefined if it wasn't pending (already answered). */
-  async resolve(familyId: string, id: string, status: "approved" | "denied", grantedMinutes?: 15 | 30 | 60) {
+  async resolve(familyId: string, id: string, status: "approved" | "denied", grantedMinutes?: 15 | 30 | 45 | 60) {
     const db = await load();
     const r = (db.timeRequests ?? []).find((x) => x.id === id && x.familyId === familyId && x.status === "pending");
     if (!r) return undefined;
@@ -341,5 +345,30 @@ export const localWatchEvents = {
     if (e.sessionId && db.watchEvents.some((x) => x.sessionId === e.sessionId && !!x.outcome === !!e.outcome)) return; // a retry
     db.watchEvents.push(e);
     await persist(db);
+  },
+};
+
+/** Local-mode bedtime extensions: at most one live (not cancelled) extension per child per night. */
+export const localBedtimeExtensions = {
+  async list(familyId: string, sinceNight: string) {
+    return ((await load()).bedtimeExtensions ?? []).filter((e) => e.familyId === familyId && e.night >= sinceNight);
+  },
+  async set(e: Omit<BedtimeExtension, "id" | "createdAt" | "updatedAt" | "cancelledAt">): Promise<BedtimeExtension> {
+    const db = await load();
+    db.bedtimeExtensions ??= [];
+    const now = new Date().toISOString();
+    const live = db.bedtimeExtensions.find((x) => x.profileId === e.profileId && x.night === e.night && !x.cancelledAt);
+    if (live) Object.assign(live, { ...e, requestId: e.requestId ?? live.requestId, updatedAt: now });
+    else db.bedtimeExtensions.push({ ...e, id: randomUUID(), createdAt: now, updatedAt: now });
+    await persist(db);
+    return { ...(live ?? db.bedtimeExtensions[db.bedtimeExtensions.length - 1]) };
+  },
+  async cancel(familyId: string, profileId: string, night: string): Promise<boolean> {
+    const db = await load();
+    const live = (db.bedtimeExtensions ?? []).find((x) => x.familyId === familyId && x.profileId === profileId && x.night === night && !x.cancelledAt);
+    if (!live) return false;
+    live.cancelledAt = new Date().toISOString();
+    await persist(db);
+    return true;
   },
 };
