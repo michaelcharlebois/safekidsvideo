@@ -129,12 +129,21 @@ describe("migration 0018 — child scope", () => {
     expect((await rows(pg, "select kind, target_id, profile_id from whitelist where kind = 'channel'")).length).toBe(1);
   });
 
-  it("rollback restores the pre-0018 whitelist exactly", async () => {
+  it("rollback restores family-wide rows, never widens: one-child approvals return, multi-child ones are reported", async () => {
     const pg2 = await freshDb();
     await pg2.exec(readFileSync(path.join(MIG, "0018_child_scope.sql"), "utf8"));
     await pg2.exec(readFileSync(ROLLBACK, "utf8"));
     const after = await rows(pg2, "select kind, target_id, null::uuid as profile_id from whitelist order by family_id, kind, target_id");
-    expect(after).toEqual(snapshotBefore);
+    // Everything restored was there before; restrictions and family-wide sources all come back.
+    const key = (r: { kind: string; target_id: string }) => `${r.kind}:${r.target_id}`;
+    expect(after.every((r) => snapshotBefore.some((b) => key(b) === key(r)))).toBe(true);
+    for (const b of snapshotBefore.filter((r) => ["channel", "video", "block", "dismissed"].includes(r.kind))) expect(after.map(key)).toContain(key(b));
+    // Approvals in the two-child family were attributed to one child or held: not representable family-wide.
+    const dropped = snapshotBefore.filter((b) => !after.some((r) => key(r) === key(b)));
+    expect(dropped.length).toBeGreaterThan(0);
+    expect(dropped.every((r) => r.kind === "override" || r.kind === "auto")).toBe(true);
+    const report = await rows(pg2, "select kind, target_id, null::uuid as profile_id from rollback_0018_report");
+    for (const d of dropped) expect(report.map(key)).toContain(key(d));
     const { rows: cols } = await pg2.query<{ column_name: string }>("select column_name from information_schema.columns where table_name = 'whitelist' order by ordinal_position");
     expect(cols.map((c) => c.column_name)).toEqual(["family_id", "kind", "target_id", "created_at"]);
     await expect(pg2.exec("select 1 from legacy_grants")).rejects.toThrow();

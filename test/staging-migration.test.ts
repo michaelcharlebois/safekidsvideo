@@ -169,15 +169,28 @@ describe.skipIf(!PG_URL)("staging rehearsal: 0018 + 0019 on representative data 
     expect(res).toEqual([true, true, true, true, true, false, false]);
   });
 
-  it("rolls back (0019 then 0018) to the pre-migration whitelist, keeping restrictions added since", async () => {
+  it("rolls back (0019 then 0018) without widening anyone's access; what it can't carry back is reported", async () => {
+    // Who has what right before the rollback (per child), and how many children each family has.
+    const pre = (await db.query("select family_id, kind, target_id, profile_id from whitelist")).rows as { family_id: string; kind: string; target_id: string; profile_id: string | null }[];
+    const kids = new Map(data.fams.map((f) => [f.id, f.kids.length]));
+    const everyChild = (fam: string, kind: string, target: string) =>
+      pre.some((r) => r.family_id === fam && r.kind === kind && r.target_id === target && r.profile_id == null)
+      || new Set(pre.filter((r) => r.family_id === fam && r.kind === kind && r.target_id === target && r.profile_id).map((r) => r.profile_id)).size === kids.get(fam);
     await db.query(rollbackSql("0019_pin_attempts.down.sql"));
     await db.query(rollbackSql("0018_child_scope.down.sql"));
     const after = (await db.query("select family_id, kind, target_id, created_at::text from whitelist order by family_id, kind, target_id")).rows;
-    // Exactly the pre-migration whitelist, plus the one restriction added after migrating (the upsert test's
-    // block, for one child and family-wide): a rollback carries restrictions back family-wide, never looser.
-    const added = after.filter((r) => r.target_id === "vUpsert0000");
-    expect(added.map((r) => r.kind)).toEqual(["block"]);
-    expect(after.filter((r) => r.target_id !== "vUpsert0000")).toEqual(before);
+    // Every allow restored family-wide was held by every child of the family immediately before.
+    for (const r of after.filter((x) => ["channel", "video", "override", "auto"].includes(x.kind))) expect(everyChild(r.family_id, r.kind, r.target_id)).toBe(true);
+    // Every restriction (pre-migration, or added since for anyone) is back, family-wide.
+    for (const r of pre.filter((x) => x.kind === "block" || x.kind === "dismissed")) expect(after.some((a) => a.family_id === r.family_id && a.kind === r.kind && a.target_id === r.target_id)).toBe(true);
+    for (const b of before.filter((x) => x.kind === "block" || x.kind === "dismissed" || x.kind === "channel" || x.kind === "video")) expect(after.some((a) => a.family_id === b.family_id && a.kind === b.kind && a.target_id === b.target_id)).toBe(true);
+    // One-child families get their approvals back exactly; dropped ones are all in the report.
+    const single = new Set(data.fams.filter((f) => f.kids.length === 1).map((f) => f.id));
+    for (const b of before.filter((x) => single.has(x.family_id))) expect(after.some((a) => a.family_id === b.family_id && a.kind === b.kind && a.target_id === b.target_id)).toBe(true);
+    const report = (await db.query("select family_id, kind, target_id from rollback_0018_report")).rows;
+    const dropped = before.filter((b) => !after.some((a) => a.family_id === b.family_id && a.kind === b.kind && a.target_id === b.target_id));
+    expect(dropped.length).toBeGreaterThan(0);
+    for (const d of dropped) expect(report.some((r) => r.family_id === d.family_id && r.kind === d.kind && r.target_id === d.target_id)).toBe(true);
     expect((await db.query("select to_regclass('legacy_grants') r")).rows[0].r).toBeNull();
   });
 });

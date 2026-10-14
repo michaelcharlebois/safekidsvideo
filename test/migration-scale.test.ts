@@ -17,7 +17,7 @@ describe.skipIf(!PG_URL || !process.env.BF_SCALE)(`migrations 0018–0023 at sca
   const timings: Record<string, number> = {};
   const count = async (q: string) => Number((await db.query(q)).rows[0].n);
   const wlHash = () => db.query(`select md5(string_agg(family_id || kind || target_id || created_at::text, ',' order by family_id, kind, target_id)) h, count(*)::int n from whitelist`).then((r) => r.rows[0]);
-  let before: { h: string; n: number }, events0 = 0, overrides0 = 0;
+  let before: { h: string; n: number }, beforeFamilyWide = "", events0 = 0, overrides0 = 0;
 
   beforeAll(async () => {
     admin = new pg.Client({ connectionString: PG_URL });
@@ -62,6 +62,7 @@ describe.skipIf(!PG_URL || !process.env.BF_SCALE)(`migrations 0018–0023 at sca
       analyze;
     `);
     before = await wlHash();
+    beforeFamilyWide = (await db.query(`select md5(string_agg(family_id || kind || target_id, ',' order by family_id, kind, target_id)) h from whitelist where kind in ('channel','video','block','dismissed')`)).rows[0].h;
     events0 = await count("select count(*) n from watch_events");
     overrides0 = await count("select count(*) n from whitelist where kind in ('override','auto')");
     for (const m of MIGRATIONS) {
@@ -112,12 +113,29 @@ describe.skipIf(!PG_URL || !process.env.BF_SCALE)(`migrations 0018–0023 at sca
     await expect(db.query(`insert into watch_events (family_id, video_id, profile_id, completed, session_id) values ($1, 'v0000000001', $2, false, $3)`, [f.id, f.pid, s])).rejects.toThrow(/duplicate|unique/i);
   });
 
-  it("rolls back 0023 → 0018 to the exact pre-migration whitelist", async () => {
+  it("rolls back 0023 → 0018 without widening anyone's access (checked per family and target, in SQL)", async () => {
     await db.query("delete from watch_events where session_id is not null");
+    await db.query("create table _pre_rb as select family_id, kind, target_id, profile_id from whitelist");
+    await db.query("create table _kids_rb as select family_id, count(*)::int n from profiles group by family_id");
+    const t0 = Date.now();
     for (const m of [...MIGRATIONS].reverse()) await db.query(rollbackSql(`${m}.down.sql`));
-    expect(await wlHash()).toEqual(before);
+    console.log(`rollback 0023 → 0018 (${N} families): ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    // An allow restored family-wide must have been, right before, either family-wide or held by every child.
+    await db.query("create table _held_rb as select family_id, kind, target_id, bool_or(profile_id is null) fam, count(distinct profile_id)::int kids from _pre_rb group by 1, 2, 3");
+    await db.query("create index on _held_rb (family_id, kind, target_id)");
+    expect(await count(`select count(*) n from whitelist w join _kids_rb k on k.family_id = w.family_id
+      left join _held_rb h on h.family_id = w.family_id and h.kind = w.kind and h.target_id = w.target_id
+      where w.kind in ('channel','video','override','auto') and not coalesce(h.fam or h.kids = k.n, false)`)).toBe(0);
+    // Every restriction is back.
+    await db.query("create index on whitelist (family_id, kind, target_id)");
+    expect(await count(`select count(*) n from _pre_rb p where p.kind in ('block','dismissed')
+      and not exists (select 1 from whitelist w where w.family_id = p.family_id and w.kind = p.kind and w.target_id = p.target_id)`)).toBe(0);
+    // Family-wide sources and restrictions are byte-identical to before 0018 (no permission changes in between).
+    const famWide = (t: string) => `select md5(string_agg(family_id || kind || target_id, ',' order by family_id, kind, target_id)) h from ${t} where kind in ('channel','video','block','dismissed')`;
+    expect((await db.query(famWide("whitelist"))).rows[0].h).toBe(beforeFamilyWide);
+    expect(await count("select count(*) n from rollback_0018_report")).toBeGreaterThan(0);
     expect(await count("select count(*) n from watch_events")).toBe(events0);
     expect((await db.query("select to_regclass('time_requests') r")).rows[0].r).toBeNull();
     expect((await db.query("select to_regclass('bedtime_extensions') r")).rows[0].r).toBeNull();
-  });
+  }, 300_000);
 });
