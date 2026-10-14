@@ -34,7 +34,7 @@ export async function createRequest(
     title: `${profile?.name ?? "Your kid"} asked for a video`,
     body: `${video?.title ?? videoId}${reason ? ` — ${reason}` : ""}`,
     url: `/parent/video/${videoId}`,
-    tag: `request-${videoId}`,
+    tag: `request-${videoId}-${profileId ?? "family"}`, // one notification per child per video
   });
   return "created";
 }

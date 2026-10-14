@@ -209,3 +209,4 @@ body {
 /* TV: exactly one highlight — the D-pad focus. Hovering never draws a second ring (a pointer moves focus instead). */
 .kid-mode .kid-bf.tv .tile:hover:not(:focus-within) { transform: none; box-shadow: none; }
 .kid-mode .kid-bf.tv .tile button[aria-disabled="true"] { cursor: default; }
+.kid-mode .kid-bf.tv .tile :focus, .kid-mode .kid-bf.tv .tile :focus-visible { outline: none; } /* the card carries the one focus ring */

@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { BrandMark } from "@/components/logo";
-import { IconHand, IconHome, IconSearch } from "@/components/icons";
-import { ExitButton } from "../exit-button";
+import { IconHand } from "@/components/icons";
+import { PhoneTabs, PhoneTopBar, TabletTopBar } from "../chrome";
 import { KidCard } from "./kid-card";
 import { ShowMore } from "./show-more";
 import { askLine, type KidHomeView } from "./view";
@@ -10,12 +9,6 @@ const PHONE_PER_SECTION = 4;
 const PHONE_WAITING = 3;
 const TABLET_PER_SECTION = 8;
 
-function ChildChip({ view, compact = false }: { view: KidHomeView; compact?: boolean }) {
-  const inner = <><span className={compact ? "text-2xl leading-none" : "text-3xl leading-none"} aria-hidden>{view.child.avatar}</span><span className={compact ? "sr-only" : ""}>{view.child.name}</span></>;
-  return view.canSwitch
-    ? <Link href="/watch/who" aria-label={`Switch from ${view.child.name}`} className="flex h-12 items-center gap-2 rounded-full bg-[rgb(255_249_241/0.1)] px-3 text-lg font-extrabold">{inner}</Link>
-    : <span className="flex h-12 items-center gap-2 px-1 text-lg font-extrabold">{inner}</span>;
-}
 
 const Empty = ({ view }: { view: KidHomeView }) => (
   <div className="mt-16 text-center">
@@ -29,16 +22,7 @@ export function TabletHome({ view }: { view: KidHomeView }) {
   const { shelves, waiting } = view;
   return (
     <div className="kid-bf touch flex-1 px-6 pb-12 pt-5 lg:px-10">
-      <header className="flex items-center gap-3">
-        <BrandMark tone="dark" size={40} />
-        <h1 className="ml-1 text-2xl font-extrabold">Hi, {view.child.name}!</h1>
-        <nav aria-label="Kid" className="ml-auto flex items-center gap-2">
-          <Link href="/watch" aria-current="page" className="flex h-12 items-center gap-2 rounded-full bg-[rgb(255_249_241/0.14)] px-5 text-lg font-extrabold"><IconHome size={22} />Home</Link>
-          {view.canSearch && <Link href="/watch/search" className="flex h-12 items-center gap-2 rounded-full px-5 text-lg font-extrabold text-[var(--kmuted)]"><IconSearch size={22} />Search</Link>}
-          <ChildChip view={view} />
-          <ExitButton target={view.exitTarget} />
-        </nav>
-      </header>
+      <TabletTopBar child={view.child} canSearch={view.canSearch} canSwitch={view.canSwitch} active="home" exitTarget={view.exitTarget} title={`Hi, ${view.child.name}!`} />
 
       <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl bg-[rgb(255_249_241/0.07)] px-4 py-3">
         <IconHand size={22} className="text-[var(--kfocus)]" />
@@ -74,18 +58,9 @@ export function TabletHome({ view }: { view: KidHomeView }) {
 /** Phone Home: one column of wide cards, four per section, and a bottom tab bar within thumb reach. */
 export function PhoneHome({ view }: { view: KidHomeView }) {
   const { shelves, waiting } = view;
-  const tab = "flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-extrabold";
   return (
     <div className="kid-bf touch flex flex-1 flex-col">
-      <header className="flex items-center gap-2 px-4 pb-2 pt-3">
-        <BrandMark tone="dark" size={32} />
-        <div className="min-w-0 flex-1 pl-1">
-          <h1 className="truncate text-xl font-extrabold">Hi, {view.child.name}!</h1>
-          {view.minutesLeft != null && <p className="text-sm font-semibold text-[var(--kmuted)]">{view.minutesLeft} min left today</p>}
-        </div>
-        <ChildChip view={view} compact />
-        <ExitButton target={view.exitTarget} />
-      </header>
+      <PhoneTopBar child={view.child} canSwitch={view.canSwitch} exitTarget={view.exitTarget} title={`Hi, ${view.child.name}!`} sub={view.minutesLeft != null ? `${view.minutesLeft} min left today` : undefined} />
 
       <div className="flex-1 px-4 pb-24">
         {view.asking && (
@@ -119,11 +94,7 @@ export function PhoneHome({ view }: { view: KidHomeView }) {
         )}
       </div>
 
-      <nav aria-label="Kid" className="fixed inset-x-0 bottom-0 z-20 flex border-t border-[rgb(255_249_241/0.1)] bg-[#082219]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
-        <Link href="/watch" aria-current={view.asking ? undefined : "page"} className={`${tab} ${view.asking ? "text-[var(--kmuted)]" : "text-[var(--kink)]"}`}><IconHome size={24} />Home</Link>
-        {view.canSearch && <Link href="/watch/search" className={`${tab} text-[var(--kmuted)]`}><IconSearch size={24} />Search</Link>}
-        <Link href="/watch?ask=1" aria-current={view.asking ? "page" : undefined} className={`${tab} ${view.asking ? "text-[var(--kink)]" : "text-[var(--kmuted)]"}`}><IconHand size={24} />Ask</Link>
-      </nav>
+      <PhoneTabs canSearch={view.canSearch} active={view.asking ? "ask" : "home"} />
     </div>
   );
 }

@@ -86,6 +86,18 @@ export function moveFocus(dir: Dir, root: ParentNode = document): boolean {
   const rowOf = (el: HTMLElement) => el.closest("[data-nav-row]") ?? el.closest(".shelf") ?? el.closest("header") ?? el.closest("form");
   const curRow = rowOf(cur!);
   const horizontal = dir === "left" || dir === "right";
+  // Along a shelf, left/right go to the previous/next card in order, whatever part of the card is focusable
+  // (a card's only control may be a button at its bottom, which geometry alone would skip).
+  const shelf = cur!.closest(".shelf");
+  if (horizontal && shelf) {
+    const cards = Array.from(shelf.children);
+    const step = dir === "right" ? 1 : -1;
+    for (let i = cards.indexOf(cur!.closest(".shelf > *") as Element) + step; i >= 0 && i < cards.length; i += step) {
+      const next = items.find((el) => cards[i].contains(el));
+      if (next) { next.focus({ preventScroll: true }); reveal(next); return true; }
+    }
+    return false;
+  }
   const cx = from.left + from.width / 2, cy = from.top + from.height / 2;
   let best: HTMLElement | null = null, bestScore = Infinity;
   for (const el of items) {
@@ -143,6 +155,8 @@ export function RemoteNav({ home = "/watch" }: { home?: string }) {
       const dir = arrowDir(e);
 
       if (isBack(e)) {
+        // The TV search keyboard: a real keyboard's Backspace deletes a letter (the remote's Return still goes Home).
+        if (e.key === "Backspace" && e.keyCode === 8 && document.querySelector("[data-typing]")) return;
         if (inInput && (target as HTMLInputElement).value && e.keyCode === 8) return; // Backspace edits the field
         e.preventDefault();
         if (pathname !== home) router.push(home);

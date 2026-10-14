@@ -1,9 +1,18 @@
-import Image from "next/image";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { resolveViewer } from "@/lib/family";
 import { unstable_cache } from "next/cache";
-import { searchKidsVideos } from "@/lib/youtube";
+import { resolveViewer } from "@/lib/family";
+import { db } from "@/lib/db";
+import { searchKidsVideos, type SearchHit } from "@/lib/youtube";
+import { childSettings, getLibrary, playableFor } from "@/lib/queries";
+import { pendingCheckIds, pendingVideoIds, recentlyDeclinedIds } from "@/lib/activity";
+import { searchState } from "@/lib/kid-search";
+import { timeState } from "@/lib/screentime";
+import { supabaseEnabled } from "@/lib/supabase/server";
+import { kidUi } from "@/lib/kid-ui-server";
+import type { Video } from "@/lib/types";
+import { AutoRefresh } from "../auto-refresh";
+import { PhoneSearch, TabletSearch, TvSearch } from "./layouts";
+import type { SearchView } from "./view";
 
 /** Pin a search's results for 10 minutes so polling/refreshes don't reshuffle the grid. */
 const cachedSearch = unstable_cache(
@@ -11,105 +20,74 @@ const cachedSearch = unstable_cache(
   ["kid-search"],
   { revalidate: 600 },
 );
-import { canPlay, childSettings, getLibrary, playableFor, screen } from "@/lib/queries";
-import { pendingCheckIds, pendingVideoIds, recentlyApprovedIds } from "@/lib/activity";
-import { CheckButton, type Suggestion } from "../check-button";
-import { reviewEligibility } from "@/lib/gate";
+
+/** Local development without a YouTube key: search the titles already in Brightframe's catalogue, labelled as practice. */
+async function catalogueSearch(q: string): Promise<SearchHit[]> {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const all: Video[] = await db.listVideos();
+  return all
+    .filter((v) => words.every((w) => `${v.title} ${v.channelId}`.toLowerCase().includes(w)))
+    .slice(0, 12)
+    .map((v) => ({ id: v.id, title: v.title, channelId: v.channelId, channelTitle: v.channelId.replace(/^@/, ""), thumbnailUrl: v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`, durationSeconds: v.durationSeconds, madeForKids: false }));
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // background reviews of long videos run inside this request's budget
 
+/**
+ * Kid Search. Locked mode has no search. Every result's state comes from THIS child's gate (searchState):
+ * only "play" links to the player (which authorizes again); everything else says whether Brightframe checks
+ * it first or a grown-up decides, and asking goes through the checkVideo server action.
+ */
 export default async function SearchPage(props: PageProps<"/watch/search">) {
   const viewer = await resolveViewer();
   if (!viewer.familyId) redirect("/pair");
-  const settings = await childSettings(viewer.familyId, viewer.profileId);
+  const fid = viewer.familyId;
+  const settings = await childSettings(fid, viewer.profileId);
   if (!viewer.profileId || !settings) redirect("/watch/who");
   if (settings.mode === "locked") redirect("/watch");
+  const mode = settings.mode;
 
   const sp = await props.searchParams;
-  const q = typeof sp.q === "string" ? sp.q.slice(0, 80) : "";
-  const [hits, lib, pending, checking, approved] = await Promise.all([
-    q ? cachedSearch(q.toLowerCase().trim(), settings.kidsOnlySearch) : Promise.resolve([]),
-    getLibrary(viewer.familyId, viewer.profileId),
-    pendingVideoIds(viewer.familyId, viewer.profileId),
-    pendingCheckIds(viewer.familyId, viewer.profileId),
-    recentlyApprovedIds(viewer.familyId, viewer.profileId),
+  const q = typeof sp.q === "string" ? sp.q.slice(0, 80).trim() : "";
+  const source: SearchView["source"] = process.env.YOUTUBE_API_KEY ? "youtube" : !supabaseEnabled ? "catalogue" : "none";
+  const [hits, lib, pending, checking, declined, profiles, family, ui] = await Promise.all([
+    !q ? Promise.resolve([]) : source === "youtube" ? cachedSearch(q.toLowerCase(), settings.kidsOnlySearch) : source === "catalogue" ? catalogueSearch(q) : Promise.resolve([]),
+    getLibrary(fid, viewer.profileId), pendingVideoIds(fid, viewer.profileId), pendingCheckIds(fid, viewer.profileId),
+    recentlyDeclinedIds(fid, viewer.profileId), db.listProfiles(fid), db.getFamily(fid), kidUi(sp.ui),
   ]);
   const byId = new Map(lib.map((v) => [v.id, v]));
-  const ready = playableFor(lib, settings);
-  const thumbOf = (v: { id: string; thumbnailUrl?: string }) => v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`;
-  /** Already-cleared videos to offer while a check runs: same channel first, then anything. */
-  const suggestionsFor = (channelId: string): Suggestion[] => {
-    const same = ready.filter((v) => v.channelId === channelId);
-    const rest = ready.filter((v) => v.channelId !== channelId);
-    return [...same, ...rest].slice(0, 3).map((v) => ({ id: v.id, title: v.title, thumbnailUrl: thumbOf(v) }));
+  const time = await timeState(fid, settings, family.timezone);
+  const results = hits.map((h) => {
+    const row = byId.get(h.id);
+    const state = searchState(row, settings, { pending: pending.has(h.id), declined: declined.has(h.id) });
+    return {
+      id: h.id, title: h.title, channel: row?.channel?.title ?? h.channelTitle, thumb: h.thumbnailUrl, durationSeconds: row?.durationSeconds ?? h.durationSeconds,
+      state, checking: state.kind === "check" && checking.has(h.id),
+    };
+  });
+  const ready = playableFor(lib, settings).slice(0, 6).map((v) => ({ id: v.id, title: v.title, thumb: v.thumbnailUrl ?? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`, durationSeconds: v.durationSeconds }));
+
+  const view: SearchView = {
+    child: { name: settings.profileName ?? "you", avatar: settings.profileAvatar ?? "⭐" },
+    mode, q, results, ready, source,
+    canSwitch: profiles.length > 1 && !(viewer.role === "device" && viewer.assignedProfileId),
+    minutesLeft: time.allowed ? time.remainingMinutes : undefined,
+    exitTarget: supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent",
   };
-  const noKey = !process.env.YOUTUBE_API_KEY;
 
   return (
-    <main className="flex-1 px-5 pb-12 pt-2 space-y-6">
-      <form className="flex gap-3" action="/watch/search">
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="What do you want to watch?"
-          autoFocus={!q}
-          autoComplete="off"
-          className="bigbtn flex-1 rounded-full bg-white/10 px-6 py-4 text-2xl font-bold text-white placeholder:text-white/40 outline-none"
-        />
-        <button type="submit" className="bigbtn rounded-full bg-[var(--kfocus)] px-6 py-4 text-2xl font-extrabold text-[#0b1020] active:scale-95">🔍</button>
-      </form>
-
-      {noKey && <p className="text-center text-[var(--kmuted)] font-semibold">Search isn&apos;t set up yet (ask a grown-up to add a YouTube key).</p>}
-      {q && !noKey && hits.length === 0 && <p className="text-center text-[var(--kmuted)] font-semibold text-xl">Nothing found for that. Try different words!</p>}
-
-      <ul className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-5">
-        {hits.map((h) => {
-          const row = byId.get(h.id);
-          const playable = row ? canPlay(row, settings) : false;
-          const asked = pending.has(h.id);
-          const hasCard = !!row && reviewEligibility(row.card).eligible;
-          const verdict = row && hasCard ? screen(row, settings) : null;
-          const saidYes = approved.has(h.id);
-          return (
-            <li key={h.id} className="tile !w-auto">
-              {playable ? (
-                <Link href={`/watch/${h.id}`} className="block outline-none" draggable={false}>
-                  <div className="relative">
-                    <Image src={h.thumbnailUrl} alt="" width={640} height={360} unoptimized draggable={false} className="w-full aspect-video object-cover" />
-                    <span className="absolute left-3 bottom-3 inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-2xl text-[#0b1020] shadow">▶</span>
-                    {saidYes && <span className="absolute right-3 top-3 rounded-full bg-[var(--kfocus)] px-3 py-1 text-xs font-extrabold text-[#0b1020]">A grown-up said yes! 🎉</span>}
-                  </div>
-                  <p className="px-3 py-2 text-sm font-bold leading-snug line-clamp-1 text-[var(--kmuted)]">{h.title}</p>
-                </Link>
-              ) : (
-                <>
-                  <div className="relative">
-                    <Image src={h.thumbnailUrl} alt="" width={640} height={360} unoptimized draggable={false} className="w-full aspect-video object-cover opacity-80" />
-                    <span className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--kfocus)] text-xl font-extrabold text-[#0b1020] shadow">{asked ? "✓" : "?"}</span>
-                  </div>
-                  <div className="px-3 pt-2 pb-3">
-                    <p className="text-sm font-bold leading-snug line-clamp-1 text-[var(--kmuted)]">{h.title}</p>
-                    <p className="text-xs text-white/40 truncate">{h.channelTitle}</p>
-                    <div className="mt-2">
-                      {asked ? (
-                        <span className="block w-full rounded-full bg-white/10 py-2 text-center text-sm font-extrabold">Asked a grown-up!</span>
-                      ) : (
-                        <CheckButton
-                          videoId={h.id}
-                          label={hasCard && verdict && !verdict.pass ? "Ask a grown-up 🙋" : "Let's check it! 🔍"}
-                          suggestions={suggestionsFor(h.channelId)}
-                          initiallyChecking={checking.has(h.id) && !hasCard}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </main>
+    <>
+      {results.some((r) => r.checking || r.state.kind === "waiting") && <AutoRefresh />}
+      {ui === "tv" ? <TvSearch view={view} />
+        : ui === "tablet" ? <TabletSearch view={view} />
+        : ui === "phone" ? <PhoneSearch view={view} />
+        : (
+          <>
+            <div className="flex flex-1 flex-col sm:hidden"><PhoneSearch view={view} /></div>
+            <div className="hidden flex-1 flex-col sm:flex"><TabletSearch view={view} /></div>
+          </>
+        )}
+    </>
   );
 }

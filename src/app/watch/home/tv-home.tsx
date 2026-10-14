@@ -1,7 +1,4 @@
-import Link from "next/link";
-import { BrandMark } from "@/components/logo";
-import { IconSearch } from "@/components/icons";
-import { ExitButton } from "../exit-button";
+import { TvTopBar } from "../chrome";
 import { KidCard } from "./kid-card";
 import { TvFocus } from "./focus-first";
 import type { KidHomeView } from "./view";
@@ -16,20 +13,7 @@ export function TvHome({ view }: { view: KidHomeView }) {
   return (
     <div className="kid-bf tv flex-1 px-[5vw] pb-[6vh] pt-[4vh]">
       <TvFocus />
-      <header data-nav-row className="flex items-center gap-[1.2vw]">
-        <BrandMark tone="dark" size={0} className="h-[3.2vw] w-auto" />
-        <Link href="/watch" aria-current="page" data-tv-start={view.canSearch ? undefined : ""} className="bigbtn ml-[1vw] rounded-full bg-[rgb(255_249_241/0.1)] px-[1.6vw] py-[0.8vw] text-[1.5vw] font-extrabold">Home</Link>
-        {view.canSearch && (
-          <Link href="/watch/search" data-tv-start="" className="bigbtn flex items-center gap-[0.6vw] rounded-full px-[1.6vw] py-[0.8vw] text-[1.5vw] font-extrabold text-[var(--kmuted)]"><IconSearch size={0} className="h-[1.5vw] w-[1.5vw]" />Search</Link>
-        )}
-        <div className="ml-auto flex items-center gap-[1.2vw]">
-          {view.minutesLeft != null && <span className="text-[1.2vw] font-bold text-[var(--kmuted)]">{view.minutesLeft} min left today</span>}
-          {view.canSwitch
-            ? <Link href="/watch/who" className="bigbtn flex items-center gap-[0.6vw] rounded-full bg-[rgb(255_249_241/0.1)] py-[0.5vw] pl-[0.5vw] pr-[1.4vw] text-[1.4vw] font-extrabold"><span className="text-[2vw] leading-none" aria-hidden>{child.avatar}</span>{child.name}</Link>
-            : <span className="flex items-center gap-[0.6vw] text-[1.4vw] font-extrabold"><span className="text-[2vw] leading-none" aria-hidden>{child.avatar}</span>{child.name}</span>}
-          <ExitButton target={view.exitTarget} />
-        </div>
-      </header>
+      <TvTopBar child={child} canSearch={view.canSearch} canSwitch={view.canSwitch} active="home" minutesLeft={view.minutesLeft} exitTarget={view.exitTarget} startOn={view.canSearch ? "search" : "home"} />
 
       {shelves.length === 0 && waiting.length === 0 ? (
         <div className="mt-[14vh] text-center">
