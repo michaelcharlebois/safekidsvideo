@@ -99,7 +99,7 @@ export default async function ParentPage(props: PageProps<"/parent">) {
           <div className="min-w-0">
             <h1 className="text-title sm:text-display">{kid.name}</h1>
             <p className="text-sm text-muted sm:text-base">
-              <b className="text-ink">{mode.title}</b> ({mode.tagline}). {whenSentence(settings)}.{" "}
+              <b className="text-ink">{mode.title}</b> ({mode.tagline}). {whenSentence(settings, { limitMinutes: limit, stopsLabel: tonight.stopsLabel, extended: !!tonight.extension })}.{" "}
               <Link href={`/parent/settings?kid=${kid.id}`} className="font-bold text-forest underline decoration-sand underline-offset-4 hover:decoration-forest">Rules</Link>
             </p>
           </div>

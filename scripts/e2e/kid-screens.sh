@@ -5,14 +5,21 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 OUT="${1:-$(mktemp -d)}"; mkdir -p "$OUT"; ONLY="${2:-}"
+# A fixed test clock: 8:00 pm on Tue 13 Oct 2026 in Los Angeles (the fixture family's time zone). The server,
+# the fixtures and the browsers all start from it, so bedtime, "today" and "tonight" are the same every run.
+export BF_FAKE_NOW="${BF_FAKE_NOW:-2026-10-13T20:00:00-07:00}"
 run() { # fixture script port
   local WORK; WORK="$(mktemp -d)"
   node scripts/e2e/kid-fixtures.cjs "$1" "$WORK/db.json"
-  SIFT_LOCAL_DB="$WORK/db.json" setsid npx next start -p "$3" > "$WORK/server.log" 2>&1 &
+  BF_FAKE_BOOT="$(date +%s%3N)"; export BF_FAKE_BOOT
+  NEXT_PUBLIC_SUPABASE_URL= SIFT_LOCAL_DB="$WORK/db.json" setsid npx next start -p "$3" > "$WORK/server.log" 2>&1 &
   local SERVER=$!
-  for _ in $(seq 1 40); do curl -s -o /dev/null "http://localhost:$3/watch/who" && break; sleep 0.5; done
+  local up=0
+  for _ in $(seq 1 120); do curl -s -o /dev/null "http://localhost:$3/watch/who" && { up=1; break; }; sleep 0.5; done
+  if [ "$up" != 1 ]; then echo "FAIL  server didn't start in 60 s (log: $WORK/server.log)"; kill -- -"$SERVER" 2>/dev/null || true; return 1; fi
   local rc=0
   FIXTURE="$1" DB="$WORK/db.json" BASE="http://localhost:$3" OUT="$OUT" node "scripts/e2e/$2" || rc=$?
+  [ "$rc" != 0 ] && echo "FAIL  $2 exited with $rc"
   kill -- -"$SERVER" 2>/dev/null || kill "$SERVER" 2>/dev/null || true
   return $rc
 }

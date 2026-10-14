@@ -4,7 +4,7 @@
 // the request reaching the parent without push. Two screens for one child; the parent answers in Review.
 const { OUT, MAYA, check, launch, parent, kid, go, active, press, db, done, focusedContrast } = require("./kid-common.cjs");
 const FIXTURE = process.env.FIXTURE;
-const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+const today = () => new Date(require("./kid-common.cjs").testNow()).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
 const asks = () => (db().timeRequests ?? []).filter((r) => r.profileId === MAYA);
 const todays = () => asks().filter((r) => r.day === today());
 const until = async (fn, ms = 8000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await fn()) return true; await new Promise((r) => setTimeout(r, 200)); } return false; };

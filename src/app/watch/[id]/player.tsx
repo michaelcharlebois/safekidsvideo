@@ -440,8 +440,8 @@ export function Player({ playlist, index, remainingMinutes, stopsAt, skip, ui, f
       />
 
       {warning && (
-        <div role="status" data-time-warning className={`pointer-events-none absolute flex items-center gap-[0.5em] rounded-full bg-[rgb(8_34_25/0.88)] font-extrabold text-[var(--kink)] shadow-lg ring-1 ring-[rgb(255_159_110/0.6)] ${tv ? "right-[4vw] top-[4vh] px-[1.4vw] py-[0.6vw] text-[1.4vw]" : "right-4 top-[max(1rem,env(safe-area-inset-top))] px-4 py-2 text-base"}`}>
-          <IconMoon size={0} className={tv ? "h-[1.4vw] w-[1.4vw] text-[var(--kfocus)]" : "h-5 w-5 text-[var(--kfocus)]"} />{warning}
+        <div role="status" data-time-warning className={`pointer-events-none absolute z-20 flex items-center gap-[0.5em] rounded-full bg-[rgb(6_26_19)] font-extrabold text-white shadow-[0_0.4em_1.2em_rgb(0_0_0/0.6)] ${tv ? "right-[4vw] top-[4vh] px-[1.6vw] py-[0.7vw] text-[1.6vw] ring-[0.2vw] ring-[var(--kfocus)]" : "right-4 top-[max(1rem,env(safe-area-inset-top))] px-4 py-2 text-base ring-2 ring-[var(--kfocus)]"}`}>
+          <IconMoon size={0} className={tv ? "h-[1.6vw] w-[1.6vw] text-[var(--kfocus)]" : "h-5 w-5 text-[var(--kfocus)]"} />{warning}
         </div>
       )}
 

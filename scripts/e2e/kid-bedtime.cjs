@@ -10,9 +10,10 @@
 //   bedtime-soon    — bedtime in 3 min: the player's five-minute warning; it stops at the boundary after a
 //                     simulated sleep/wake; and the server refuses playback once bedtime has passed.
 const { OUT, MAYA, check, launch, parent, kid, go, active, press, db, done, focusedContrast, FAKE_YT } = require("./kid-common.cjs");
+const { testNow } = require("./kid-common.cjs");
 const FIXTURE = process.env.FIXTURE;
 const TZ = "America/Los_Angeles";
-const nightNow = () => { const t = Date.now(); const h = Number(new Date(t).toLocaleString("en-GB", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" })); return new Date(h < 4 ? t - 86400000 : t).toLocaleDateString("en-CA", { timeZone: TZ }); };
+const nightNow = () => { const t = testNow(); const h = Number(new Date(t).toLocaleString("en-GB", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" })); return new Date(h < 4 ? t - 86400000 : t).toLocaleDateString("en-CA", { timeZone: TZ }); };
 const asks = () => (db().timeRequests ?? []).filter((r) => r.profileId === MAYA && r.kind === "bedtime");
 const exts = () => (db().bedtimeExtensions ?? []).filter((e) => e.profileId === MAYA);
 const live = () => exts().find((e) => !e.cancelledAt);
@@ -27,7 +28,7 @@ const recorder = (ctx) => { const ends = []; ctx.on("request", (r) => { if (r.me
 
   if (FIXTURE === "bedtime-soon") {
     const tv = await kid(b, "tv");
-    await tv.clock.install(); // the page's clock: lets the test simulate the TV sleeping past bedtime
+    // kid() installed the test clock on this page: fastForward below simulates the TV sleeping past bedtime.
     await tv.context().addInitScript(FAKE_YT);
     await tv.context().route("**/iframe_api", (r) => r.fulfill({ body: "" }));
     const ends = recorder(tv.context());
@@ -36,6 +37,19 @@ const recorder = (ctx) => { const ends = []; ctx.on("request", (r) => { if (r.me
     await go(tv, "/watch/fxSSS000001", 1500);
     const warn = await tv.locator("[data-time-warning]").innerText().catch(() => "");
     check("player: a calm heads-up in the last five minutes (\"N minutes until bedtime\")", /[1-3] minutes? until bedtime/.test(warn), warn);
+    await tv.keyboard.press("ArrowDown"); await tv.waitForTimeout(400); // bring up the controls (their dark top gradient)
+    const badge = await tv.evaluate(() => {
+      const el = document.querySelector("[data-time-warning]"); if (!el) return null;
+      const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+      const rgba = (x) => (x.match(/[\d.]+/g) || []).map(Number);
+      const lum = ([R, G, B]) => { const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(R) + 0.7152 * f(G) + 0.0722 * f(B); };
+      const bg = rgba(cs.backgroundColor), a = lum(rgba(cs.color)), b = lum(bg);
+      el.style.pointerEvents = "auto"; // hit-testing skips pointer-events: none; enable it just to ask what's on top
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      el.style.pointerEvents = "";
+      return { opaque: (bg[3] ?? 1) === 1, ratio: Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 10) / 10, topmost: !!top && el.contains(top), controls: document.querySelector("[data-controls]")?.getAttribute("data-controls"), px: parseFloat(cs.fontSize) };
+    });
+    check("the heads-up is legible on TV: opaque, ≥ 7:1 contrast, large text, and on top of the controls", badge && badge.opaque && badge.ratio >= 7 && badge.px >= 28 && badge.topmost && badge.controls === "shown", JSON.stringify(badge));
     await tv.screenshot({ path: `${OUT}/bedtime-player-tv-warning.png` });
     await tv.clock.fastForward("04:00"); // the TV slept past bedtime and woke
     await tv.waitForURL((u) => u.pathname === "/watch", { timeout: 10000 }).catch(() => {});

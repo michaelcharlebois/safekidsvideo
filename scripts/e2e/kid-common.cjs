@@ -6,11 +6,21 @@ const BASE = process.env.BASE, OUT = process.env.OUT, DB = process.env.DB;
 const MAYA = "e6148654-0dd2-4da9-ac82-3bb897a87d83";
 const SAMSUNG = "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/537.36 (KHTML, like Gecko) 76.0.3809.146/6.0 TV Safari/537.36";
 const results = [];
+// The test clock. kid-screens.sh starts the server with BF_FAKE_NOW (local mode only), so the server's "now"
+// is that instant plus the time since it booted (BF_FAKE_BOOT, ms). Browsers get the same clock, and the
+// fixtures and assertions use it too — results don't depend on the time of day the suite runs.
+const FAKE = Date.parse(process.env.BF_FAKE_NOW || ""), BOOT = Number(process.env.BF_FAKE_BOOT || 0);
+const testNow = () => (Number.isFinite(FAKE) ? FAKE + (Date.now() - BOOT) : Date.now());
+// Pages get the clock only in the time-dependent scenarios (bedtime, time up, daily limit), where the page's
+// countdowns must agree with the server; elsewhere Playwright's fake timers would only perturb the scripted
+// player's timing.
+const TIMED = /^(bedtime|timeup|limit)/.test(process.env.FIXTURE || "");
+const withClock = async (ctx) => { if (Number.isFinite(FAKE) && TIMED) await ctx.clock.install({ time: testNow() }); return ctx; };
 const check = (name, ok, detail = "") => { results.push(!!ok); console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail && !ok ? "  — " + detail : ""}`); };
 const launch = () => chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {});
 /** Parent sign-in (local PIN 1234) and a family PIN of 2580 for the kid screens. Returns the parent page. */
 async function parent(b) {
-  const p = await (await b.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+  const p = await (await withClock(await b.newContext({ viewport: { width: 1280, height: 900 } }))).newPage();
   await p.goto(`${BASE}/unlock?next=/parent/kids`); await p.fill('input[name="pin"]', "1234"); await p.keyboard.press("Enter");
   await p.waitForURL((u) => u.pathname.startsWith("/parent"));
   await p.goto(`${BASE}/parent/kids`); await p.fill('form:has(input[value="family"]) input[name="pin"]', "2580");
@@ -24,7 +34,7 @@ const DEVICES = {
 };
 /** A kid screen of the given kind, with Maya picked through the PIN pad. */
 async function kid(b, kind, who = MAYA) {
-  const ctx = await b.newContext(DEVICES[kind]);
+  const ctx = await withClock(await b.newContext(DEVICES[kind]));
   const p = await ctx.newPage();
   await p.goto(`${BASE}/watch/who?pick=${who}${kind === "tv" ? "" : "&ui=" + kind}`); await p.waitForLoadState("networkidle"); await p.waitForTimeout(400);
   for (const d of "2580") await p.keyboard.press(d);
@@ -82,4 +92,4 @@ const FAKE_YT = () => {
   };
 };
 
-module.exports = { FAKE_YT, BASE, OUT, MAYA, SAMSUNG, check, launch, parent, kid, go, active, press, samsungReturn, db, done, focusedContrast };
+module.exports = { testNow, withClock, FAKE_YT, BASE, OUT, MAYA, SAMSUNG, check, launch, parent, kid, go, active, press, samsungReturn, db, done, focusedContrast };
