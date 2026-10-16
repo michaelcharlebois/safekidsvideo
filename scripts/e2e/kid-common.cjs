@@ -47,7 +47,19 @@ const active = (p) => p.evaluate(() => { const a = document.activeElement; retur
 const press = async (p, key, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.waitForTimeout(60); } };
 /** The Samsung remote's Return: keyCode 10009 with no key name (older Tizen). */
 const samsungReturn = (p) => p.evaluate(() => { const e = new KeyboardEvent("keydown", { bubbles: true, cancelable: true }); Object.defineProperty(e, "keyCode", { get: () => 10009 }); (document.activeElement ?? document.body).dispatchEvent(e); });
-const db = () => JSON.parse(fs.readFileSync(DB, "utf8"));
+/**
+ * The fixture database, read straight from disk. The local store saves with fs.writeFile, which empties the
+ * file before writing it, so a read that lands mid-save sees "" or half a file. Retry briefly in that case.
+ */
+const db = () => {
+  for (let i = 0; ; i++) {
+    const text = fs.readFileSync(DB, "utf8");
+    try { return JSON.parse(text); } catch (e) {
+      if (i >= 50) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20); // 20 ms, synchronously (callers aren't async)
+    }
+  }
+};
 /** The focused element's text and background colours and their WCAG contrast ratio. */
 const focusedContrast = (p) => p.evaluate(() => {
   const el = document.activeElement; if (!el) return null;

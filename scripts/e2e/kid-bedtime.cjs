@@ -7,6 +7,7 @@
 //   bedtime-decline — declined: "A grown-up said not tonight", no second ask; a parent can still grant directly.
 //   bedtime-limit   — bedtime passed AND the daily minutes are used up: the parent is told an extension alone
 //                     won't restore playback; extension only → the daily-limit screen; + minutes → watching.
+//   bedtime-final   — every cutoff has passed (bedtime 6:59 pm, now 8:00 pm): Time to rest with no ask at all.
 //   bedtime-soon    — bedtime in 3 min: the player's five-minute warning; it stops at the boundary after a
 //                     simulated sleep/wake; and the server refuses playback once bedtime has passed.
 const { OUT, MAYA, check, launch, parent, kid, go, active, press, db, done, focusedContrast, FAKE_YT } = require("./kid-common.cjs");
@@ -20,6 +21,21 @@ const live = () => exts().find((e) => !e.cancelledAt);
 const until = async (fn, ms = 10000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await fn()) return true; await new Promise((r) => setTimeout(r, 200)); } return false; };
 const clock = (iso) => new Date(iso).toLocaleTimeString("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
 const focusableWith = (p, text) => p.evaluate((t) => [...document.querySelectorAll("a, button, [tabindex]")].some((el) => (el.textContent || "").includes(t)), text);
+// The cutoff a choice of +min stands for, from the fixture's bedtime (e.g. 19:50 + 30 → "8:20 PM"). Review and
+// the Tonight card list only choices that haven't passed, so picking "the second button" would silently
+// pick a different extension once the first cutoff passes; pick by the time the parent actually sees.
+const BEDTIME = db().profiles.find((p) => p.id === MAYA).bedtime;
+const untilLabel = (min) => { const [h, m] = BEDTIME.split(":").map(Number); const t = (h * 60 + m + min) % 1440; return `${((Math.floor(t / 60) + 11) % 12) + 1}:${String(t % 60).padStart(2, "0")} ${t < 720 ? "AM" : "PM"}`; };
+const choiceButton = (p, min) => p.locator(`button[aria-label="Let Maya watch until ${untilLabel(min)} tonight"]`);
+/** The parent's Settings bedtime picker (hour / minute / AM-PM selects posting a hidden 24-hour HH:MM). */
+async function setBedtime(p, hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  if (!(await p.locator("#bedtime-hour").count())) await p.getByLabel("Set an evening cutoff").check();
+  await p.locator("#bedtime-hour").selectOption(String(h % 12 || 12));
+  await p.locator("#bedtime-minute").selectOption(String(m).padStart(2, "0"));
+  await p.locator("#bedtime-period").selectOption(h < 12 ? "AM" : "PM");
+  return p.locator('input[name="bedtime"]').inputValue(); // what the form will post
+}
 const recorder = (ctx) => { const ends = []; ctx.on("request", (r) => { if (r.method() !== "POST" || !r.headers()["next-action"]) return; try { const a = JSON.parse(r.postData() || "null"); if (Array.isArray(a) && ["finished", "skipped", "left"].includes(a[1])) ends.push({ videoId: a[0], outcome: a[1] }); } catch { /* */ } }); return ends; };
 
 (async () => {
@@ -64,6 +80,22 @@ const recorder = (ctx) => { const ends = []; ctx.on("request", (r) => { if (r.me
     return done();
   }
 
+  if (FIXTURE === "bedtime-final") {
+    // The latest possible extension (+60) ended at 7:59 pm, so nothing a parent could approve is left:
+    // the child must not be offered an ask (the server refuses one too — test/bedtime-server.test.ts).
+    const tv = await kid(b, "tv");
+    await go(tv, "/watch", 800);
+    const t = await tv.innerText(".kid-bf");
+    check("after the last cutoff: the calm Time to rest screen", /Time to rest, Maya/.test(t) && /done for today/.test(t), t.slice(0, 160));
+    check("…with no way to ask to stay up (no button, nothing focusable)", (await tv.locator("button", { hasText: /stay up/i }).count()) === 0 && !(await focusableWith(tv, "stay up")) && !/Ask to stay up/.test(t), t.slice(0, 200));
+    check("…and no ask is stored", asks().length === 0, JSON.stringify(asks()));
+    await go(par, "/parent/review", 400);
+    check("parent Review: nothing to answer", !/asking to stay up/.test(await par.innerText("main")));
+    await tv.screenshot({ path: `${OUT}/bedtime-tv-final-cutoff-passed.png` });
+    await b.close();
+    return done();
+  }
+
   const tv = await kid(b, "tv");
   const ph = await kid(b, "phone");
   await go(tv, "/watch", 800); await go(ph, "/watch", 600);
@@ -91,7 +123,7 @@ const recorder = (ctx) => { const ends = []; ctx.on("request", (r) => { if (r.me
   if (FIXTURE === "bedtime-limit") {
     check("…and it says the daily minutes are used up too, offering minutes separately", /also used all 45 minutes/.test(rev) && (await par.locator("button", { hasText: "Add 15 min today" }).count()) >= 1);
     await par.screenshot({ path: `${OUT}/bedtime-parent-review-limit.png`, fullPage: true });
-    await par.locator('button[aria-label^="Let Maya watch until"]').nth(1).click();
+    await choiceButton(par, 30).click();
     await until(() => !!live());
     await go(tv, "/watch", 600);
     const t = await tv.innerText(".kid-bf");
@@ -119,7 +151,7 @@ const recorder = (ctx) => { const ends = []; ctx.on("request", (r) => { if (r.me
     await tv.screenshot({ path: `${OUT}/bedtime-tv-declined.png` });
     await go(par, `/parent?kid=${MAYA}`, 500);
     await par.locator("summary", { hasText: "Let Maya stay up later tonight" }).click();
-    await par.locator("button", { hasText: /^Let Maya watch until/ }).nth(1).click();
+    await par.locator("button", { hasText: `Let Maya watch until ${untilLabel(30)}` }).click();
     await until(() => !!live());
     await go(tv, "/watch", 800);
     check("a parent can still grant directly after declining: Maya is watching again", /Staying up until/.test(await tv.innerText(".kid-bf")));
@@ -128,10 +160,10 @@ const recorder = (ctx) => { const ends = []; ctx.on("request", (r) => { if (r.me
     return done();
   }
 
-  // bedtime-ask: approve "until …" (the second choice: +30).
-  const choice = await par.locator('button[aria-label^="Let Maya watch until"]').nth(1).getAttribute("aria-label");
+  // bedtime-ask: approve "until …" for +30 (by the cutoff shown, e.g. 8:20 PM).
+  const choice = await choiceButton(par, 30).getAttribute("aria-label");
   await par.screenshot({ path: `${OUT}/bedtime-parent-review.png`, fullPage: true });
-  await par.locator('button[aria-label^="Let Maya watch until"]').nth(1).click();
+  await choiceButton(par, 30).click();
   await until(() => !!live() && asks()[0].status === "approved");
   const e = live();
   check("approved: tonight's extension stores the cutoff the parent saw", e && e.extraMinutes === 30 && choice.includes(clock(e.cutoffAt)) && e.night === nightNow() && asks()[0].grantedMinutes === 30, JSON.stringify([choice, e]));
@@ -151,8 +183,10 @@ const recorder = (ctx) => { const ends = []; ctx.on("request", (r) => { if (r.me
   await go(par, `/parent/settings?kid=${MAYA}`, 400);
   const bt = await par.locator('input[name="bedtime"]').inputValue();
   const [h, m] = bt.split(":").map(Number);
-  await par.locator('input[name="bedtime"]').fill(`${String((h + 23) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+  const earlier = `${String((h + 23) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  const posted = await setBedtime(par, earlier);
   await par.locator("button", { hasText: "Save screen time" }).click(); await par.waitForURL(/saved=time/);
+  check("Settings: the bedtime picker saves the new recurring bedtime (an hour earlier)", bt === BEDTIME && posted === earlier && db().profiles.find((p) => p.id === MAYA).bedtime === earlier, JSON.stringify([bt, posted, db().profiles.find((p) => p.id === MAYA).bedtime]));
   await go(tv, "/watch", 600);
   check("after the recurring bedtime moves earlier, Maya still watches until the cutoff the parent authorized", new RegExp(`Staying up until ${clock(e.cutoffAt)}`).test(await tv.innerText(".kid-bf")) && live().cutoffAt === e.cutoffAt);
 

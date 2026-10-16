@@ -210,3 +210,42 @@ describe("answering and granting are atomic (local store)", () => {
     expect((await state(used)).allowed).toBe(true);
   });
 });
+
+describe("asking near the final available cutoff (+60 past bedtime)", () => {
+  // Bedtime 7:01 pm → the latest cutoff is 8:01 pm; NOW is 8:00 pm. The kid screen (watch/layout) offers an
+  // ask only while some cutoff is still ahead, and the server applies the same rule when an ask arrives.
+  const at = (ms: number) => new Date(NOW.getTime() + ms);
+  const offered = async (pid: string, when: Date) => {
+    const { extensionChoices } = await import("@/lib/bedtime");
+    const { db } = await import("@/lib/db/resolve");
+    return extensionChoices(when, (await db.getSettings(FAM, pid)).bedtime, TZ).some((c) => !c.passed);
+  };
+
+  it("one second before the final cutoff: offered on screen, and the ask is accepted", async () => {
+    const pid = await setup({ bedtimeOffsetMin: -59 });
+    const { askForMoreTime, listTimeRequests } = await import("@/lib/more-time");
+    expect(await offered(pid, at(59_000))).toBe(true);
+    expect(await askForMoreTime(FAM, pid, "bedtime", undefined, at(59_000))).toBe("created");
+    expect((await listTimeRequests(FAM, undefined, at(59_000))).filter((r) => r.kind === "bedtime")).toHaveLength(1);
+  });
+
+  it("at the final cutoff and after: not offered, and the server refuses (nothing stored)", async () => {
+    const { askForMoreTime, listTimeRequests } = await import("@/lib/more-time");
+    for (const ms of [60_000, 61_000, 30 * 60_000]) {
+      const pid = await setup({ bedtimeOffsetMin: -59 });
+      expect(await offered(pid, at(ms)), `+${ms} ms`).toBe(false);
+      expect(await askForMoreTime(FAM, pid, "bedtime", undefined, at(ms)), `+${ms} ms`).toBe("not-offered");
+      expect(await listTimeRequests(FAM, undefined, at(ms))).toEqual([]);
+    }
+  });
+
+  it("the walkthrough fixtures sit where they should: 7:50 pm bedtime can ask at 8:00; 6:59 pm can't", async () => {
+    const { askForMoreTime } = await import("@/lib/more-time");
+    const ten = await setup({ bedtimeOffsetMin: -10 });       // bedtime-ask / -decline / -limit
+    expect(await offered(ten, NOW)).toBe(true);
+    expect(await askForMoreTime(FAM, ten, "bedtime", undefined, NOW)).toBe("created");
+    const late = await setup({ bedtimeOffsetMin: -61 });      // bedtime-final
+    expect(await offered(late, NOW)).toBe(false);
+    expect(await askForMoreTime(FAM, late, "bedtime", undefined, NOW)).toBe("not-offered");
+  });
+});

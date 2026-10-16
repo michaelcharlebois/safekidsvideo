@@ -11,6 +11,7 @@
 //   bedtime-ask / bedtime-decline — Maya's bedtime was 10 minutes ago (no daily limit)
 //   bedtime-limit — as bedtime-ask, and Maya has also used all 45 of her minutes today
 //   bedtime-soon  — Maya's bedtime is in 3 minutes
+//   bedtime-final — Maya's bedtime was 6:59 pm: even the latest extension (+60 → 7:59 pm) has passed
 //   player  — the UX fixture with a tight skip budget for Maya (1 skip, 2 s free peek, 60 s cooldown)
 // Times come from the test clock (BF_FAKE_NOW, 8:00 pm in Los Angeles, set by kid-screens.sh): bedtimes are
 // fixed clock times (7:50 pm = ten minutes ago; 8:03 pm = in three minutes). Other scenarios have no bedtime.
@@ -35,7 +36,7 @@ if (scenario === "limit" || scenario === "limit-decline") {
 const laClock = (ms) => new Date(ms).toLocaleTimeString("en-GB", { timeZone: "America/Los_Angeles", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 if (scenario.startsWith("bedtime") || scenario === "timeup") {
   const now = NOW;
-  const bedtime = process.env.BF_FAKE_NOW ? (scenario === "bedtime-soon" ? "20:03" : "19:50") : laClock(scenario === "bedtime-soon" ? now + 3 * 60000 : now - 10 * 60000);
+  const bedtime = process.env.BF_FAKE_NOW ? ({ "bedtime-soon": "20:03", "bedtime-final": "18:59" }[scenario] ?? "19:50") : laClock(scenario === "bedtime-soon" ? now + 3 * 60000 : now - 10 * 60000);
   d.profiles = d.profiles.map((p) => (p.id === MAYA ? { ...p, bedtime, dailyMinutes: scenario === "bedtime-limit" ? 45 : undefined, bonusMinutes: undefined, bonusDay: undefined } : p));
   if (scenario === "bedtime-limit") {
     const sid = "22222222-bbbb-4bbb-8bbb-000000000002";
