@@ -193,7 +193,7 @@ export default async function ChildSettingsPage(props: PageProps<"/parent/settin
                 <span className="block text-muted">Leave empty for no limit.</span>
                 <input type="number" name="dailyMinutes" min={5} max={600} step={5} defaultValue={s.dailyMinutes ?? ""} className="w-32 rounded-xl border border-sand bg-surface px-3 py-2.5 outline-none focus:border-forest" />
               </label>
-              <BedtimePicker initial={s.bedtime} timezone={timezone} />
+              <BedtimePicker initial={s.bedtime} timezone={timezone ?? "Not set"} />
             </div>
             <Button type="submit">Save screen time</Button>
           </form>
