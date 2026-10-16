@@ -26,10 +26,25 @@ export async function saveSubscription(
   userAgent?: string,
 ) {
   if (!supabaseEnabled) return;
-  await supabaseAdmin().from("push_subscriptions").upsert(
-    { family_id: familyId, endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth, user_agent: userAgent },
-    { onConflict: "endpoint" },
-  );
+  // Never transfer an existing notification endpoint to a different family.
+  const admin = supabaseAdmin();
+  const { data: existing, error: lookupError } = await admin.from("push_subscriptions")
+    .select("family_id").eq("endpoint", sub.endpoint).maybeSingle();
+  if (lookupError) throw new Error("Could not verify notification ownership");
+  if (existing && existing.family_id !== familyId) throw new Error("Notification subscription belongs to another family");
+  if (existing) {
+    const { error } = await admin.from("push_subscriptions")
+      .update({ p256dh: sub.keys.p256dh, auth: sub.keys.auth, user_agent: userAgent })
+      .eq("endpoint", sub.endpoint).eq("family_id", familyId);
+    if (error) throw new Error("Could not update notification subscription");
+    return;
+  }
+  // A duplicate created concurrently must fail rather than overwrite another family's row.
+  const { error } = await admin.from("push_subscriptions").insert({
+    family_id: familyId, endpoint: sub.endpoint, p256dh: sub.keys.p256dh,
+    auth: sub.keys.auth, user_agent: userAgent,
+  });
+  if (error) throw new Error("Could not save notification subscription");
 }
 
 export async function removeSubscription(familyId: string, endpoint: string) {
