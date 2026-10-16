@@ -1,7 +1,7 @@
 // Return paths for "come back to where you were" redirects. Pure.
 
 /** Same-site path only ("/x", not "//host" or "/\host"), so a form's `next` can't redirect off-site. */
-export const isLocalPath = (p: string) => p.startsWith("/") && !p.startsWith("//") && !p.startsWith("/\\");
+export const isLocalPath = (p: string) => p.startsWith("/") && !p.startsWith("//") && !p.includes("\\") && !/[\u0000-\u001f\u007f]/.test(p);
 
 /** Add or replace a query parameter, keeping any #fragment at the end. */
 export function withParam(path: string, key: string, value: string): string {
