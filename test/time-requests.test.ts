@@ -25,6 +25,12 @@ describe("timeAskState", () => {
     expect(timeAskState("bedtime", [], "maya", { ...W, extensionMinutes: 60 })).toBe("not-offered");
     expect(timeAskState("bedtime", [], "maya", { ...W, extensionMinutes: 30 })).toBe("can-ask");
   });
+  it("does not offer a bedtime ask after every allowed cutoff has passed", () => {
+    expect(timeAskState("bedtime", [], "maya", { ...W, bedtimeExtensionAvailable: false })).toBe("not-offered");
+    expect(timeAskState("bedtime", [], "maya", { ...W, bedtimeExtensionAvailable: true })).toBe("can-ask");
+    expect(timeAskState("bedtime", [r({ kind: "bedtime", status: "pending" })], "maya",
+      { ...W, bedtimeExtensionAvailable: false })).toBe("pending");
+  });
   it("nothing asked today → can ask", () => {
     expect(timeAskState("limit", [], "maya", W)).toBe("can-ask");
   });
