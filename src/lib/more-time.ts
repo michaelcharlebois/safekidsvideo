@@ -5,7 +5,7 @@ import { localTimeRequests } from "@/lib/db/local";
 import { localDay } from "@/lib/checkin";
 import { pushToFamily } from "@/lib/push";
 import { assertPermissionWritesOpen, permissionWritesPaused } from "@/lib/maintenance";
-import { bedtimeNow, clockTime, extensionCutoff, isExtensionMinutes, nightOf, type BedtimeExtension } from "@/lib/bedtime";
+import { bedtimeNow, clockTime, extensionChoices, extensionCutoff, isExtensionMinutes, nightOf, type BedtimeExtension } from "@/lib/bedtime";
 import { approveBedtimeAsk, approveMinutesAsk, cancelExtension, grantExtension, grantMinutesToday, listExtensions } from "@/lib/bedtime-store";
 import { serverNow } from "@/lib/clock";
 import { isGrant, liveTimeRequests, timeAskState, type TimeRequest, type TimeRequestKind } from "@/lib/time-requests";
@@ -55,6 +55,11 @@ export async function askForMoreTime(familyId: string, profileId: string, reason
   if (permissionWritesPaused()) return "unavailable";
   const tz = await tzOf(familyId);
   const today = localDay(tz, now), night = nightOf(now, tz);
+  // A child must never create an unapprovable bedtime ask: the maximum is 60 minutes past the configured bedtime.
+  if (reason === "bedtime") {
+    const profile = await db.getProfile(profileId);
+    if (!profile || profile.familyId !== familyId || !extensionChoices(now, profile.bedtime, tz).some((choice) => !choice.passed)) return "not-offered";
+  }
   const ext = reason === "bedtime" ? (await listExtensions(familyId, night)).find((e) => e.profileId === profileId && e.night === night && !e.cancelledAt) : undefined;
   const state = timeAskState(reason, await listTimeRequests(familyId, undefined, now), profileId, { today, night, extensionMinutes: ext?.extraMinutes });
   if (state !== "can-ask") return state;
