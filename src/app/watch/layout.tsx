@@ -10,6 +10,7 @@ import { listTimeRequests } from "@/lib/more-time";
 import { timeAskState } from "@/lib/time-requests";
 import { localDay } from "@/lib/checkin";
 import { serverNow } from "@/lib/clock";
+import { extensionChoices } from "@/lib/bedtime";
 
 /**
  * Kid mode. Each kid screen (Home, Search, Who's watching, the player) draws its own chrome for TV, tablet
@@ -26,7 +27,7 @@ export default async function WatchLayout({ children }: LayoutProps<"/watch">) {
     <div className="kid-mode kid-pane flex-1 flex flex-col" data-scroll-pane>
       <RemoteNav />
       {time && !time.allowed
-        ? <TimeUp time={time} name={settings?.profileName} ui={await kidUi()} ask={timeAskState(time.reason, await listTimeRequests(viewer.familyId!), settings!.profileId!, { today: localDay(family?.timezone, serverNow()), night: time.night, extensionMinutes: time.extensionMinutes })} exitTarget={supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent"} />
+        ? <TimeUp time={time} name={settings?.profileName} ui={await kidUi()} ask={timeAskState(time.reason, await listTimeRequests(viewer.familyId!), settings!.profileId!, { today: localDay(family?.timezone, serverNow()), night: time.night, extensionMinutes: time.extensionMinutes, bedtimeExtensionAvailable: time.reason !== "bedtime" || extensionChoices(serverNow(), settings!.bedtime, family?.timezone).some((choice) => !choice.passed) })} exitTarget={supabaseEnabled ? "/login?next=/parent" : "/unlock?next=/parent"} />
         : children}
     </div>
   );
