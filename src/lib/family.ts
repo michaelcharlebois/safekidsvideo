@@ -77,11 +77,12 @@ export async function resolveViewer(): Promise<Viewer> {
   if (token) {
     const { data } = await supabaseAdmin()
       .from("devices")
-      .select("id,family_id,name,revoked_at,assigned_profile_id,active_profile_id")
+      .select("id,family_id,name,revoked_at,last_seen_at,assigned_profile_id,active_profile_id")
       .eq("token_hash", sha(token))
       .maybeSingle();
     if (data && !data.revoked_at) {
-      void supabaseAdmin().from("devices").update({ last_seen_at: new Date().toISOString() }).eq("id", data.id);
+      // Noncritical: never throws, and authorization above doesn't depend on it.
+      await recordDeviceActivity(data);
       const profiles = await familyProfiles(data.family_id);
       const assigned = profiles.some((p) => p.id === data.assigned_profile_id) ? data.assigned_profile_id : undefined;
       return {
@@ -93,6 +94,47 @@ export async function resolveViewer(): Promise<Viewer> {
     }
   }
   return { role: "none", familyId: null };
+}
+
+// ---- device activity ("last active" on Screens) ---------------------------
+// Separate from viewing history: this is "the screen was used" (any kid page, including Time to rest and
+// the daily-limit screen), not "a video played".
+
+/** At most one last-seen write per screen per this interval. Screens shows "in the last 5 minutes" below it. */
+export const LAST_SEEN_EVERY_MS = 5 * 60_000;
+/** This server instance's recent writes, so repeat calls in one request (layout + page) skip the database. */
+const recentTouches = new Map<string, number>();
+export function __resetDeviceActivityCache() { recentTouches.clear(); }
+
+/**
+ * Record that an authenticated, non-revoked screen was used. Throttled twice over: skipped when the row's
+ * last_seen_at (or this instance's last write) is under LAST_SEEN_EVERY_MS old, and the UPDATE itself only
+ * matches when the stored value is older than that — so concurrent requests on other instances write once.
+ * The update is scoped to the device's id, its family, and revoked_at is null. Errors are logged and
+ * swallowed: activity tracking must never decide authorization.
+ */
+export async function recordDeviceActivity(
+  d: { id: string; family_id: string; last_seen_at?: string | null },
+  now = Date.now(),
+): Promise<"written" | "skipped" | "failed"> {
+  const last = Math.max(d.last_seen_at ? Date.parse(d.last_seen_at) || 0 : 0, recentTouches.get(d.id) ?? 0);
+  if (now - last < LAST_SEEN_EVERY_MS) return "skipped";
+  recentTouches.set(d.id, now);
+  if (recentTouches.size > 10_000) recentTouches.clear();
+  try {
+    const stale = new Date(now - LAST_SEEN_EVERY_MS).toISOString();
+    const { error } = await supabaseAdmin().from("devices")
+      .update({ last_seen_at: new Date(now).toISOString() })
+      .match({ id: d.id, family_id: d.family_id })
+      .is("revoked_at", null)
+      .or(`last_seen_at.is.null,last_seen_at.lt.${stale}`);
+    if (!error) return "written";
+    console.error("device last-seen update failed", error.message);
+  } catch (e) {
+    console.error("device last-seen update failed", e instanceof Error ? e.message : e);
+  }
+  recentTouches.delete(d.id); // let the next request try again
+  return "failed";
 }
 
 /** The family a signed-in parent owns, created on first sign-in. */
@@ -140,7 +182,8 @@ export async function redeemPairingCode(code: string, deviceName: string): Promi
   if (data.used_at) return { error: "That code was already used. Make a new one." };
   if (new Date(data.expires_at) < new Date()) return { error: "That code expired. Make a new one." };
   const token = randomBytes(32).toString("base64url");
-  const { error } = await sb.from("devices").insert({ family_id: data.family_id, token_hash: sha(token), name: deviceName || "Tablet" });
+  // Pairing is the screen's first use: it gets an accurate first "last active" straight away.
+  const { error } = await sb.from("devices").insert({ family_id: data.family_id, token_hash: sha(token), name: deviceName || "Tablet", last_seen_at: new Date().toISOString() });
   if (error) return { error: error.message };
   await sb.from("pairing_codes").update({ used_at: new Date().toISOString() }).eq("code", code);
   return { token };
@@ -199,8 +242,28 @@ export async function devicePinSucceeded(deviceId: string) {
   }
 }
 
-export async function revokeDevice(familyId: string, deviceId: string) {
-  await supabaseAdmin().from("devices").update({ revoked_at: new Date().toISOString() }).match({ id: deviceId, family_id: familyId });
+/** A disconnect that didn't happen. The screen is still connected; callers must not report success. */
+export class DeviceRevokeFailed extends Error {}
+
+/**
+ * Disconnect one of this family's screens. Allowed while permission writes are paused (it only restricts).
+ * Succeeds only when the row is verifiably revoked: updated now, or already revoked earlier (a repeated
+ * click). A database error, or a screen that isn't this family's, throws DeviceRevokeFailed.
+ */
+export async function revokeDevice(familyId: string, deviceId: string): Promise<{ name: string }> {
+  const sb = supabaseAdmin();
+  const { data, error } = await sb.from("devices")
+    .update({ revoked_at: new Date().toISOString() })
+    .match({ id: deviceId, family_id: familyId })
+    .is("revoked_at", null)
+    .select("id,name");
+  if (error) { console.error("revokeDevice failed", error.message); throw new DeviceRevokeFailed("Couldn't disconnect that screen. It's still connected. Try again."); }
+  if (Array.isArray(data) && data.length === 1) return { name: data[0].name };
+  // Nothing updated: already disconnected (fine), or not one of this family's screens (refuse).
+  const { data: row, error: e2 } = await sb.from("devices").select("id,name,revoked_at").match({ id: deviceId, family_id: familyId }).maybeSingle();
+  if (e2) { console.error("revokeDevice check failed", e2.message); throw new DeviceRevokeFailed("Couldn't confirm that screen was disconnected. Check the list and try again."); }
+  if (row?.revoked_at) return { name: row.name };
+  throw new DeviceRevokeFailed("That screen wasn't found.");
 }
 
 export async function listActiveCodes(familyId: string): Promise<{ code: string; expiresAt: string }[]> {

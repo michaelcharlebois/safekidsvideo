@@ -15,7 +15,7 @@ import { answerTimeRequest, askForMoreTime, cancelBedtimeExtension, grantBedtime
 import { CONCERN_TAGS, type ConcernTag, type ConfirmationVerdict, type TagVote } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
-import { assignDevice, createPairingCode, DEVICE_COOKIE, claimDevicePinAttempt, devicePinSucceeded, PinCheckUnavailable, PROFILE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice, setDeviceActiveProfile } from "@/lib/family";
+import { assignDevice, createPairingCode, DEVICE_COOKIE, claimDevicePinAttempt, devicePinSucceeded, DeviceRevokeFailed, PinCheckUnavailable, PROFILE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice, setDeviceActiveProfile } from "@/lib/family";
 import { addVideoToLibrary, allowForChild, approveRequest, decideForChild, GrantError, NeedsUnreviewedConfirm, recordOpenClearance, removeFamilyBlock, resolveLegacy, splitFamilyBlock, unhideForFamily as unhideForFamilyGrant } from "@/lib/grants";
 import { pinIsSet, verifyPin } from "@/lib/pin";
 import { saveSettingsForm, SettingsError } from "@/lib/settings-save";
@@ -277,8 +277,16 @@ export async function pairDevice(_prev: PairResult, form: FormData): Promise<Pai
 
 export async function unpairDevice(form: FormData) {
   const fid = await requireParent();
-  await revokeDevice(fid, String(form.get("deviceId")));
+  // Success is shown only after revokeDevice has verified the row is revoked; any failure says so.
+  let outcome: string;
+  try {
+    const { name } = await revokeDevice(fid, String(form.get("deviceId") ?? ""));
+    outcome = `disconnected=${encodeURIComponent(name)}`;
+  } catch (e) {
+    outcome = `error=${encodeURIComponent(e instanceof DeviceRevokeFailed ? e.message : "Couldn't disconnect that screen. It's still connected. Try again.")}`;
+  }
   revalidatePath("/parent/devices");
+  redirect(`/parent/devices?${outcome}`);
 }
 
 // ---- "Ask a grown-up" --------------------------------------------------------
