@@ -974,8 +974,8 @@ export async function subscribePush(sub: { endpoint: string; keys: { p256dh: str
 }
 
 export async function unsubscribePush(endpoint: string) {
-  await requireParent();
-  await removeSubscription(endpoint);
+  const fid = await requireParent();
+  await removeSubscription(fid, endpoint);
 }
 
 export async function sendTestPush() {
