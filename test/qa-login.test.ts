@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { QA_FAMILIES, qaFamilyFor, qaLoginEnabled } from "../src/lib/qa-login";
 
 const valid: NodeJS.ProcessEnv = {
+  NODE_ENV: "test",
   BF_QA_LOGIN_ENABLED: "1",
   VERCEL_ENV: "preview",
   VERCEL_GIT_COMMIT_REF: "feature/brightframe",
@@ -12,7 +13,7 @@ const valid: NodeJS.ProcessEnv = {
 describe("QA login safety guard", () => {
   it("requires all staging guards", () => {
     expect(qaLoginEnabled(valid)).toBe(true);
-    for (const key of Object.keys(valid)) {
+    for (const key of Object.keys(valid).filter((key) => key !== "NODE_ENV")) {
       expect(qaLoginEnabled({ ...valid, [key]: undefined })).toBe(false);
     }
     expect(qaLoginEnabled({ ...valid, VERCEL_ENV: "production" })).toBe(false);
