@@ -37,7 +37,7 @@ export function BedtimePicker({ initial, timezone }: { initial?: string; timezon
           <span aria-hidden>:</span>
           <label className="sr-only" htmlFor="bedtime-minute">Minute</label>
           <select id="bedtime-minute" value={minute} onChange={(e) => setMinute(e.target.value)} className={cls}>
-            {["00", "15", "30", "45"].map((m) => <option key={m} value={m}>{m}</option>)}
+            {[...new Set(["00", "15", "30", "45", seed.minute])].sort().map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
           <label className="sr-only" htmlFor="bedtime-period">AM or PM</label>
           <select id="bedtime-period" value={period} onChange={(e) => setPeriod(e.target.value)} className={cls}>
