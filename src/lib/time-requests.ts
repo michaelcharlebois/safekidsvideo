@@ -27,7 +27,7 @@ export const isGrant = (m: number): m is (typeof GRANT_MINUTES)[number] => (GRAN
 export type TimeAskState = "not-offered" | "can-ask" | "pending" | "declined" | "fulfilled";
 export function timeAskState(
   reason: "limit" | "bedtime", requests: TimeRequest[], profileId: string,
-  when: { today: string; night: string; extensionMinutes?: number },
+  when: { today: string; night: string; extensionMinutes?: number; bedtimeExtensionAvailable?: boolean },
 ): TimeAskState {
   const day = reason === "bedtime" ? when.night : when.today;
   const latest = requests
@@ -35,7 +35,7 @@ export function timeAskState(
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   if (reason === "bedtime") {
     if (latest) return latest.status === "pending" ? "pending" : latest.status === "denied" ? "declined" : "fulfilled";
-    return (when.extensionMinutes ?? 0) >= 60 ? "not-offered" : "can-ask";
+    return (when.extensionMinutes ?? 0) >= 60 || when.bedtimeExtensionAvailable === false ? "not-offered" : "can-ask";
   }
   if (!latest) return "can-ask";
   return latest.status === "pending" ? "pending" : latest.status === "denied" ? "declined" : "can-ask";
