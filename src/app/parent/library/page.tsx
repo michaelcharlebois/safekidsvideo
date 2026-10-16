@@ -256,7 +256,7 @@ export default async function LibraryPage(props: PageProps<"/parent/library">) {
                       const title = c?.title ?? mine[0]?.v.channel?.title ?? id;
                       const plays = mine.filter((i) => i.status === "plays" || i.status === "allowed").length;
                       return (
-                        <li key={id} className="flex items-center gap-1 py-1 pl-1 pr-3 sm:pr-4">
+                        <li key={id} className="flex flex-wrap items-center gap-1 py-1 pl-1 pr-3 sm:pr-4">
                           <div className="flex flex-col text-muted">
                             <MoveButton kidId={kid.id} channelId={id} dir="up" disabled={idx === 0} label={`Move ${title} up`} next={`/parent/library?kid=${kid.id}&tab=sources`} />
                             <MoveButton kidId={kid.id} channelId={id} dir="down" disabled={idx === order.length - 1} label={`Move ${title} down`} next={`/parent/library?kid=${kid.id}&tab=sources`} />
@@ -268,13 +268,13 @@ export default async function LibraryPage(props: PageProps<"/parent/library">) {
                               <span className="block text-xs text-muted">{mine.length ? `${plays} of ${mine.length} play for ${name}` : "No videos yet"}</span>
                             </span>
                           </Link>
-                          <details className="relative">
+                          <details className="min-w-0 max-w-[18rem]">
                             <summary className="cursor-pointer list-none rounded-full px-3 py-2 text-sm font-bold text-muted hover:bg-sand-soft hover:text-forest">Remove</summary>
-                            <div className="absolute right-0 z-10 mt-1 w-64 space-y-2 rounded-[var(--radius-card)] border border-sand bg-surface p-3 text-sm shadow-[var(--shadow-raised)]">
+                            <div className="mt-2 space-y-2 rounded-xl border border-sand bg-sand-soft p-3 text-sm">
                               <p>Remove <b>{title}</b> for every child? Videos you allowed for a child stay allowed.</p>
                               <form action={toggleWhitelist}>
                                 <input type="hidden" name="kind" value="channel" /><input type="hidden" name="targetId" value={id} /><input type="hidden" name="on" value="0" />
-                                <Button type="submit" variant="danger" size="sm">Remove channel</Button>
+                                <Button type="submit" variant="danger" size="sm">Confirm removal</Button>
                               </form>
                             </div>
                           </details>
