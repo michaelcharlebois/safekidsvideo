@@ -49,7 +49,14 @@ export function TimeRequestCard({ req, child, next, tz, ctx }: { req: TimeReques
               {child.name} has also used all {ctx.limitMinutes} minutes for today, so a later bedtime alone won&apos;t bring videos back. Add minutes too if you want them to watch.
             </p>
           )}
-          <p className="text-sm font-bold text-forest">Let {child.name} watch until…</p>
+          {ctx.choices.some((c) => !c.passed) ? (
+            <p className="text-sm font-bold text-forest">Let {child.name} watch until…</p>
+          ) : (
+            <p role="status" className="rounded-xl bg-apricot-soft px-3 py-2 text-sm text-forest">
+              Tonight’s latest possible extension has already passed (60 minutes past the scheduled bedtime).
+              This request can no longer be approved. You can dismiss it below, or change the regular bedtime in {child.name}’s Screen time settings for future nights.
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             {ctx.choices.filter((c) => !c.passed).map((c) => (
               <form key={c.minutes} action={answerTimeRequestAction}><Hidden f={answer("approve", c.minutes)} />
@@ -58,7 +65,7 @@ export function TimeRequestCard({ req, child, next, tz, ctx }: { req: TimeReques
             ))}
             <form action={answerTimeRequestAction}><Hidden f={answer("deny")} /><Button type="submit" size="sm" variant="quiet">Not tonight</Button></form>
           </div>
-          {ctx.limitReached && <AddMinutes child={child} next={next} />}
+          {ctx.limitReached && ctx.choices.some((c) => !c.passed) && <AddMinutes child={child} next={next} />}
         </>
       ) : (
         <div className="flex flex-wrap gap-2">
