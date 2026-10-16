@@ -35,8 +35,21 @@ export async function listTimeRequests(familyId: string, sinceDay?: string, now 
   const day = sinceDay ?? yesterday(localDay(await tzOf(familyId), now));
   if (local()) return (await localTimeRequests.list(familyId)).filter((r) => r.day >= day);
   if (!on()) return [];
-  const { data } = await supabaseAdmin().from("time_requests").select("*").eq("family_id", familyId).gte("day", day).order("created_at");
+  const { data, error } = await supabaseAdmin().from("time_requests").select("*").eq("family_id", familyId).gte("day", day).order("created_at");
+  if (error) throw new Error(`Could not load time requests: ${error.message}`);
   return ((data ?? []) as Row[]).map(toReq);
+}
+
+/** A parent's answer targets ONE request in their own family, not a broad historical date range.
+ * A query error is not the same as a missing request: never silently report "already answered".
+ */
+async function getTimeRequest(familyId: string, requestId: string): Promise<TimeRequest | undefined> {
+  if (local()) return (await localTimeRequests.list(familyId)).find((r) => r.id === requestId);
+  if (!on()) throw new Error("Time requests need the family database.");
+  const { data, error } = await supabaseAdmin().from("time_requests").select("*")
+    .eq("family_id", familyId).eq("id", requestId).maybeSingle();
+  if (error) throw new Error(`Could not load time request: ${error.message}`);
+  return data ? toReq(data as Row) : undefined;
 }
 
 /** Pending asks a parent can act on now (today's minutes, tonight's bedtime). */
@@ -131,7 +144,7 @@ export async function tonightsExtension(familyId: string, profileId: string, bed
 export async function answerTimeRequest(familyId: string, requestId: string, decision: "approve" | "deny", minutes?: number, now = serverNow()): Promise<"done" | "gone" | "expired"> {
   assertPermissionWritesOpen();
   const tz = await tzOf(familyId);
-  const req = (await listTimeRequests(familyId, "0000-01-01", now)).find((r) => r.id === requestId);
+  const req = await getTimeRequest(familyId, requestId);
   if (!req || req.status !== "pending") return "gone";
   const today = localDay(tz, now), night = nightOf(now, tz);
   if (req.day !== (req.kind === "bedtime" ? night : today)) return "expired";
