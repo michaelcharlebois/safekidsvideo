@@ -6,6 +6,7 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { CONCERN_LABELS, CONCERN_TAGS, FORMATS, FORMAT_LABELS, type ConcernTag } from "@/lib/types";
 import { MODE_ORDER, MODE_UI, whenSentence } from "@/lib/modes";
 import { ModePicker } from "./mode-picker";
+import { BedtimePicker } from "./bedtime-picker";
 import { SectionNav } from "./section-nav";
 import { loadChildFacts } from "@/lib/kid-facts";
 import { localDay } from "@/lib/checkin";
@@ -192,11 +193,7 @@ export default async function ChildSettingsPage(props: PageProps<"/parent/settin
                 <span className="block text-muted">Leave empty for no limit.</span>
                 <input type="number" name="dailyMinutes" min={5} max={600} step={5} defaultValue={s.dailyMinutes ?? ""} className="w-32 rounded-xl border border-sand bg-surface px-3 py-2.5 outline-none focus:border-forest" />
               </label>
-              <label className="block space-y-1 text-sm">
-                <span className="font-bold text-forest">Done for the day at</span>
-                <span className="block text-muted">The kid screen stops until 4 am. Leave empty for none.</span>
-                <input type="time" name="bedtime" defaultValue={s.bedtime ?? ""} className="rounded-xl border border-sand bg-surface px-3 py-2.5 outline-none focus:border-forest" />
-              </label>
+              <BedtimePicker initial={s.bedtime} timezone={timezone} />
             </div>
             <Button type="submit">Save screen time</Button>
           </form>
