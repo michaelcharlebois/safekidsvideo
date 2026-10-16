@@ -1,14 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { runDiscovery, runPipeline } from "@/lib/pipeline";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
+import { authorizedCronRequest } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /** Nightly: refresh approved channels and pre-review new uploads. Vercel Cron sends the bearer token. */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!authorizedCronRequest(req.headers.get("authorization"), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const started = Date.now();
