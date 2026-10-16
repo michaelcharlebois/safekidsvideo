@@ -71,9 +71,9 @@ export default async function WhoPage(props: PageProps<"/watch/who">) {
     <>
       <h1 className={h1}>Who&apos;s watching?</h1>
       {needsPin && <p className={sub}>Pick, then a grown-up enters the PIN.</p>}
-      <ul className={tv ? "shelf mt-[5vh] justify-center !overflow-visible" : "mt-8 grid w-full max-w-2xl grid-cols-2 gap-4 sm:grid-cols-3"} data-nav-row>
+      <ul className={tv ? "shelf mt-[5vh] !mx-auto !w-fit max-w-full justify-center !overflow-visible" : "mt-8 flex w-full max-w-2xl flex-wrap justify-center gap-4"} data-nav-row>
         {profiles.map((p) => (
-          <li key={p.id} className={tv ? "tile !w-[16vw]" : "tile !w-auto"}>
+          <li key={p.id} className={tv ? "tile !w-[16vw]" : "tile !w-44 sm:!w-52"}>
             {needsPin ? (
               <Link href={`/watch/who?pick=${p.id}&next=${encodeURIComponent(next)}`} aria-label={`${p.name}. A grown-up enters the PIN.`} className={`flex w-full flex-col items-center outline-none ${tv ? "gap-[1.2vw] px-[1vw] py-[2vw]" : "gap-3 px-4 py-6"}`}>
                 <Avatar emoji={p.avatar} tv={tv} />
