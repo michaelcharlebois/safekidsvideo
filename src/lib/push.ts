@@ -32,9 +32,9 @@ export async function saveSubscription(
   );
 }
 
-export async function removeSubscription(endpoint: string) {
+export async function removeSubscription(familyId: string, endpoint: string) {
   if (!supabaseEnabled) return;
-  await supabaseAdmin().from("push_subscriptions").delete().eq("endpoint", endpoint);
+  await supabaseAdmin().from("push_subscriptions").delete().eq("endpoint", endpoint).eq("family_id", familyId);
 }
 
 export async function countSubscriptions(familyId: string): Promise<number> {
@@ -62,7 +62,7 @@ export async function pushToFamily(familyId: string, payload: PushPayload): Prom
       sent++;
     } catch (e) {
       const status = (e as { statusCode?: number }).statusCode;
-      if (status === 404 || status === 410) await removeSubscription(s.endpoint);
+      if (status === 404 || status === 410) await removeSubscription(familyId, s.endpoint);
       else console.error("push failed", status, (e as Error).message);
     }
   }
