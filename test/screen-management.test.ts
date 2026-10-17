@@ -211,13 +211,22 @@ describe("disconnecting a screen", () => {
 });
 
 describe("a browser with both a parent sign-in and a paired-screen cookie", () => {
-  it("is the parent (sign-in wins), and the screen's activity isn't recorded by parent visits", async () => {
+  it("is the kid screen (a valid screen token wins over a leftover parent session), and its use is recorded", async () => {
+    // Pairing and parent sign-in now each remove the other credential (test/session-isolation.test.ts); this
+    // covers leftovers from before that. Failing toward the kid screen keeps a forgotten parent session on a
+    // child's TV from granting parent access.
     jar.skv_device = "tok-tv";
     signedIn = { id: "u1", email: "parent@example.com" };
     const v = await (await fam()).resolveViewer();
-    expect(v).toMatchObject({ role: "parent", familyId: FAM });
-    expect(row("tv").last_seen_at).toBeNull();
-    expect(io.writes).toBe(0);
+    expect(v).toMatchObject({ role: "device", deviceId: "tv", familyId: FAM });
+    expect(row("tv").last_seen_at).toBe(new Date(T0).toISOString());
+  });
+
+  it("with a revoked screen token, the parent session applies as before", async () => {
+    jar.skv_device = "tok-tv";
+    row("tv").revoked_at = new Date(T0 - 1000).toISOString();
+    signedIn = { id: "u1", email: "parent@example.com" };
+    expect(await (await fam()).resolveViewer()).toMatchObject({ role: "parent", familyId: FAM });
   });
 
   it("after signing out, the same browser is the paired screen again (and that use is recorded)", async () => {

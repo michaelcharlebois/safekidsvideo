@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { supabaseAuthClient } from "@/lib/supabase/server";
 import { isLocalPath } from "@/lib/paths";
+import { afterSignInPath, takeOverScreenForParent } from "@/lib/session-transition";
 
 /**
  * Link fallback for the sign-in email. Uses token_hash verification, which (unlike the
@@ -17,7 +18,8 @@ export async function GET(req: NextRequest) {
   if (token_hash) {
     const sb = await supabaseAuthClient();
     const { error } = await sb.auth.verifyOtp({ token_hash, type });
-    if (!error) return NextResponse.redirect(new URL(safeNext, url.origin));
+    // Verified: if this browser was a kid screen, it stops being one (disconnected, cookie removed).
+    if (!error) return NextResponse.redirect(new URL(afterSignInPath(safeNext, await takeOverScreenForParent()), url.origin));
   }
   return NextResponse.redirect(new URL("/login?error=link", url.origin));
 }

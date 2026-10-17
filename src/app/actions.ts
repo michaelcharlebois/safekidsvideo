@@ -15,6 +15,7 @@ import { answerTimeRequest, askForMoreTime, cancelBedtimeExtension, grantBedtime
 import { CONCERN_TAGS, type ConcernTag, type ConfirmationVerdict, type TagVote } from "@/lib/types";
 import { learnFromFeedback, rereviewDisputed } from "@/lib/learn";
 import { PARENT_COOKIE } from "@/lib/auth";
+import { afterSignInPath, endParentSessionHere, takeOverScreenForParent } from "@/lib/session-transition";
 import { assignDevice, createPairingCode, DEVICE_COOKIE, claimDevicePinAttempt, devicePinSucceeded, DeviceRevokeFailed, PinCheckUnavailable, PROFILE_COOKIE, redeemPairingCode, resolveViewer, revokeDevice, setDeviceActiveProfile } from "@/lib/family";
 import { addVideoToLibrary, allowForChild, approveRequest, decideForChild, GrantError, NeedsUnreviewedConfirm, recordOpenClearance, removeFamilyBlock, resolveLegacy, splitFamilyBlock, unhideForFamily as unhideForFamilyGrant } from "@/lib/grants";
 import { pinIsSet, verifyPin } from "@/lib/pin";
@@ -196,6 +197,9 @@ export async function saveSettings(form: FormData) {
 export type UnlockResult = { error: string } | null;
 
 export async function unlock(_prev: UnlockResult, form: FormData): Promise<UnlockResult> {
+  // Local single-family mode only. With accounts, parent access needs a verified sign-in; the family PIN
+  // (which a child may know) never grants it.
+  if (supabaseEnabled) redirect("/login");
   const pin = String(form.get("pin") ?? "");
   const next = String(form.get("next") ?? "/parent");
   const v = await resolveViewer();
@@ -243,12 +247,13 @@ export async function verifyCode(_prev: VerifyResult, form: FormData): Promise<V
   const sb = await supabaseAuthClient();
   const { error } = await sb.auth.verifyOtp({ email, token, type: "email" });
   if (error) return { error: "That code didn't work. Codes expire after an hour — request a new one if needed." };
-  redirect(isLocalPath(next) ? next : "/parent");
+  // Verified: if this browser was a kid screen, it stops being one (disconnected, cookie removed).
+  redirect(afterSignInPath(isLocalPath(next) ? next : "/parent", await takeOverScreenForParent()));
 }
 
+/** Sign out of THIS browser only. The parent's phone and other browsers stay signed in. */
 export async function signOut() {
-  const sb = await supabaseAuthClient();
-  await sb.auth.signOut();
+  await endParentSessionHere();
   redirect("/");
 }
 
@@ -269,7 +274,9 @@ export async function pairDevice(_prev: PairResult, form: FormData): Promise<Pai
   const name = String(form.get("name") ?? "").trim().slice(0, 40);
   if (code.length !== 8 && code.length !== 6) return { error: "Enter the 8-digit code." };
   const r = await redeemPairingCode(code, name);
-  if ("error" in r) return { error: r.error };
+  if ("error" in r) return { error: r.error }; // a wrong or expired code changes nothing (a parent stays signed in)
+  // Paired: this browser is now a kid screen. A parent signed in here is signed out of this browser only.
+  await endParentSessionHere();
   const c = await cookies();
   c.set(DEVICE_COOKIE, r.token, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
   redirect("/watch");

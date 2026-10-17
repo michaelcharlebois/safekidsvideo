@@ -34,6 +34,7 @@ export default async function DevicesPage(props: PageProps<"/parent/devices">) {
       <PageHeader title="Screens" sub="TVs and tablets your children watch on." back={{ href: "/parent/account", label: "Account" }} />
       <div className="mt-4 space-y-3">
         {sp.saved && <Notice tone="ok">Saved.</Notice>}
+        {typeof sp.converted === "string" && <Notice tone="ok">This browser was the kid screen <b>{sp.converted}</b>. It&apos;s now disconnected, and you&apos;re signed in as a parent here. To use it as a kid screen again, sign out and pair it with a new code.</Notice>}
         {typeof sp.disconnected === "string" && <Notice tone="ok"><b>{sp.disconnected}</b> is disconnected. It can&apos;t open Brightframe until it&apos;s paired again.</Notice>}
         {typeof sp.error === "string" && <Notice tone="bad">{sp.error}</Notice>}
         {multi && !pinReady && <Notice tone="warn"><b>Shared screens are locked</b> until you set a family PIN. <Link href="/parent/kids#family" className="font-bold text-forest underline">Set it on Kids</Link></Notice>}

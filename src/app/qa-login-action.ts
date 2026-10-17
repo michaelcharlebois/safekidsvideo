@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { qaFamilyFor, qaLoginEnabled } from "@/lib/qa-login";
 import { supabaseAdmin, supabaseAuthClient } from "@/lib/supabase/server";
+import { afterSignInPath, takeOverScreenForParent } from "@/lib/session-transition";
 
 /** POST-only: no emails or tokens exposed to the browser, and no new users or families. */
 export async function qaSignIn(form: FormData) {
@@ -29,5 +30,6 @@ export async function qaSignIn(form: FormData) {
   });
   if (verifyError || signedIn.user?.id !== owner.user.id) redirect("/login?error=qa");
 
-  redirect("/parent");
+  // Same rule as every other sign-in: if this browser was a kid screen, it stops being one.
+  redirect(afterSignInPath("/parent", await takeOverScreenForParent()));
 }

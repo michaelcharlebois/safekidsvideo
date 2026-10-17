@@ -3,6 +3,7 @@ import { supabaseEnabled } from "@/lib/supabase/server";
 import { QA_FAMILIES, qaLoginEnabled } from "@/lib/qa-login";
 import { qaSignIn } from "@/app/qa-login-action";
 import { LoginForm } from "./login-form";
+import { screenInThisBrowser } from "@/lib/family";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +13,18 @@ export default async function LoginPage(props: PageProps<"/login">) {
   const next = typeof sp.next === "string" ? sp.next : "/parent";
   const linkFailed = sp.error === "link";
   const qaEnabled = qaLoginEnabled();
+  const screen = await screenInThisBrowser();
   return (
     <main className="flex-1 flex items-center justify-center px-6 py-10">
       <div className="w-full max-w-sm text-center">
         <p className="text-accent font-extrabold text-sm tracking-widest uppercase">Parents</p>
         <h1 className="mt-2 text-2xl font-extrabold">Sign in</h1>
+        {screen && (
+          <div role="note" data-screen-notice className="mt-5 rounded-2xl border border-warn/40 bg-warn-soft p-4 text-left text-sm">
+            <p className="font-bold text-ink">This browser is the kid screen &ldquo;{screen.name}&rdquo;.</p>
+            <p className="mt-1 text-muted">Signing in here disconnects it, so it stops working as a kid screen. To use it for your child again, sign out and pair it with a new code. To keep it connected, sign in on your phone or another browser instead.</p>
+          </div>
+        )}
         {qaEnabled && (
           <section className="mt-6 rounded-2xl border border-sand bg-surface p-4 text-left">
             <h2 className="font-extrabold text-forest">QA test families</h2>

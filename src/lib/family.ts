@@ -62,24 +62,22 @@ export async function resolveViewer(): Promise<Viewer> {
     return { role: "device", familyId: DEFAULT_FAMILY_ID, deviceId: "local", deviceName: "This device", profileId: pickKid(profiles, null, cookieKid), shared: profiles.length > 1 };
   }
 
-  // Parent?
-  const sb = await supabaseAuthClient();
-  const { data: { user } } = await sb.auth.getUser();
-  if (user) {
-    const familyId = await familyForUser(user.id);
-    const cookieKid = c.get(PROFILE_COOKIE)?.value;
-    const profiles = await familyProfiles(familyId);
-    return { role: "parent", familyId, email: user.email, admin: isAdminEmail(user.email), profileId: profiles.some((p) => p.id === cookieKid) ? cookieKid : undefined };
-  }
-
-  // Paired device?
+  // Paired screen? Checked first: a browser holding a valid, non-revoked screen token is that kid screen,
+  // even if a parent session is also present (an older browser, or two tabs racing). Failing toward the kid
+  // screen is the safe direction: a parent session left behind on a child's TV must not give parent access.
+  // Pairing and parent sign-in each remove the other credential (lib/session-transition.ts), so this only
+  // applies to leftovers. A revoked or unknown token is ignored, as before. Parent access always needs a
+  // session the auth server verifies (getUser); a screen token or the family PIN never grants it.
   const token = c.get(DEVICE_COOKIE)?.value;
   if (token) {
-    const { data } = await supabaseAdmin()
+    const { data, error } = await supabaseAdmin()
       .from("devices")
       .select("id,family_id,name,revoked_at,last_seen_at,assigned_profile_id,active_profile_id")
       .eq("token_hash", sha(token))
       .maybeSingle();
+    // Couldn't check the screen token: fail closed rather than fall through to a parent session that may be
+    // a leftover on a child's screen.
+    if (error) { console.error("device lookup failed", error.message); return { role: "none", familyId: null }; }
     if (data && !data.revoked_at) {
       // Noncritical: never throws, and authorization above doesn't depend on it.
       await recordDeviceActivity(data);
@@ -93,6 +91,16 @@ export async function resolveViewer(): Promise<Viewer> {
       };
     }
   }
+  // Parent? Verified with the auth server, not just a cookie being present.
+  const sb = await supabaseAuthClient();
+  const { data: { user } } = await sb.auth.getUser();
+  if (user) {
+    const familyId = await familyForUser(user.id);
+    const cookieKid = c.get(PROFILE_COOKIE)?.value;
+    const profiles = await familyProfiles(familyId);
+    return { role: "parent", familyId, email: user.email, admin: isAdminEmail(user.email), profileId: profiles.some((p) => p.id === cookieKid) ? cookieKid : undefined };
+  }
+
   return { role: "none", familyId: null };
 }
 
@@ -135,6 +143,15 @@ export async function recordDeviceActivity(
   }
   recentTouches.delete(d.id); // let the next request try again
   return "failed";
+}
+
+/** The kid screen this browser currently is (a valid, non-revoked screen token), for explaining sign-in. */
+export async function screenInThisBrowser(): Promise<{ name: string } | null> {
+  if (!supabaseEnabled || STORE_KIND === "local") return null;
+  const token = (await cookies()).get(DEVICE_COOKIE)?.value;
+  if (!token) return null;
+  const { data } = await supabaseAdmin().from("devices").select("name,revoked_at").eq("token_hash", sha(token)).maybeSingle();
+  return data && !data.revoked_at ? { name: data.name } : null;
 }
 
 /** The family a signed-in parent owns, created on first sign-in. */
@@ -239,6 +256,27 @@ export async function devicePinSucceeded(deviceId: string) {
   if (error) {
     console.error("pin_attempt_succeeded failed", error.message);
     throw new PinCheckUnavailable("Couldn't check the PIN right now. Try again in a moment.");
+  }
+}
+
+/**
+ * Disconnect the screen whose token this browser holds (a parent is signing in here). Scoped by the token
+ * itself, which only this browser has; an unknown or already-disconnected token is "none". A database error
+ * is "failed" — the caller still removes the cookie and tells the parent to disconnect it on Screens.
+ */
+export async function revokeDeviceToken(token: string): Promise<{ status: "revoked"; name: string } | { status: "none" } | { status: "failed"; name?: string }> {
+  try {
+    const sb = supabaseAdmin();
+    const { data: row, error } = await sb.from("devices").select("id,name,revoked_at").eq("token_hash", sha(token)).maybeSingle();
+    if (error) { console.error("revokeDeviceToken lookup failed", error.message); return { status: "failed" }; }
+    if (!row || row.revoked_at) return { status: "none" };
+    const { data, error: e2 } = await sb.from("devices").update({ revoked_at: new Date().toISOString() })
+      .match({ id: row.id, token_hash: sha(token) }).is("revoked_at", null).select("id");
+    if (e2 || !Array.isArray(data) || data.length !== 1) { console.error("revokeDeviceToken update failed", e2?.message ?? "no row"); return { status: "failed", name: row.name }; }
+    return { status: "revoked", name: row.name };
+  } catch (e) {
+    console.error("revokeDeviceToken failed", e instanceof Error ? e.message : e);
+    return { status: "failed" };
   }
 }
 
