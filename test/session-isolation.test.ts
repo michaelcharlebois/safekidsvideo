@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash, randomUUID } from "node:crypto";
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
-const FAM = "f0000000-0000-4000-8000-000000000001", OTHER_FAM = "f0000000-0000-4000-8000-000000000002";
+const FAM = "f0000000-0000-4000-8000-000000000001";
 const PARENT = "u0000000-0000-4000-8000-000000000001";
 const MAYA = "p0000000-0000-4000-8000-0000000000a1", LEO = "p0000000-0000-4000-8000-0000000000a2";
 const AUTH = "sb-stagingref-auth-token";
