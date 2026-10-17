@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Brightframe for Samsung TV: development build for a supervised home pilot (not for the Samsung store).
+  Built by tizen/build-and-install.ps1, which replaces __SITE_HOST__ with the staging host. Don't edit the
+  copy in tizen/build/.
+  - The app is a small local page (index.html + shell.js) that checks the site, then opens it as the
+    top-level page, so the screen's cookies stay first-party.
+  - tizen:allow-navigation: the app's own page may only ever navigate to the staging host. It can't wander
+    to YouTube or anywhere else (the YouTube player runs in an iframe inside the site, which isn't
+    navigation).
+  - access: network requests the site makes, including the YouTube player's many hosts (googlevideo, ytimg…).
+-->
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets"
+        id="http://brightframekids.com/tizen/dev-pilot" version="0.2.0" viewmodes="maximized">
+  <tizen:application id="BrFrameDv1.Brightframe" package="BrFrameDv1" required_version="6.0"/>
+  <content src="index.html"/>
+  <feature name="http://tizen.org/feature/screen.size.all"/>
+  <icon src="icon.png"/>
+  <name>Brightframe Dev</name>
+  <tizen:allow-navigation>__SITE_HOST__</tizen:allow-navigation>
+  <access origin="*" subdomains="true"/>
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+  <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable"
+                 encryption="disable" install-location="auto" hwkey-event="enable"/>
+  <tizen:profile name="tv-samsung"/>
+</widget>

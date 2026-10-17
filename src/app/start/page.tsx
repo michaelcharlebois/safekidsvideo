@@ -134,7 +134,7 @@ export default async function StartPage(props: PageProps<"/start">) {
         <Card className="p-5 space-y-4">
           <h1 className="text-2xl font-extrabold">You&apos;re set. Now connect a screen.</h1>
           <ol className="list-decimal pl-5 text-sm space-y-1">
-            <li>On the TV, tablet or phone your kid will use, open <b>siftkids.com/pair</b> (or the Brightframe app).</li>
+            <li>On the TV, tablet or phone your kid will use, open the <b>Brightframe</b> app, or this site&apos;s <b>/pair</b> page in its browser.</li>
             <li>Type this code. It works once and expires in 10 minutes.</li>
             <li>Pick who&apos;s watching, and hand it over.</li>
           </ol>

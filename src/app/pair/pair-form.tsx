@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, type KeyboardEvent } from "react";
+import { useActionState, useEffect, type KeyboardEvent } from "react";
+import { logDiag } from "@/lib/tv-diagnostics";
 import { pairDevice } from "@/app/actions";
 import { Button } from "@/components/ui";
 
@@ -15,6 +16,8 @@ function onDigitKey(e: KeyboardEvent<HTMLInputElement>) {
 
 export function PairForm() {
   const [state, action, pending] = useActionState(pairDevice, null);
+  // A failed pairing goes to the diagnostics (press 0 three times on this screen, or the server log).
+  useEffect(() => { if (state?.error) logDiag("pairing", state.error); }, [state]);
   return (
     <form action={action} className="mt-6 space-y-3">
       <input

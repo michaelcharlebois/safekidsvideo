@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { installDiagnostics, readDiag, type Diag } from "@/lib/tv-diagnostics";
 import { usePathname, useRouter } from "next/navigation";
 
 /**
@@ -133,13 +134,36 @@ export function RemoteNav({ home = "/watch" }: { home?: string }) {
   const pathname = usePathname();
   const [debug, setDebug] = useState(() => typeof location !== "undefined" && new URLSearchParams(location.search).has("debug"));
   const [hud, setHud] = useState("");
+  const [online, setOnline] = useState(true);
+  const [diag, setDiag] = useState<Diag[]>([]);
+  const [skew, setSkew] = useState<string>("");
+
+  // Diagnostics for every kid screen: script errors, rejections, going offline (lib/tv-diagnostics.ts).
+  useEffect(() => {
+    const off = installDiagnostics();
+    const sync = () => { setOnline(navigator.onLine !== false); setDiag(readDiag()); };
+    sync();
+    window.addEventListener("online", sync); window.addEventListener("offline", sync); window.addEventListener("bf-diag", sync);
+    return () => { off(); window.removeEventListener("online", sync); window.removeEventListener("offline", sync); window.removeEventListener("bf-diag", sync); };
+  }, []);
+  // When the grown-up panel opens: how far the TV's clock is from the server's (on-screen bedtime countdowns use it).
+  useEffect(() => {
+    if (!debug) return;
+    const t0 = Date.now();
+    fetch("/api/tv/ping", { cache: "no-store" }).then((r) => r.json()).then((j: { time: string; build: string }) => {
+      const server = Date.parse(j.time) + (Date.now() - t0) / 2;
+      setSkew(`clock ${Math.round((Date.now() - server) / 1000)}s vs server · server build ${j.build}`);
+    }).catch((e) => setSkew(`server unreachable (${e instanceof Error ? e.message : e})`));
+  }, [debug]);
 
   useEffect(() => {
     const onPlayer = PLAYER_PATH.test(pathname);
     const zeros: number[] = [];
     const onKey = (e: KeyboardEvent) => {
       // Press 0 three times quickly → toggle the debug HUD; five times → hard reload (TVs make restarting apps a chore).
-      if (e.key === "0" || e.keyCode === 48) {
+      // Not while typing: a pairing code like 10000005 typed on the remote's number pad must not reload the page.
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      if (!typing && (e.key === "0" || e.keyCode === 48)) {
         zeros.push(Date.now());
         while (zeros.length && Date.now() - zeros[0] > 2500) zeros.shift();
         if (zeros.length === 3) setDebug((d) => !d);
@@ -177,11 +201,25 @@ export function RemoteNav({ home = "/watch" }: { home?: string }) {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [router, pathname, home]);
 
-  if (!debug) return null;
+  // Offline: a calm note for the child (never on the player, where nothing may cover the video).
+  const offlineNote = !online && !PLAYER_PATH.test(pathname) && (
+    <p role="status" data-offline className="fixed inset-x-0 top-0 z-[90] bg-[rgb(6_26_19)] px-4 py-3 text-center text-lg font-extrabold text-white">
+      No internet right now. Ask a grown-up to check the Wi-Fi.
+    </p>
+  );
+  if (!debug) return offlineNote || null;
+  // Samsung's TV user agent has no "Chrome/" ("... 108.0.5359.1/8.0 TV Safari/537.36").
+  const engine = (/Chrome\/(\d+)/.exec(navigator.userAgent) ?? /\) (\d+)\.[\d.]+\/[\d.]+ TV/.exec(navigator.userAgent))?.[1];
+  const tizen = /Tizen ([\d.]+)/.exec(navigator.userAgent)?.[1];
   return (
-    <pre className="fixed bottom-1 left-1 z-[100] max-w-[95vw] whitespace-pre-wrap rounded bg-black/80 px-2 py-1 text-[12px] leading-tight text-lime-300">
-      build {(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7)} · {navigator.userAgent.includes("Tizen") ? "tizen" : "web"} · {innerWidth}×{innerHeight}{"\n"}
-      {hud || "press a key…"}
-    </pre>
+    <>
+      {offlineNote}
+      <pre data-debug-panel className="fixed bottom-1 left-1 z-[100] max-h-[60vh] max-w-[95vw] overflow-hidden whitespace-pre-wrap rounded bg-black/90 px-2 py-1 text-[12px] leading-tight text-lime-300">
+        build {(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7)} · {tizen ? `Tizen ${tizen}` : "web"} · Chromium {engine ?? "?"} · {innerWidth}×{innerHeight} · {online ? "online" : "OFFLINE"}{skew ? ` · ${skew}` : ""}{"\n"}
+        {location.pathname}{"\n"}
+        {hud || "press a key…"}{"\n"}
+        {diag.length ? diag.slice(-8).map((d) => `${d.at.slice(11, 19)} ${d.kind} ${d.path} ${d.detail}`).join("\n") : "no problems recorded"}
+      </pre>
+    </>
   );
 }

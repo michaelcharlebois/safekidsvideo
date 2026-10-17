@@ -104,4 +104,31 @@ const FAKE_YT = () => {
   };
 };
 
-module.exports = { testNow, withClock, FAKE_YT, BASE, OUT, MAYA, SAMSUNG, check, launch, parent, kid, go, active, press, samsungReturn, db, done, focusedContrast };
+/**
+ * YouTube's rule: nothing drawn in front of any part of the embedded player. Lists every element that paints
+ * something (background, border, shadow, its own text, an icon or image), is visible, and overlaps the video
+ * stage ([data-stage]) while not being part of it. Runs in the page; works with Playwright and Puppeteer.
+ */
+const PLAYER_OVERLAP = () => {
+  const stage = document.querySelector("[data-stage]");
+  if (!stage) return { stage: null, overlaps: [] };
+  const s = stage.getBoundingClientRect();
+  const visible = (el) => { for (let e = el; e && e !== document.documentElement; e = e.parentElement) { const c = getComputedStyle(e); if (c.display === "none" || c.visibility === "hidden" || Number(c.opacity) === 0) return false; } return true; };
+  const paints = (el, c) => (c.backgroundColor !== "rgba(0, 0, 0, 0)" && c.backgroundColor !== "transparent") || c.backgroundImage !== "none"
+    || c.boxShadow !== "none" || (parseFloat(c.borderTopWidth) > 0 && c.borderTopStyle !== "none") || ["SVG", "IMG", "svg", "img"].includes(el.tagName)
+    || [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+  const overlaps = [];
+  for (const el of document.querySelectorAll("[data-player] *")) {
+    if (stage.contains(el) || el.contains(stage)) continue;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    const ix = Math.min(r.right, s.right) - Math.max(r.left, s.left), iy = Math.min(r.bottom, s.bottom) - Math.max(r.top, s.top);
+    if (ix <= 0.5 || iy <= 0.5) continue;
+    const c = getComputedStyle(el);
+    if (!paints(el, c) || !visible(el)) continue;
+    overlaps.push(`${el.tagName.toLowerCase()}${el.getAttribute("data-band") ? `[band=${el.getAttribute("data-band")}]` : ""} "${(el.textContent || "").trim().slice(0, 24)}"`);
+  }
+  return { stage: [Math.round(s.top), Math.round(s.bottom), Math.round(s.left), Math.round(s.right)], mode: stage.getAttribute("data-stage"), overlaps };
+};
+
+module.exports = { PLAYER_OVERLAP, testNow, withClock, FAKE_YT, BASE, OUT, MAYA, SAMSUNG, check, launch, parent, kid, go, active, press, samsungReturn, db, done, focusedContrast };

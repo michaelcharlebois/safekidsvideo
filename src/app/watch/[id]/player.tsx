@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { kidTimeNow, nextVideo, recordWatchEnd, recordWatchStart } from "@/app/actions";
 import { IconBack, IconBack10, IconFwd10, IconHome, IconMoon, IconNext, IconPause, IconPlay } from "@/components/icons";
 import { PlaybackClock } from "@/lib/playback";
+import { logDiag, youTubeErrorText } from "@/lib/tv-diagnostics";
 import { arrowDir, isBack, isEnter } from "../remote-nav";
 import { clearLedger, isLocked, leavingCounts, leavingOutcome, loadLedger, saveLedger, type Ledger, type SkipConfig } from "./skip-ledger";
 
@@ -72,6 +73,7 @@ export function Player({ playlist, index, remainingMinutes, stopsAt, skip, ui, f
   const endedRef = useRef<(id: string, dur: number) => void>(() => {});
   const [paused, setPaused] = useState(true);
   const [needsTap, setNeedsTap] = useState(false); // autoplay was blocked
+  const [playError, setPlayError] = useState<number | null>(null); // YouTube onError code for the current video
   const [flash, setFlash] = useState<"play" | "pause" | "fwd" | "back" | null>(null);
   const [pos, setPos] = useState({ at: 0, dur: 0 });
   const idx = playlist.findIndex((p) => p.id === current.id);
@@ -82,15 +84,25 @@ export function Player({ playlist, index, remainingMinutes, stopsAt, skip, ui, f
       if (!hostRef.current || playerRef.current) return;
       playerRef.current = new window.YT.Player(hostRef.current, {
         videoId: current.id,
+        width: "100%", height: "100%", // the API replaces the host div with an iframe; without these it's 640×390
         host: "https://www.youtube-nocookie.com",
         playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1, controls: 0, fs: 0, iv_load_policy: 3, disablekb: 1 },
         events: {
-          onReady: () => {
+          onReady: (e: any) => {
+            // The remote drives playback through our controls; the player itself never takes focus.
+            try { e?.target?.getIframe?.()?.setAttribute("tabindex", "-1"); } catch { /* not the real API */ }
             // TV engines often block autoplay-with-sound until a key press. Say so.
             setTimeout(() => {
               const s = playerRef.current?.getPlayerState?.();
-              if (s === window.YT.PlayerState.UNSTARTED || s === window.YT.PlayerState.CUED || s === -1) setNeedsTap(true);
+              if (s === window.YT.PlayerState.UNSTARTED || s === window.YT.PlayerState.CUED || s === -1) { setNeedsTap(true); logDiag("player", "Autoplay was blocked; waiting for OK", { report: false }); }
             }, 2500);
+          },
+          // The video can't play (removed, private, not allowed outside YouTube, or the TV's player failed):
+          // say so calmly in the band, then move on after a moment.
+          onError: (e: any) => {
+            const code = Number(e?.data);
+            logDiag("player", `${youTubeErrorText(code)} — ${e?.target?.getVideoData?.()?.video_id ?? "?"}`);
+            setPlayError(code || -1);
           },
           onStateChange: (e: any) => {
             const id = e.target?.getVideoData?.()?.video_id;
@@ -301,6 +313,14 @@ export function Player({ playlist, index, remainingMinutes, stopsAt, skip, ui, f
     if (fromSearch && window.history.length > 1) router.back();
     else router.push(fromSearch ? "/watch/search" : "/watch");
   };
+  // A video that can't play: after a few seconds, the next one (not counted as a skip), or Home if it was the only one.
+  useEffect(() => {
+    if (playError == null) return;
+    const t = setTimeout(() => { setPlayError(null); if (playlist.length > 1) advanceRef.current(); else leave(); }, 6000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playError]);
+
 
   // Leaving any other way (closing the app, navigating away) ends the session as "left".
   useEffect(() => {
@@ -322,10 +342,10 @@ export function Player({ playlist, index, remainingMinutes, stopsAt, skip, ui, f
 
   // Keep the controls up while there's something to read.
   useEffect(() => {
-    holdRef.current = paused || needsTap || !!lockMsg;
+    holdRef.current = paused || needsTap || !!lockMsg || playError != null;
     if (holdRef.current) queueMicrotask(() => show(true));
     else queueMicrotask(reveal);
-  }, [paused, needsTap, lockMsg, reveal, show]);
+  }, [paused, needsTap, lockMsg, playError, reveal, show]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -427,26 +447,38 @@ export function Player({ playlist, index, remainingMinutes, stopsAt, skip, ui, f
     ? "flex items-center justify-center gap-[0.6vw] rounded-full bg-[rgb(255_249_241/0.14)] font-extrabold text-[var(--kink)] outline-none transition-transform focus:scale-110 focus:bg-[rgb(255_249_241/0.24)] focus:shadow-[0_0_0_0.3vw_var(--kfocus)]"
     : "flex items-center justify-center gap-2 rounded-full bg-black/55 font-extrabold text-white outline-none active:scale-95 focus-visible:shadow-[0_0_0_4px_var(--kfocus)]";
 
+  // TV: nothing is ever drawn over the YouTube player (YouTube API Services, Required Minimum Functionality:
+  // "You must not display overlays, frames, or other visual elements in front of any part of a YouTube
+  // embedded player"). While there's anything to show — controls, a heads-up, "press OK" — the player
+  // shrinks into the middle band and the title and controls sit in bands above and below it. Otherwise it
+  // fills the screen with the bands hidden underneath it.
+  const bands = tv && (shown || !!warning || needsTap || playError != null);
   return (
     <main className={`kid-bf ${tv ? "tv" : "touch"} fixed inset-0 bg-black`} data-player>
-      <div ref={hostRef} className="absolute inset-0 h-full w-full" />
+      <div data-stage={tv ? (bands ? "banded" : "full") : "full"}
+        className={`absolute inset-x-0 ${tv ? `z-10 transition-[top,bottom] duration-200 ${bands ? "top-[15vh] bottom-[28vh]" : "top-0 bottom-0"}` : "inset-y-0"}`}>
+        <div ref={hostRef} />
+      </div>
 
-      {/* The stage: covers the iframe. TV/mouse click toggles play; a tap on touch shows or hides the controls. */}
-      <button
-        type="button" tabIndex={-1} aria-hidden
-        onClick={() => (tv ? togglePlay() : shown && !holdRef.current ? hide() : reveal())}
-        className="absolute inset-0 h-full w-full cursor-default bg-transparent outline-none"
-        style={{ WebkitTapHighlightColor: "transparent" }}
-      />
+      {/* Touch only: a tap on the video shows or hides the controls. (Not on TV: the remote's keys are
+          handled for the whole page, and nothing may cover the player there.) */}
+      {!tv && (
+        <button
+          type="button" tabIndex={-1} aria-hidden
+          onClick={() => (shown && !holdRef.current ? hide() : reveal())}
+          className="absolute inset-0 h-full w-full cursor-default bg-transparent outline-none"
+          style={{ WebkitTapHighlightColor: "transparent" }}
+        />
+      )}
 
-      {warning && (
+      {warning && !tv && (
         <div role="status" data-time-warning className={`pointer-events-none absolute z-20 flex items-center gap-[0.5em] rounded-full bg-[rgb(6_26_19)] font-extrabold text-white shadow-[0_0.4em_1.2em_rgb(0_0_0/0.6)] ${tv ? "right-[4vw] top-[4vh] px-[1.6vw] py-[0.7vw] text-[1.6vw] ring-[0.2vw] ring-[var(--kfocus)]" : "right-4 top-[max(1rem,env(safe-area-inset-top))] px-4 py-2 text-base ring-2 ring-[var(--kfocus)]"}`}>
           <IconMoon size={0} className={tv ? "h-[1.6vw] w-[1.6vw] text-[var(--kfocus)]" : "h-5 w-5 text-[var(--kfocus)]"} />{warning}
         </div>
       )}
 
-      {/* A brief flash after a key, or the autoplay hint. */}
-      {(flash || needsTap) && (
+      {/* Touch: a brief flash after a tap, or the autoplay hint. (TV shows these in the bands instead.) */}
+      {!tv && (flash || needsTap) && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4">
           {flash && (
             <div className={`flex items-center justify-center rounded-full bg-black/60 text-white ${tv ? "h-[8vw] w-[8vw]" : "h-28 w-28"}`}>
@@ -457,16 +489,30 @@ export function Player({ playlist, index, remainingMinutes, stopsAt, skip, ui, f
         </div>
       )}
 
-      {/* Controls. Hidden ones stay in place (so focus has somewhere to be) but can't be tapped. */}
-      <div data-controls={shown ? "shown" : "hidden"} className={`pointer-events-none absolute inset-0 transition-opacity duration-300 ${shown ? "opacity-100" : "opacity-0"}`} aria-hidden={!shown}>
-        <div className={`absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 to-transparent ${tv ? "px-[5vw] pb-[6vh] pt-[4vh]" : "flex items-center gap-3 px-4 pb-10 pt-[max(1rem,env(safe-area-inset-top))]"}`}>
+      {/* Controls. Hidden ones stay in place (so focus has somewhere to be) but can't be tapped. On TV they're
+          bands above and below the player, underneath it while it fills the screen. */}
+      <div data-controls={shown || bands ? "shown" : "hidden"} className={`pointer-events-none absolute inset-0 transition-opacity duration-300 ${shown || bands ? "opacity-100" : "opacity-0"}`} aria-hidden={!(shown || bands)}>
+        <div data-band={tv ? "top" : undefined} className={`absolute inset-x-0 top-0 ${tv ? "flex h-[15vh] items-center gap-[2vw] px-[5vw]" : "flex items-center gap-3 bg-gradient-to-b from-black/80 to-transparent px-4 pb-10 pt-[max(1rem,env(safe-area-inset-top))]"}`}>
           {!tv && (
             <button data-player-btn type="button" onClick={leave} className={`${btn} ${shown ? "pointer-events-auto" : ""} h-14 shrink-0 pl-3 pr-5 text-lg`}>
               <IconBack size={26} />{backLabel}
             </button>
           )}
-          <p className={`font-extrabold text-white line-clamp-1 ${tv ? "text-[2vw]" : "text-lg"}`}>{current.title}</p>
-          {paused && !needsTap && <p className={`font-bold text-[var(--kmuted)] ${tv ? "mt-[0.5vh] text-[1.3vw]" : "hidden"}`}>Paused</p>}
+          <div className="min-w-0 flex-1">
+            <p className={`font-extrabold text-white line-clamp-1 ${tv ? "text-[2vw]" : "text-lg"}`}>{current.title}</p>
+            {tv && needsTap && playError == null && <p className="mt-[0.5vh] text-[1.4vw] font-extrabold text-[var(--kfocus)]">Press OK to play</p>}
+            {playError != null && (
+              <p role="status" data-play-error={playError} className={`font-extrabold text-[var(--kfocus)] ${tv ? "mt-[0.5vh] text-[1.4vw]" : "mt-1 text-base"}`}>
+                This video can&apos;t play right now. {playlist.length > 1 ? "The next one is coming up." : "Going back in a moment."}
+              </p>
+            )}
+            {paused && !needsTap && <p className={`font-bold text-[var(--kmuted)] ${tv ? "mt-[0.5vh] text-[1.3vw]" : "hidden"}`}>Paused</p>}
+          </div>
+          {tv && warning && (
+            <div role="status" data-time-warning className="flex shrink-0 items-center gap-[0.5em] rounded-full bg-[rgb(6_26_19)] px-[1.6vw] py-[0.7vw] text-[1.6vw] font-extrabold text-white ring-[0.2vw] ring-[var(--kfocus)]">
+              <IconMoon size={0} className="h-[1.6vw] w-[1.6vw] text-[var(--kfocus)]" />{warning}
+            </div>
+          )}
         </div>
 
         {!tv && (
@@ -479,7 +525,7 @@ export function Player({ playlist, index, remainingMinutes, stopsAt, skip, ui, f
           </div>
         )}
 
-        <div className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent ${tv ? "px-[5vw] pb-[5vh] pt-[10vh]" : "px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-14"}`}>
+        <div data-band={tv ? "bottom" : undefined} className={`absolute inset-x-0 bottom-0 ${tv ? "flex h-[28vh] flex-col justify-end px-[5vw] pb-[5vh]" : "bg-gradient-to-t from-black/90 to-transparent px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-14"}`}>
           {lockMsg && <p role="status" className={`mx-auto mb-3 w-fit rounded-full bg-[rgb(255_249_241/0.14)] font-extrabold text-white ${tv ? "px-[1.4vw] py-[0.5vw] text-[1.4vw]" : "px-4 py-1.5 text-base"}`}>{lockMsg}{cooldownLeft > 0 ? ` (next skip in ${fmt(cooldownLeft)})` : ""}</p>}
           <div className={`flex items-center ${tv ? "gap-[1vw] text-[1.2vw]" : "gap-3 text-sm"} font-bold text-white/80`}>
             <span className="tabular-nums">{fmt(pos.at)}</span>

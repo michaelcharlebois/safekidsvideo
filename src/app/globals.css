@@ -216,3 +216,19 @@ body {
 .kid-mode .kid-bf.tv .tile:hover:not(:focus-within) { transform: none; box-shadow: none; }
 .kid-mode .kid-bf.tv .tile button[aria-disabled="true"] { cursor: default; }
 .kid-mode .kid-bf.tv .tile :focus, .kid-mode .kid-bf.tv .tile :focus-visible { outline: none; } /* the card carries the one focus ring */
+
+/*
+ * Older TV engines (Samsung S85D: Chromium 108). Tailwind 4 writes gradient directions as "to bottom in oklab";
+ * colour-space interpolation in gradients arrived in Chromium 111, so on 108 the whole background-image is
+ * dropped. That removes the player's scrims behind the white title and controls. Same direction, default
+ * interpolation, only where "in oklab" isn't supported. Unlayered, so it wins over Tailwind's layered utilities.
+ */
+@supports not (background-image: linear-gradient(in oklab, red, red)) {
+  .bg-gradient-to-t { --tw-gradient-position: to top; }
+  .bg-gradient-to-b { --tw-gradient-position: to bottom; }
+  .bg-gradient-to-l { --tw-gradient-position: to left; }
+  .bg-gradient-to-r { --tw-gradient-position: to right; }
+}
+
+/* The YouTube player fills its stage (the API swaps the host div for an iframe). */
+[data-stage] > iframe, [data-stage] > div { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
